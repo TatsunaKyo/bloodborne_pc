@@ -105,6 +105,7 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
                    bool enable_validation, bool enable_crash_diagnostic)
     : instance{CreateInstance(window_info.type, enable_validation, enable_crash_diagnostic)},
       physical_devices{EnumeratePhysicalDevices(instance)} {
+    win32_surface = window_info.type == Frontend::WindowSystemType::Windows;
     if (enable_validation) {
         debug_callback = CreateDebugCallback(*instance);
     }
@@ -273,6 +274,16 @@ bool Instance::CreateDevice() {
                "Required Vulkan feature unavailable: nullDescriptor");
 
     // Optional
+#ifdef _WIN32
+    // The dependency is enabled by CreateInstance for Win32 surfaces when available.
+    const auto [ext_result, instance_extensions] = vk::enumerateInstanceExtensionProperties();
+    if (win32_surface && ext_result == vk::Result::eSuccess &&
+        std::ranges::any_of(instance_extensions, [](const auto& ext) {
+            return std::strcmp(ext.extensionName, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME) == 0;
+        })) {
+        full_screen_exclusive = add_extension("VK_EXT_full_screen_exclusive");
+    }
+#endif
     maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
     maintenance_8 = add_extension(VK_KHR_MAINTENANCE_8_EXTENSION_NAME);
     attachment_feedback_loop = add_extension(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);

@@ -39,15 +39,16 @@ CONFIG_FILE = CONFIG_DIR / 'settings.json'
 PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-# This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '1.6'
+# Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
+VERSION = '1.6-tatsunakyo.1'
+LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
-RELEASES_API = 'https://api.github.com/repos/Supermedo/bloodborne_pc/releases/latest'
-RELEASES_PAGE = 'https://github.com/Supermedo/bloodborne_pc/releases/latest'
+RELEASES_API = 'https://api.github.com/repos/TatsunaKyo/bloodborne_pc/releases/latest'
+RELEASES_PAGE = 'https://github.com/TatsunaKyo/bloodborne_pc/releases/latest'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'bbport-update'
 # Never copied over an installation by an update (the package does not hold them either).
-USER_FILES = ('user', 'out', 'mods', 'bbport.ini', 'mods.json', 'patches.json', 'last_run.log')
+USER_FILES = ('user', 'out', 'mods', 'bbport.ini', 'bbport.menu.ini', 'mods.json', 'patches.json', 'last_run.log')
 
 
 # ---------------------------------------------------------------------------------------------
@@ -167,13 +168,27 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
-                'player_name': '', 'fullscreen': False, 'hdr': False, 'present_mode': 'Mailbox',
+                'player_name': '', 'fullscreen': False, 'window_mode': '', 'hdr': False, 'present_mode': 'Mailbox',
                 'fps_mode': 'uncap', 'frame_cap': '', 'draw_pipe': '', 'readbacks': '',
                 'frames_ahead': '', 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'extra_env': '', 'close_on_play': False,
                 'check_updates': True, 'online': False, 'online_server': 'srv.shadps4.net:31313',
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
                 'online_community': COMMUNITY_SERVER}
+MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
+                 'dlss_preset': 'default', 'show_fps': '1'}
+MENU_FLAGS = {'borderless_vsync', 'show_fps'}
+DLSS_PRESETS = [('default', ('Default (driver)', 'По умолчанию (драйвер)')),
+                ('e', ('E (CNN / legacy)', 'E (CNN / устаревший)')),
+                ('f', ('F (CNN / legacy)', 'F (CNN / устаревший)')),
+                ('j', ('J (Transformer 1st gen)', 'J (Transformer 1-го пок.)')),
+                ('k', ('K (Transformer 1st gen)', 'K (Transformer 1-го пок.)')),
+                ('m', ('M (Transformer 2nd gen)', 'M (Transformer 2-го пок.)')),
+                ('l', ('L (Transformer 2nd gen)', 'L (Transformer 2-го пок.)'))]
+WINDOW_MODES = [('windowed', ('Windowed', 'Оконный')),
+                ('borderless', ('Borderless fullscreen', 'Без рамки на весь экран')),
+                ('fullscreen', ('Fullscreen (driver default)', 'Полный экран (настройка драйвера)'))]
+MENU_LANGUAGES = [('en', ('English',)), ('ru', ('Русский',))]
 
 UPSCALERS = [('dlss', ('DLSS (NVIDIA GeForce RTX)',)),
              ('fsr4', ('FSR 4 (best quality)', 'FSR 4 (лучшее качество)')),
@@ -239,6 +254,69 @@ def load_json(path, default):
 
 def ini_path():
     return Path(os.environ.get('BB_CONFIG', DATA_DIR / 'bbport.ini'))
+
+
+def menu_path():
+    return ini_path().with_suffix('.menu.ini')
+
+
+def load_menu():
+    values = dict(MENU_DEFAULTS)
+    # Preserve installations that kept their FPS counter preference in bbport.ini.
+    values['show_fps'] = load_ini()[0].get('show_fps', '1')
+    try:
+        lines = menu_path().read_text(encoding='utf-8').splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        if '=' in line and not line.lstrip().startswith('#'):
+            key, value = (part.strip() for part in line.split('=', 1))
+            if key in values:
+                values[key] = value
+    if values['menu_language'] not in ('en', 'ru'):
+        values['menu_language'] = 'en'
+    if values['window_mode'] not in ('launcher', 'windowed', 'borderless', 'fullscreen'):
+        values['window_mode'] = 'launcher'
+    for key in MENU_FLAGS:
+        values[key] = '1' if values[key] == '1' else '0'
+    preset = values['dlss_preset'].lower()
+    preset = dict(zip(('0', '5', '6', '10', '11', '12', '13'),
+                      ('default', 'e', 'f', 'j', 'k', 'l', 'm'))).get(preset, preset)
+    values['dlss_preset'] = preset if preset in dict(DLSS_PRESETS) else 'default'
+    return values
+
+
+def launcher_window_mode(settings):
+    mode = settings.get('window_mode')
+    return mode if mode in ('windowed', 'borderless', 'fullscreen') else \
+        'fullscreen' if settings.get('fullscreen') else 'windowed'
+
+
+def menu_values(settings):
+    values = load_menu()
+    if values['window_mode'] == 'launcher':
+        values['window_mode'] = launcher_window_mode(settings)
+    return values
+
+
+def save_menu(changes):
+    """Merge only edited controls into the current file; the game may have changed it."""
+    if not changes:
+        return
+    try:
+        lines = menu_path().read_text(encoding='utf-8').splitlines()
+    except OSError:
+        lines = []
+    written, output = set(), []
+    for line in lines:
+        key = line.split('=', 1)[0].strip() if '=' in line and not line.lstrip().startswith('#') else None
+        if key in changes:
+            output.append(f'{key}={changes[key]}')
+            written.add(key)
+        else:
+            output.append(line)
+    output += [f'{key}={value}' for key, value in changes.items() if key not in written]
+    menu_path().write_text('\n'.join(output) + '\n', encoding='utf-8')
 
 
 def load_ini():
@@ -348,6 +426,7 @@ def game_environment(s):
     if str(s['player_name']).strip():
         env['BB_USER_NAME'] = str(s['player_name']).strip()
     env['BB_FULLSCREEN'] = '1' if s['fullscreen'] else '0'
+    env['BB_LAUNCHER_WINDOW_MODE'] = launcher_window_mode(s)
     env['BB_PRESENT_MODE'] = s['present_mode']
     if s['hdr']:
         env['BB_HDR'] = '1'
@@ -392,6 +471,8 @@ class Launcher:
         self.root = root
         self.app = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
         self.ini, self.ini_lines = load_ini()
+        self.menu = menu_values(self.app)
+        self.menu_baseline = dict(self.menu)
         self.vars = {}
         self.process = self.job = None
         self.downloading = False
@@ -400,7 +481,7 @@ class Launcher:
         self.banner_source = self.banner_image = None
         self.ui_calls = queue.Queue()  # work for the Tk thread from helper threads
         self.mod_order, self.mod_vars, self.patch_vars = [], {}, {}
-        root.title('Bloodborne — bbport')
+        root.title(f'Bloodborne — bbport [{LAUNCHER_BUILD}]')
         root.configure(bg=BG)
         self.dpi = root.winfo_fpixels('1i') / 96.0
         root.geometry(f'{self.px(1120)}x{self.px(740)}')
@@ -510,6 +591,9 @@ class Launcher:
                     v = tk.DoubleVar(value=float(value or 0.5))
                 else:
                     v = tk.StringVar(value=value)
+            elif store == 'menu':
+                value = self.menu.get(key, MENU_DEFAULTS[key])
+                v = tk.BooleanVar(value=value == '1') if key in MENU_FLAGS else tk.StringVar(value=value)
             else:
                 value = self.app.get(key, APP_DEFAULTS[key])
                 if isinstance(APP_DEFAULTS[key], bool):
@@ -538,6 +622,13 @@ class Launcher:
 
     def next_row(self, parent):
         return parent.grid_size()[1]
+
+    def dlss_preset_choice(self, parent, width=38):
+        box = self.choice(parent, 'dlss_preset', 'menu', DLSS_PRESETS, width)
+        if not hasattr(self, 'dlss_preset_choices'):
+            self.dlss_preset_choices = []
+        self.dlss_preset_choices.append(box)
+        return box
 
     def row(self, parent, title, widget, hint=None):
         ttk = self.ttk
@@ -616,6 +707,8 @@ class Launcher:
         tk.Label(side, text=_('by Super Medo'), bg=BG, fg=TEXT, font=('Segoe UI', 10)).pack(anchor='w', padx=22)
         tk.Label(side, text=_('native port · Windows', 'нативный порт · Windows') + f'  ·  v{VERSION}' + ('\n' + _('co-op test build') if COOP_TEST else ''), bg=BG, fg=MUTED, justify='left',
                  font=('Segoe UI', 9)).pack(anchor='w', padx=22, pady=(0, 20))
+        tk.Label(side, text=LAUNCHER_BUILD, bg=BG, fg=GOLD,
+                 font=('Segoe UI', 9)).pack(anchor='w', padx=22, pady=(0, 10))
         self.nav, self.current_page = {}, None
         for name, title in (('play', _('Play', 'Играть')), ('graphics', _('Graphics', 'Графика')),
                             ('display', _('Display & FPS', 'Экран и FPS')), ('game', _('Game & effects', 'Игра и эффекты')),
@@ -709,9 +802,13 @@ class Launcher:
         self.row(quick, _('Frame rate', 'Частота кадров'), self.choice(quick, 'fps_mode', 'app', FPS_MODES, 26))
         self.row(quick, _('Upscaler', 'Апскейлер'), self.choice(quick, 'upscaler', 'ini', UPSCALERS, 26))
         self.row(quick, _('Preset', 'Пресет'), self.choice(quick, 'preset', 'ini', PRESETS, 26))
+        self.row(quick, _('DLSS preset', 'Пресет DLSS'), self.dlss_preset_choice(quick, 26),
+                 _('Used when the upscaler is DLSS.', 'Используется при выборе DLSS.'))
         self.row(quick, _('Output', 'Разрешение'), self.choice(quick, 'output_res', 'ini', OUTPUTS, 26))
-        ttk.Checkbutton(quick, text=_('Fullscreen', 'Полный экран'), variable=self.var('fullscreen', 'app')).grid(
-            row=self.next_row(quick), column=1, sticky='w', pady=(8, 0))
+        self.row(quick, _('Window mode', 'Режим окна'), self.choice(quick, 'window_mode', 'menu', WINDOW_MODES, 26))
+        ttk.Checkbutton(quick, text=_('Show performance overlay', 'Показывать статистику'),
+                        variable=self.var('show_fps', 'menu')).grid(
+            row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
         ttk.Checkbutton(quick, text=_('Play online'), variable=self.var('online', 'app')).grid(
             row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
         ttk.Button(quick, text=_('Add to Steam'), command=self.add_to_steam).grid(
@@ -775,6 +872,13 @@ class Launcher:
         self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
                  _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
                    'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'))
+        self.row(f, _('DLSS render preset', 'Пресет модели DLSS'), self.dlss_preset_choice(f),
+                 _('Used when the upscaler is DLSS. Model hint, separate from render scale. '
+                   'In-game changes apply on the next frame. '
+                   'E/F are legacy; driver/profile overrides may supersede this choice.',
+                   'Используется при выборе DLSS. Модель отдельно от масштаба. '
+                   'Изменения в игре применяются на следующем кадре. '
+                   'E/F устарели; драйвер или профиль может переопределить выбор.'))
         self.row(f, _('Output resolution', 'Разрешение вывода'), self.choice(f, 'output_res', 'ini', OUTPUTS),
                  _('What the upscaler produces; the HUD is drawn at this size too.',
                    'Что выдаёт апскейлер; интерфейс рисуется в этом же размере.'))
@@ -812,13 +916,17 @@ class Launcher:
         self.section(f, _('Detail', 'Детализация'))
         self.row(f, _('Model detail (LOD)', 'Детализация моделей'), self.choice(f, 'model_lod', 'ini', LODS),
                  _('A game patch (game version 1.09).', 'Патч игры (версия 1.09).'))
-        self.check(f, 'show_fps', 'ini', _('Show the FPS counter', 'Показывать FPS'))
+        self.check(f, 'show_fps', 'menu', _('Show performance overlay', 'Показывать статистику'))
 
     def build_display(self):
         ttk = self.ttk
         f = self.scrolled_page('display', _('Display & FPS', 'Экран и FPS'),
                                _('Applied when the game starts.', 'Применяется при запуске игры.'))
         self.version_warning(f)
+        self.section(f, _('Performance overlay', 'Статистика'), top=4)
+        self.check(f, 'show_fps', 'menu', _('Show performance overlay', 'Показывать статистику'),
+                   _('FPS, frame time, upscaler and active DLSS preset in the top-right corner.',
+                     'FPS, время кадра, апскейлер и активный пресет DLSS в правом верхнем углу.'))
         self.section(f, _('Frame rate', 'Частота кадров'), top=4)
         self.row(f, _('Frame rate', 'Режим'), self.choice(f, 'fps_mode', 'app', FPS_MODES),
                  _("Community patches for game version 1.09. Unlocked makes the game use the real frame time. "
@@ -835,11 +943,44 @@ class Launcher:
                  _('1 keeps frame pacing even; more can raise FPS when the graphics card is the limit.',
                    '1 — ровная подача кадров; больше может поднять FPS, если упирается в видеокарту.'))
         self.section(f, _('Window', 'Окно'))
-        self.check(f, 'fullscreen', 'app', _('Fullscreen', 'Полноэкранный режим'))
-        self.row(f, _('Presentation', 'Режим показа кадров'), self.choice(f, 'present_mode', 'app', PRESENT_MODES))
+        self.row(f, _('Window mode', 'Режим окна'), self.choice(f, 'window_mode', 'menu', WINDOW_MODES),
+                 _('Borderless uses the desktop resolution and refresh rate, with fast Alt-Tab.',
+                   'Режим без рамки использует разрешение и частоту рабочего стола, с быстрым Alt-Tab.'))
+        self.borderless_vsync_check = ttk.Checkbutton(f,
+            text=_('V-sync in borderless', 'V-sync без рамки'), variable=self.var('borderless_vsync', 'menu'))
+        self.borderless_vsync_check.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(4, 0))
+        self.note(f, _('Off: lowest presentation queueing (Immediate; tearing is possible). '
+                       'On: Mailbox without tearing, or FIFO if unavailable.',
+                       'Выкл.: минимальная очередь (Immediate; возможны разрывы). '
+                       'Вкл.: Mailbox без разрывов, либо FIFO.'), top=4)
+        self.presentation_choice = self.choice(f, 'present_mode', 'app', PRESENT_MODES)
+        self.row(f, _('Presentation', 'Режим показа кадров'), self.presentation_choice,
+                 _('Used in windowed/fullscreen modes. Borderless uses the V-sync option above.',
+                   'Для оконного и полноэкранного режимов. Без рамки используется V-sync выше.'))
+        self.vars['window_mode'].trace_add('write', lambda *_a: self.update_window_controls())
+        self.update_window_controls()
         self.check(f, 'hdr', 'app', _('Allow HDR output', 'Разрешить HDR'),
                    _('When HDR is on in Windows and the display supports it.',
                      'Если HDR включён в Windows и монитор его поддерживает.'))
+        self.row(f, _('In-game menu language', 'Язык внутриигрового меню'),
+                 self.choice(f, 'menu_language', 'menu', MENU_LANGUAGES),
+                 _('Language of the R3+L3 / Insert settings menu.', 'Язык меню настроек R3+L3 / Insert.'))
+
+    def update_window_controls(self):
+        borderless = self.var('window_mode', 'menu').get() == 'borderless'
+        self.borderless_vsync_check.configure(state='normal' if borderless else 'disabled')
+        self.presentation_choice.configure(state='disabled' if borderless else 'readonly')
+
+    def refresh_menu_settings(self):
+        latest = menu_values(self.app)
+        for key, value in latest.items():
+            var = self.vars.get(key)
+            current = ('1' if var.get() else '0') if var is not None and key in MENU_FLAGS else \
+                str(var.get()) if var is not None else self.menu_baseline[key]
+            if current == self.menu_baseline[key]:
+                self.menu[key] = self.menu_baseline[key] = value
+                if var is not None:
+                    var.set(value == '1' if key in MENU_FLAGS else value)
 
     def build_game(self):
         f = self.scrolled_page('game', _('Game & effects', 'Игра и эффекты'),
@@ -1189,17 +1330,30 @@ class Launcher:
             self.refresh_lists()
 
     def collect(self):
-        """Writes settings.json, bbport.ini, mods.json and patches.json."""
+        """Writes launcher, renderer, overlay, mod and patch settings."""
+        self.refresh_menu_settings()
+        menu_changes = {}
         for key, var in self.vars.items():
             try:
                 value = var.get()
             except self.tk.TclError:  # an unfinished number in a spinbox
-                value = APP_DEFAULTS.get(key, INI_DEFAULTS.get(key))
+                value = (MENU_DEFAULTS[key] == '1' if key in MENU_FLAGS else MENU_DEFAULTS[key]) \
+                    if var.store == 'menu' else APP_DEFAULTS.get(key, INI_DEFAULTS.get(key))
             if var.store == 'ini':
                 self.ini[key] = ('1' if value else '0') if key in INI_FLAGS else \
                     f'{float(value):.2f}' if key == 'sharpness' else str(value)
+            elif var.store == 'menu':
+                value = ('1' if value else '0') if key in MENU_FLAGS else str(value)
+                if value != self.menu_baseline[key]:
+                    menu_changes[key] = value
+                self.menu[key] = value
             else:
                 self.app[key] = value
+        save_menu(menu_changes)
+        self.menu_baseline = dict(self.menu)
+        self.app['window_mode'] = self.menu['window_mode']
+        self.app['fullscreen'] = self.menu['window_mode'] != 'windowed'
+        self.ini['show_fps'] = self.menu['show_fps']
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         CONFIG_FILE.write_text(json.dumps(self.app, indent=2, ensure_ascii=False), encoding='utf-8')
         save_ini({key: self.ini[key] for key in INI_DEFAULTS}, self.ini_lines)
@@ -1288,6 +1442,7 @@ class Launcher:
                     if self.job:
                         self.job.close()
                     self.stop_button.configure(state='disabled')
+                    self.refresh_menu_settings()
                     self.refresh_status()
                 else:
                     if 'Entering original x86-64 code' in item:
@@ -1552,14 +1707,18 @@ def version_tuple(text):
 
 
 def latest_release():
-    """(version, zip URL, page URL) of the newest GitHub release."""
+    """(version, Windows package URL, page URL) of this fork's latest revision."""
     request = urllib.request.Request(RELEASES_API, headers={'Accept': 'application/vnd.github+json',
                                                             'User-Agent': 'bbport-launcher'})
     with urllib.request.urlopen(request, timeout=15) as response:
         release = json.load(response)
-    version = '.'.join(re.findall(r'\d+', release['tag_name']))
+    tag = re.fullmatch(r'windows-v(\d+(?:\.\d+)*)-tatsunakyo\.(\d+)', release['tag_name'])
+    if not tag:
+        raise ValueError('The latest release is not a TatsunaKyo Windows revision.')
+    version = f'{tag[1]}-tatsunakyo.{tag[2]}'
+    package_name = f'Bloodborne-Windows-v{tag[1]}-TatsunaKyo-Revision-{tag[2]}.zip'
     url = next((asset['browser_download_url'] for asset in release.get('assets', [])
-                if asset.get('name', '').lower().endswith('.zip')), None)
+                if asset.get('name', '') == package_name), None)
     return version, url, release.get('html_url') or RELEASES_PAGE
 
 

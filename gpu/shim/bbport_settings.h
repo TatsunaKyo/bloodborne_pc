@@ -6,6 +6,7 @@
 #pragma once
 
 #include <atomic>
+#include <string_view>
 
 namespace BbSettings {
 
@@ -17,35 +18,42 @@ inline bool IsFsr4(int upscaler) {
 }
 enum Preset : int { NativeAA = 0, Quality, Balanced, Performance, UltraPerformance, PresetCount };
 enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugViewCount };
+enum MenuLanguage : int { MenuEnglish = 0, MenuRussian, MenuLanguageCount };
+enum WindowMode : int { WindowFromLauncher = -1, Windowed = 0, Borderless, Fullscreen };
+// NVIDIA NGX render-preset hints, separate from the upscaling quality/scene size.
+// Removed and reserved presets are deliberately excluded.
+inline constexpr int DlssPresetValues[] = {0, 5, 6, 10, 11, 13, 12};
+inline constexpr int DlssPresetCount = 7;
 
 /// Game effects switched by the community patches at start (patches.py EFFECTS): ini key,
-/// menu label, default (the game's own behaviour).
+/// Russian and English menu labels, default (the game's own behaviour).
 struct Effect {
     const char* key;
     const char* label;
+    const char* label_en;
     bool default_on;
 };
 inline constexpr Effect Effects[] = {
-    {"effect_chromatic_aberration", "Хроматическая аберрация", true},
-    {"effect_dof", "Глубина резкости (DoF)", true},
-    {"effect_motion_blur", "Размытие в движении", true},
-    {"effect_ssao", "Затенение SSAO", true},
-    {"effect_game_aa", "Собственное сглаживание игры", true},
-    {"effect_dynamic_shadows", "Тени от динамических источников", true},
-    {"effect_ssr", "Отражения SSR (не было в игре)", false},
-    {"skip_intro", "Пропуск заставок при запуске", false},
-    {"debug_camera", "Свободная камера (Cross + L3)", false},
-    {"debug_menu", "Debug menu (нужны файлы шрифтов)", false},
-    {"cheat_no_death", "Чит: бессмертие (не ниже 1 HP)", false},
-    {"cheat_stealth", "Чит: враги не замечают", false},
-    {"cheat_silent", "Чит: враги не слышат", false},
-    {"cheat_rally_no_decay", "Чит: Rally не угасает", false},
-    {"cheat_enemy_control", "Чит: управление врагом (R3 / L3)", false},
-    {"tweak_no_rally", "Без Rally (возврата HP)", false},
-    {"tweak_camera_distance", "Камера дальше", false},
-    {"tweak_no_camera_rotation", "Без автоповорота камеры", false},
-    {"tweak_easy_run", "Бег с меньшим наклоном стика", false},
-    {"tweak_ragdoll", "Физика тел как в Dark Souls", false},
+    {"effect_chromatic_aberration", "Хроматическая аберрация", "Chromatic aberration", true},
+    {"effect_dof", "Глубина резкости (DoF)", "Depth of field (DoF)", true},
+    {"effect_motion_blur", "Размытие в движении", "Motion blur", true},
+    {"effect_ssao", "Затенение SSAO", "SSAO", true},
+    {"effect_game_aa", "Собственное сглаживание игры", "Game's own anti-aliasing", true},
+    {"effect_dynamic_shadows", "Тени от динамических источников", "Dynamic light shadows", true},
+    {"effect_ssr", "Отражения SSR (не было в игре)", "SSR reflections (not in the original game)", false},
+    {"skip_intro", "Пропуск заставок при запуске", "Skip startup intros", false},
+    {"debug_camera", "Свободная камера (Cross + L3)", "Free camera (Cross + L3)", false},
+    {"debug_menu", "Debug menu (нужны файлы шрифтов)", "Debug menu (requires font files)", false},
+    {"cheat_no_death", "Чит: бессмертие (не ниже 1 HP)", "Cheat: never die (at least 1 HP)", false},
+    {"cheat_stealth", "Чит: враги не замечают", "Cheat: enemies cannot see you", false},
+    {"cheat_silent", "Чит: враги не слышат", "Cheat: enemies cannot hear you", false},
+    {"cheat_rally_no_decay", "Чит: Rally не угасает", "Cheat: Rally never fades", false},
+    {"cheat_enemy_control", "Чит: управление врагом (R3 / L3)", "Cheat: control an enemy (R3 / L3)", false},
+    {"tweak_no_rally", "Без Rally (возврата HP)", "Disable Rally (HP recovery)", false},
+    {"tweak_camera_distance", "Камера дальше", "Increase camera distance", false},
+    {"tweak_no_camera_rotation", "Без автоповорота камеры", "Disable automatic camera rotation", false},
+    {"tweak_easy_run", "Бег с меньшим наклоном стика", "Run with less stick tilt", false},
+    {"tweak_ragdoll", "Физика тел как в Dark Souls", "Dark Souls-style ragdoll physics", false},
 };
 inline constexpr int EffectCount = int(sizeof(Effects) / sizeof(Effects[0]));
 /// Live output resolutions: the upscaler's output and the UI host targets.
@@ -57,6 +65,10 @@ inline constexpr int OutputDefault = 1; ///< 1920x1080, the game's own size
 struct Values {
     std::atomic<int> upscaler{UpscalerFsr3};
     std::atomic<int> preset{NativeAA};
+    std::atomic<int> dlss_preset{0};
+    // Preset requested by the current successfully created NGX feature, -1 before creation.
+    // Driver/profile overrides may still determine the actual NVIDIA model.
+    std::atomic<int> dlss_active_preset{-1};
     std::atomic<bool> sharpen{true};
     std::atomic<float> sharpness{0.3f};
     std::atomic<bool> jitter{true};
@@ -67,6 +79,11 @@ struct Values {
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
     std::atomic<bool> show_fps{false};
+    /// The port's overlay language, kept separately in bbport.menu.ini beside bbport.ini.
+    std::atomic<int> menu_language{MenuEnglish};
+    /// -1 follows BB_FULLSCREEN; explicit choices survive launcher config rewrites.
+    std::atomic<int> window_mode{WindowFromLauncher};
+    std::atomic<bool> borderless_vsync{false};
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};
@@ -113,6 +130,9 @@ void Save();
 /// Render resolution divisor of a preset (1.0 native, 1.5 quality, ...).
 float PresetScale(int preset);
 const char* PresetName(int preset);
+int ParseDlssPreset(std::string_view value);
+const char* DlssPresetKey(int preset);
+const char* DlssPresetName(int preset);
 const char* UpscalerName(int upscaler);
 
 } // namespace BbSettings

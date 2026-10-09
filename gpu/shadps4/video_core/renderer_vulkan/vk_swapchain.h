@@ -91,6 +91,7 @@ public:
     bool GetHDR() const {
         return needs_hdr;
     }
+    bool WindowPolicyChanged() const;
 
 private:
     /// Selects the best available swapchain image format
@@ -134,6 +135,8 @@ private:
     bool needs_recreation = true;
     bool needs_hdr = false;    // The game requested HDR swapchain
     bool supports_hdr = false; // SC supports HDR output
+    int window_mode = -1;
+    bool borderless_vsync = false;
 };
 
 } // namespace Vulkan

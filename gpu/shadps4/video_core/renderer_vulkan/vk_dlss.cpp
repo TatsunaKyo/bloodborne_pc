@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "video_core/renderer_vulkan/vk_dlss.h"
+#include "bbport_settings.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -203,14 +204,16 @@ bool Dlss::CreateFeature(vk::CommandBuffer command, const FeatureDesc& desc) {
     if (!impl->available) {
         return false;
     }
+    BbSettings::Get().dlss_active_preset = -1;
     impl->feature.reset();
     const BbDlssFeature feature{desc.input_width,  desc.input_height, desc.output_width,
                                 desc.output_height, desc.quality,      0,
-                                0,                  desc.hdr ? 1 : 0};
+                                desc.render_preset,  desc.hdr ? 1 : 0};
     if (!impl->api->CreateFeature(command, &feature)) {
         return false;
     }
     impl->feature = desc;
+    BbSettings::Get().dlss_active_preset = int(desc.render_preset);
     return true;
 }
 
@@ -234,6 +237,7 @@ bool Dlss::Evaluate(vk::CommandBuffer command, const Frame& frame) {
 }
 
 void Dlss::ReleaseFeature() {
+    BbSettings::Get().dlss_active_preset = -1;
     impl->feature.reset();
     if (impl->api) {
         impl->api->ReleaseFeature();
@@ -241,6 +245,7 @@ void Dlss::ReleaseFeature() {
 }
 
 void Dlss::Shutdown() {
+    BbSettings::Get().dlss_active_preset = -1;
     impl->available = false;
     impl->feature.reset();
     if (impl->api && impl->initialized) {

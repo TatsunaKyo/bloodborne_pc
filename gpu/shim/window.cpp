@@ -6,6 +6,7 @@
 #include "common/logging/log.h"
 #include "sdl_window.h"
 #include "bbport_overlay.h"
+#include "bbport_settings.h"
 
 namespace Frontend {
 
@@ -23,7 +24,20 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true);
     const char* fullscreen = std::getenv("BB_FULLSCREEN");
-    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, fullscreen && fullscreen[0] == '1');
+    launcher_window_mode = fullscreen && fullscreen[0] == '1'
+        ? BbSettings::Fullscreen : BbSettings::Windowed;
+    if (const char* mode = std::getenv("BB_LAUNCHER_WINDOW_MODE")) {
+        if (std::strcmp(mode, "windowed") == 0) launcher_window_mode = BbSettings::Windowed;
+        else if (std::strcmp(mode, "borderless") == 0) launcher_window_mode = BbSettings::Borderless;
+        else if (std::strcmp(mode, "fullscreen") == 0) launcher_window_mode = BbSettings::Fullscreen;
+    }
+    const int requested = BbSettings::Get().window_mode;
+    window_mode = requested == BbSettings::WindowFromLauncher ? launcher_window_mode : requested;
+    // Desktop fullscreen keeps the monitor's current resolution and refresh rate.
+    SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS,
+                window_mode == BbSettings::Borderless ? "0" : "1");
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN,
+                           window_mode != BbSettings::Windowed);
     base_title = title;
     window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
@@ -59,6 +73,28 @@ WindowSDL::~WindowSDL() {
     SDL_DestroyWindow(window);
 }
 
+void WindowSDL::ApplyWindowMode() {
+    const int requested = BbSettings::Get().window_mode;
+    const int mode = requested == BbSettings::WindowFromLauncher ? launcher_window_mode : requested;
+    if (mode == window_mode) return;
+    SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS,
+                mode == BbSettings::Borderless ? "0" : "1");
+    // All SDL window mutations run on the event thread, never on the renderer thread.
+    if (!SDL_SetWindowFullscreenMode(window, nullptr) ||
+        !SDL_SetWindowFullscreen(window, mode != BbSettings::Windowed)) {
+        LOG_ERROR(Frontend, "Cannot change window mode: {}", SDL_GetError());
+        SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS,
+                    window_mode == BbSettings::Borderless ? "0" : "1");
+        BbSettings::Get().window_mode = window_mode.load();
+        return;
+    }
+    window_mode = mode;
+    int w = 0, h = 0;
+    SDL_GetWindowSizeInPixels(window, &w, &h);
+    width = w;
+    height = h;
+}
+
 void WindowSDL::BeginTextInput(const std::string& initial, const std::string& prompt) {
     std::scoped_lock lock{text_mutex};
     text = initial;
@@ -81,6 +117,7 @@ void WindowSDL::UpdateTextTitle() {
 }
 
 bool WindowSDL::PollEvents() {
+    ApplyWindowMode();
     {
         std::scoped_lock lock{text_mutex};
         if (text_requested) { // SDL text input must be toggled from the window thread

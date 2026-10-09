@@ -1,12 +1,18 @@
-# Bloodborne for Windows
+# Bloodborne for Windows — TatsunaKyo revision
 
-**Bloodborne running natively on Windows 10 and 11, by [Supermedo](https://github.com/Supermedo) Mohammed Albarghouthi.**
+**Revision maintained by [TatsunaKyo](https://github.com/TatsunaKyo), based on the
+Windows v1.6 port by [Supermedo](https://github.com/Supermedo) Mohammed Albarghouthi.**
+
+This fork adds English in-game settings, borderless fullscreen, DLSS render preset
+selection and controls for the performance overlay. See the
+[revision 1 release notes](docs/releases/windows-v1.6-tatsunakyo.1.md) for the changes
+and [release guide](docs/releasing.md) for versioning and packaging.
 
 The original PlayStation 4 game runs directly on your PC: its own x86-64 code runs natively,
 and the graphics are translated to Vulkan. No emulator window, no setup scripts: unpack the zip,
 start `Bloodborne.exe`, pick your game folder and press **PLAY**.
 
-**[Download the latest version](https://github.com/Supermedo/bloodborne_pc/releases/latest)** · **[Join the Discord](https://discord.gg/yTMG8c4Bqm)**
+**[Download this revision](https://github.com/TatsunaKyo/bloodborne_pc/releases)** · **[Original Windows port](https://github.com/Supermedo/bloodborne_pc)** · **[Upstream community Discord](https://discord.gg/yTMG8c4Bqm)**
 
 > **No game files are included.** You need your own decrypted dump of Bloodborne
 > (CUSA03173). Version 1.09 is needed for the community patches (60/90/unlocked FPS,
@@ -21,7 +27,8 @@ start `Bloodborne.exe`, pick your game folder and press **PLAY**.
 - **Launcher with every setting in one window**, in 13 languages: English, Arabic, Russian,
   Spanish, Portuguese, French, German, Italian, Polish, Turkish, Chinese, Japanese, Korean.
 - **Updates from the launcher:** when a new version is out it tells you, and **Update**
-  installs it. Your saves, settings and mods are kept.
+  installs it. This revision checks releases from TatsunaKyo's fork and accepts only
+  its Windows revision packages. Your saves, settings and mods are kept.
 - **NVIDIA DLSS** on GeForce RTX cards (RTX 20 series and newer).
 - **AMD FSR 3.1 and FSR 4** upscaling, plus native-resolution TAA.
 - **Unlocked frame rate** with a frame cap (up to 120 by default), or 30/60/90 FPS.
@@ -49,13 +56,53 @@ Nothing else to install: everything the game needs is in the zip.
 
 ## How to play
 
-1. Download the zip from [Releases](https://github.com/Supermedo/bloodborne_pc/releases/latest)
+1. Download the zip from [Releases](https://github.com/TatsunaKyo/bloodborne_pc/releases)
    and unpack it anywhere.
 2. Start `Bloodborne.exe`.
 3. On **Game & effects**, choose your game folder (the one with `eboot.bin`).
 4. Press **PLAY**.
 
 In the game, **Insert** (or **L3+R3** on a controller) opens the settings menu.
+The in-game menu defaults to English. Its **Menu language** selector switches between
+English and Russian immediately; the choice is saved in `bbport.menu.ini` as `menu_language=en`
+or `menu_language=ru`. This setting is independent of the launcher and game languages.
+The same menu's **Window mode** selector changes the window immediately. **Borderless
+fullscreen (low latency)** uses the current monitor's desktop resolution and refresh rate,
+with no display mode switch or automatic minimization on focus loss. On Windows, it requests
+non-disruptive Vulkan presentation through `VK_EXT_full_screen_exclusive` when the driver
+supports it. An opaque, desktop-sized swapchain allows Windows/driver independent flip;
+the actual presentation path and latency depend on the system and should be measured there.
+Borderless defaults to **Immediate** presentation (no V-sync wait or presentation queue;
+tearing is possible). **V-sync in borderless** selects Mailbox, with FIFO as the compatibility
+fallback. Without Immediate support the low latency mode also tries Mailbox before FIFO.
+The renderer's existing one-frame GPU queue limit is retained (`BB_FRAMES_AHEAD` overrides it).
+The launcher's **Play** page also has a **Window mode** selector for Windowed,
+Borderless fullscreen and Fullscreen (driver default). **Display & FPS** includes the same
+selector, **V-sync in borderless** and **In-game menu language**. These controls share
+`bbport.menu.ini` with the in-game menu; saving launcher settings preserves changes made
+during the game. **Launcher setting** in-game uses the launcher's saved window mode.
+Existing launcher preferences with only a fullscreen checkbox are migrated automatically.
+`BB_WINDOW_MODE=windowed|borderless|fullscreen|launcher` overrides the saved choice at startup.
+
+**DLSS render preset** is available in the launcher's Play and Graphics pages and in the
+R3+L3 / Insert menu when DLSS is selected. Choose Default (driver), E/F (CNN / legacy),
+J/K (Transformer 1st gen) or M/L (Transformer 2nd gen). The launcher selector is always
+available, so a DLSS preset can be saved while another upscaler is selected; it takes
+effect when using DLSS.
+This is separate from the Quality/Balanced/Performance setting and does not change render
+resolution. In-game changes wait for submitted GPU work and recreate the DLSS feature on
+the next frame, without restarting the game. Removed and reserved NVIDIA preset values
+are excluded. `BB_DLSS_PRESET=default|e|f|j|k|l|m` overrides the saved hint at startup.
+
+**Show performance overlay** in Play, Graphics, Display & FPS and near the top of the
+in-game menu controls the top-right OSD. Hiding it leaves the settings menu accessible.
+With DLSS enabled, the OSD displays the preset requested by the currently created NGX
+feature, and a pending request if the selection has changed. NVIDIA driver/profile
+overrides may choose a different internal model; this readout confirms the application's
+accepted feature configuration, rather than independently identifying NVIDIA's model.
+Both preferences share `bbport.menu.ini`, so cached launcher writes do not undo changes
+made in-game. Existing `show_fps` settings in `bbport.ini` are migrated automatically.
+
 Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle,
 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab touchpad.
 
@@ -83,8 +130,11 @@ put its address in **Server address**.
 
 ## Problems and feedback
 
-Ask on the [Discord server](https://discord.gg/yTMG8c4Bqm), or open an [issue](https://github.com/Supermedo/bloodborne_pc/issues) and attach
-`user\last_run.log` from the game folder, with your graphics card and what happened.
+When reporting a problem with this revision, include `user\last_run.log` from the game
+folder, your graphics card, driver version and the steps that trigger it. The
+[upstream community Discord](https://discord.gg/yTMG8c4Bqm) is maintained by the original
+project; check whether the problem also occurs in the original Windows v1.6 build
+before reporting it upstream.
 If the game shows only a black screen, try **Advanced → Clear shader cache** first.
 
 ## Building from source
@@ -94,6 +144,10 @@ then `bash packaging/windows/package.sh`. DLSS is built separately with
 `packaging/windows/build_dlss.sh`.
 
 ## Credits
+
+This revision is maintained by [TatsunaKyo](https://github.com/TatsunaKyo). The Windows
+port and original launcher are by [Supermedo](https://github.com/Supermedo) Mohammed
+Albarghouthi. The upstream history, copyright notices and licenses are retained.
 
 Built on [bbport](https://github.com/deadinside28/bloodborne_pc), the native Linux port of
 Bloodborne by deadinside28, and on the [shadPS4](https://github.com/shadps4-emu/shadPS4)

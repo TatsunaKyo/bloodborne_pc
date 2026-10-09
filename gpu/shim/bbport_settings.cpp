@@ -2,9 +2,11 @@
 #include "bbport_settings.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -15,6 +17,11 @@ namespace {
 const char* Path() {
     const char* env = std::getenv("BB_CONFIG");
     return env && env[0] ? env : "bbport.ini";
+}
+
+std::string MenuPath() {
+    // Shared launcher/overlay preferences survive cached bbport.ini rewrites.
+    return std::filesystem::path{Path()}.replace_extension(".menu.ini").string();
 }
 
 float Clamp(float v, float lo, float hi) {
@@ -84,6 +91,12 @@ Values& Get() {
 
 void Load() {
     auto& v = Get();
+    // Existing installations and unknown language codes use the English overlay.
+    v.menu_language = MenuEnglish;
+    v.window_mode = WindowFromLauncher;
+    v.borderless_vsync = false;
+    v.dlss_preset = 0;
+    v.show_fps = false;
     for (int e = 0; e < EffectCount; ++e) {
         v.effects[e] = Effects[e].default_on;
     }
@@ -101,7 +114,40 @@ void Load() {
         std::fclose(file);
         std::printf("Settings: %s\n", Path());
     }
+    if (FILE* file = std::fopen(MenuPath().c_str(), "r")) {
+        char line[256];
+        while (std::fgets(line, sizeof(line), file)) {
+            std::string text{line};
+            text.erase(text.find_last_not_of(" \t\r\n") + 1);
+            const auto eq = text.find('=');
+            if (eq == std::string::npos) continue;
+            const auto key = text.substr(0, eq), value = text.substr(eq + 1);
+            if (key == "menu_language") {
+                v.menu_language = value == "ru" ? MenuRussian : MenuEnglish;
+            } else if (key == "window_mode") {
+                if (value == "windowed") v.window_mode = Windowed;
+                else if (value == "borderless") v.window_mode = Borderless;
+                else if (value == "fullscreen") v.window_mode = Fullscreen;
+            } else if (key == "borderless_vsync") {
+                v.borderless_vsync = value == "1";
+            } else if (key == "dlss_preset") {
+                v.dlss_preset = ParseDlssPreset(value);
+            } else if (key == "show_fps") {
+                v.show_fps = value == "1";
+            }
+        }
+        std::fclose(file);
+    }
     // Environment overrides (scripts, A/B tests).
+    if (const char* env = std::getenv("BB_DLSS_PRESET")) {
+        v.dlss_preset = ParseDlssPreset(env);
+    }
+    if (const char* env = std::getenv("BB_WINDOW_MODE")) {
+        if (std::strcmp(env, "windowed") == 0) v.window_mode = Windowed;
+        else if (std::strcmp(env, "borderless") == 0) v.window_mode = Borderless;
+        else if (std::strcmp(env, "fullscreen") == 0) v.window_mode = Fullscreen;
+        else if (std::strcmp(env, "launcher") == 0) v.window_mode = WindowFromLauncher;
+    }
     if (const char* env = std::getenv("BB_UPSCALER")) {
         v.upscaler = UpscalerOff;
         for (int u = 0; u < UpscalerCount; ++u) {
@@ -179,6 +225,19 @@ bool ResolutionNeedsRestart() {
 
 void Save() {
     const auto& v = Get();
+    const std::string menu_path = MenuPath();
+    if (FILE* file = std::fopen(menu_path.c_str(), "w")) {
+        std::fprintf(file, "menu_language=%s\n", v.menu_language == MenuRussian ? "ru" : "en");
+        const char* modes[] = {"launcher", "windowed", "borderless", "fullscreen"};
+        std::fprintf(file, "window_mode=%s\nborderless_vsync=%d\n",
+                     modes[std::clamp(v.window_mode.load(), -1, 2) + 1],
+                     int(v.borderless_vsync.load()));
+        std::fprintf(file, "dlss_preset=%s\nshow_fps=%d\n", DlssPresetKey(v.dlss_preset),
+                     int(v.show_fps.load()));
+        std::fclose(file);
+    } else {
+        std::printf("Settings: cannot write %s\n", menu_path.c_str());
+    }
     FILE* file = std::fopen(Path(), "w");
     if (!file) {
         std::printf("Settings: cannot write %s\n", Path());
@@ -205,6 +264,33 @@ void Save() {
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");
     std::fclose(file);
+}
+
+int ParseDlssPreset(std::string_view value) {
+    std::string key{value};
+    std::ranges::transform(key, key.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    for (int preset : DlssPresetValues) {
+        if (key == DlssPresetKey(preset) || key == std::to_string(preset)) return preset;
+    }
+    return 0;
+}
+
+const char* DlssPresetKey(int preset) {
+    static constexpr const char* keys[] = {"default", "e", "f", "j", "k", "m", "l"};
+    for (int i = 0; i < DlssPresetCount; ++i) {
+        if (preset == DlssPresetValues[i]) return keys[i];
+    }
+    return keys[0];
+}
+
+const char* DlssPresetName(int preset) {
+    static constexpr const char* names[] = {"Default (driver)", "E (CNN / legacy)", "F (CNN / legacy)",
+                                          "J (Transformer 1st gen)", "K (Transformer 1st gen)",
+                                          "M (Transformer 2nd gen)", "L (Transformer 2nd gen)"};
+    for (int i = 0; i < DlssPresetCount; ++i) {
+        if (preset == DlssPresetValues[i]) return names[i];
+    }
+    return names[0];
 }
 
 float PresetScale(int preset) {

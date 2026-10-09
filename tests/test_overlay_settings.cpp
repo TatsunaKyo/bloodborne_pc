@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Overlay preferences must survive the original launcher rewriting bbport.ini.
+#include <cassert>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include "bbport_settings.h"
+
+static void Env(const char* key, const char* value) {
+#ifdef _WIN32
+    assert(_putenv_s(key, value ? value : "") == 0);
+#else
+    assert((value ? setenv(key, value, 1) : unsetenv(key)) == 0);
+#endif
+}
+
+int main() {
+    using namespace BbSettings;
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("bbport-overlay-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(directory);
+    const auto config = directory / "bbport.ini", menu = directory / "bbport.menu.ini";
+    Env("BB_CONFIG", config.string().c_str());
+    Env("BB_WINDOW_MODE", nullptr);
+    Env("BB_DLSS_PRESET", nullptr);
+    Env("BB_RENDER_RES", nullptr);
+    auto& settings = Get();
+    Load();
+    assert(settings.menu_language == MenuEnglish && settings.window_mode == WindowFromLauncher);
+    for (int language : {MenuEnglish, MenuRussian}) {
+        for (int mode : {WindowFromLauncher, Windowed, Borderless, Fullscreen}) {
+            for (bool vsync : {false, true}) {
+                settings.menu_language = language;
+                settings.window_mode = mode;
+                settings.borderless_vsync = vsync;
+                Save();
+                // The launcher writes only its cached main config, as it does after PLAY.
+                { std::ofstream file(config); file << "upscaler=fsr3\npreset=0\n"; }
+                settings.menu_language = MenuEnglish;
+                settings.window_mode = WindowFromLauncher;
+                settings.borderless_vsync = false;
+                Load();
+                assert(settings.menu_language == language && settings.window_mode == mode &&
+                       settings.borderless_vsync == vsync);
+            }
+        }
+    }
+    { std::ofstream file(menu); file << "window_mode=invalid\nmenu_language=it\nborderless_vsync=bad\n"; }
+    Load();
+    assert(settings.menu_language == MenuEnglish && settings.window_mode == WindowFromLauncher &&
+           !settings.borderless_vsync);
+    { std::ofstream file(menu); file << "borderless_vsync=1\nwindow_mode=borderless\nmenu_language=ru\n"; }
+    Load(); // Key order is not significant.
+    assert(settings.menu_language == MenuRussian && settings.window_mode == Borderless && settings.borderless_vsync);
+    Env("BB_WINDOW_MODE", "windowed");
+    Load();
+    assert(settings.window_mode == Windowed);
+    Env("BB_WINDOW_MODE", "launcher");
+    Load();
+    assert(settings.window_mode == WindowFromLauncher);
+    Env("BB_WINDOW_MODE", nullptr);
+    for (int preset : DlssPresetValues) {
+        for (bool show : {false, true}) {
+            settings.dlss_preset = preset;
+            settings.show_fps = show;
+            Save();
+            { std::ofstream file(config); file << "upscaler=dlss\npreset=2\nshow_fps=" << !show << '\n'; }
+            settings.dlss_preset = 0;
+            settings.show_fps = !show;
+            Load();
+            assert(settings.dlss_preset == preset && settings.show_fps == show);
+            assert(settings.preset == Balanced);
+            assert(ParseDlssPreset(DlssPresetKey(preset)) == preset);
+            assert(ParseDlssPreset(std::to_string(preset)) == preset);
+        }
+    }
+    for (const char* invalid : {"a", "b", "d", "g", "i", "n", "1", "9", "14", "-1", "unknown", ""}) {
+        assert(ParseDlssPreset(invalid) == 0);
+        { std::ofstream file(menu); file << "dlss_preset=" << invalid << '\n'; }
+        Load();
+        assert(settings.dlss_preset == 0);
+    }
+    for (const auto& [name, value] : {std::pair{"E", 5}, {"F", 6}, {"J", 10},
+                                    {"K", 11}, {"L", 12}, {"M", 13}, {"DEFAULT", 0}}) {
+        assert(ParseDlssPreset(name) == value);
+    }
+    std::filesystem::remove(menu);
+    { std::ofstream file(config); file << "show_fps=0\n"; }
+    Load();
+    assert(!settings.show_fps);
+    { std::ofstream file(menu); file << "show_fps=1\ndlss_preset=k\n"; }
+    Load();
+    assert(settings.show_fps && settings.dlss_preset == 11);
+    Env("BB_RENDER_RES", "1280x720");
+    settings.dlss_preset = 13;
+    settings.show_fps = false;
+    assert(!ResolutionNeedsRestart());
+    Env("BB_RENDER_RES", nullptr);
+    Env("BB_DLSS_PRESET", "M");
+    Load();
+    assert(settings.dlss_preset == 13);
+    Env("BB_DLSS_PRESET", nullptr);
+    Env("BB_CONFIG", nullptr);
+    std::filesystem::remove_all(directory);
+    std::puts("PASS: overlay defaults, language/window/V-sync/DLSS/OSD persistence after launcher rewrites, all seven preset IDs, invalid/reserved values, legacy FPS migration, key order and environment overrides.");
+}

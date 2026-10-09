@@ -8,8 +8,13 @@
 #include "core/emulator_settings.h"
 #include "imgui/renderer/imgui_core.h"
 #include "sdl_window.h"
+#include "bbport_settings.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
+#ifdef _WIN32
+#include <windows.h>
+#include <vulkan/vulkan_win32.h>
+#endif
 
 namespace Vulkan {
 
@@ -21,8 +26,6 @@ static constexpr vk::SurfaceFormatKHR SURFACE_FORMAT_HDR = {
 Swapchain::Swapchain(const Instance& instance_, const Frontend::WindowSDL& window_)
     : instance{instance_}, window{window_}, surface{CreateSurface(instance.GetInstance(), window)} {
     FindPresentFormat();
-    FindPresentMode();
-
     Create(window.GetWidth(), window.GetHeight());
     ImGui::Core::Initialize(instance, window, image_count, surface_format.format);
 }
@@ -38,7 +41,9 @@ void Swapchain::Create(u32 width_, u32 height_) {
     needs_recreation = false;
 
     Destroy();
-
+    window_mode = window.GetWindowMode();
+    borderless_vsync = BbSettings::Get().borderless_vsync;
+    FindPresentMode();
     SetSurfaceProperties();
 
     const std::array queue_family_indices = {
@@ -51,7 +56,7 @@ void Swapchain::Create(u32 width_, u32 height_) {
     const vk::SharingMode sharing_mode =
         exclusive ? vk::SharingMode::eExclusive : vk::SharingMode::eConcurrent;
     const auto format = needs_hdr ? SURFACE_FORMAT_HDR : surface_format;
-    const vk::SwapchainCreateInfoKHR swapchain_info = {
+    vk::SwapchainCreateInfoKHR swapchain_info = {
         .surface = surface,
         .minImageCount = image_count,
         .imageFormat = format.format,
@@ -69,6 +74,18 @@ void Swapchain::Create(u32 width_, u32 height_) {
         .clipped = true,
         .oldSwapchain = nullptr,
     };
+#ifdef _WIN32
+    // Prevent the Vulkan driver taking implicit exclusive ownership during borderless
+    // presentation. Windows can still promote this opaque desktop-sized swapchain to
+    // independent flip; its actual presentation path is a driver/OS decision.
+    const VkSurfaceFullScreenExclusiveInfoEXT fullscreen_policy = {
+        VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT, nullptr,
+        VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT,
+    };
+    if (window_mode == BbSettings::Borderless && instance.HasFullScreenExclusivePolicy()) {
+        swapchain_info.pNext = &fullscreen_policy;
+    }
+#endif
 
     auto [swapchain_result, chain] = instance.GetDevice().createSwapchainKHR(swapchain_info);
     ASSERT_MSG(swapchain_result == vk::Result::eSuccess, "Failed to create swapchain: {}",
@@ -77,6 +94,14 @@ void Swapchain::Create(u32 width_, u32 height_) {
 
     SetupImages();
     RefreshSemaphores();
+    LOG_INFO(Render_Vulkan, "Window mode {}, present mode {}, extent {}x{}", window_mode,
+             vk::to_string(present_mode), extent.width, extent.height);
+}
+
+bool Swapchain::WindowPolicyChanged() const {
+    return window_mode != window.GetWindowMode() ||
+        (window_mode == BbSettings::Borderless &&
+         borderless_vsync != BbSettings::Get().borderless_vsync);
 }
 
 void Swapchain::Recreate(u32 width_, u32 height_) {
@@ -189,8 +214,33 @@ void Swapchain::FindPresentFormat() {
 }
 
 void Swapchain::FindPresentMode() {
-    const auto [modes_result, modes] =
+    auto [modes_result, modes] =
         instance.GetPhysicalDevice().getSurfacePresentModesKHR(surface);
+#ifdef _WIN32
+    if (window_mode == BbSettings::Borderless && instance.HasFullScreenExclusivePolicy()) {
+        const auto query = reinterpret_cast<PFN_vkGetPhysicalDeviceSurfacePresentModes2EXT>(
+            instance.GetInstance().getProcAddr("vkGetPhysicalDeviceSurfacePresentModes2EXT"));
+        const VkSurfaceFullScreenExclusiveInfoEXT policy = {
+            VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT, nullptr,
+            VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT,
+        };
+        const VkPhysicalDeviceSurfaceInfo2KHR info = {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR, &policy, surface,
+        };
+        uint32_t count = 0;
+        if (query && query(instance.GetPhysicalDevice(), &info, &count, nullptr) == VK_SUCCESS) {
+            std::vector<VkPresentModeKHR> available(count);
+            const VkResult result = query(instance.GetPhysicalDevice(), &info, &count, available.data());
+            modes_result = static_cast<vk::Result>(result);
+            modes.clear();
+            for (uint32_t i = 0; i < count && result == VK_SUCCESS; ++i) {
+                modes.push_back(static_cast<vk::PresentModeKHR>(available[i]));
+            }
+        } else {
+            modes_result = vk::Result::eErrorUnknown;
+        }
+    }
+#endif
     if (modes_result != vk::Result::eSuccess) {
         LOG_ERROR(Render, "Failed to query available present modes, falling back to Fifo as "
                           "guaranteed supported option.");
@@ -198,7 +248,9 @@ void Swapchain::FindPresentMode() {
         return;
     }
 
-    const auto requested_mode = EmulatorSettings.GetPresentMode();
+    const auto requested_mode = window_mode == BbSettings::Borderless
+        ? std::string{borderless_vsync ? "Mailbox" : "Immediate"}
+        : EmulatorSettings.GetPresentMode();
     if (requested_mode == "Mailbox") {
         present_mode = vk::PresentModeKHR::eMailbox;
     } else if (requested_mode == "Fifo") {
@@ -212,6 +264,11 @@ void Swapchain::FindPresentMode() {
     }
 
     if (std::ranges::find(modes, present_mode) == modes.cend()) {
+        if (window_mode == BbSettings::Borderless &&
+            std::ranges::find(modes, vk::PresentModeKHR::eMailbox) != modes.cend()) {
+            present_mode = vk::PresentModeKHR::eMailbox;
+            return;
+        }
         // FIFO is guaranteed to be supported by the Vulkan spec.
         constexpr auto fallback = vk::PresentModeKHR::eFifo;
         LOG_WARNING(Render, "Requested present mode {} is not supported, falling back to {}.",
@@ -221,8 +278,20 @@ void Swapchain::FindPresentMode() {
 }
 
 void Swapchain::SetSurfaceProperties() {
-    const auto [capabilities_result, capabilities] =
+    auto [capabilities_result, capabilities] =
         instance.GetPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
+#ifdef _WIN32
+    if (window_mode == BbSettings::Borderless && instance.HasFullScreenExclusivePolicy()) {
+        const VkSurfaceFullScreenExclusiveInfoEXT policy = {
+            VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT, nullptr,
+            VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT,
+        };
+        const auto [result, properties] = instance.GetPhysicalDevice().getSurfaceCapabilities2KHR(
+            {.pNext = &policy, .surface = surface});
+        capabilities_result = result;
+        capabilities = properties.surfaceCapabilities;
+    }
+#endif
     ASSERT_MSG(capabilities_result == vk::Result::eSuccess,
                "Failed to query surface capabilities: {}", vk::to_string(capabilities_result));
 

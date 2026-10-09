@@ -28,6 +28,7 @@ public:
     SDL_Window* GetSDLWindow() const { return window; }
     WindowSystemInfo GetWindowInfo() const { return window_info; }
     bool IsOpen() const { return is_open.load(std::memory_order_relaxed); }
+    int GetWindowMode() const { return window_mode.load(std::memory_order_relaxed); }
     /// Processes pending window events. Returns false once the user closed the window.
     bool PollEvents();
     /// Keyboard text entry for the system IME dialog; typed text shows in the title bar.
@@ -38,6 +39,9 @@ public:
 private:
     std::atomic<s32> width, height;
     std::atomic<bool> is_open{true};
+    std::atomic<int> window_mode{0};
+    int launcher_window_mode{};
+    void ApplyWindowMode();
     std::mutex text_mutex;
     bool text_requested{}, text_active{};
     int text_state{};

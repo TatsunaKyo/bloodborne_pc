@@ -1,5 +1,8 @@
-Bloodborne (bbport) for Windows
-===============================
+Bloodborne (bbport) for Windows - TatsunaKyo revision
+==================================================
+
+Revision 1, based on Supermedo's Windows v1.6 port.
+Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
 No game files are included. You need your own decrypted dump of Bloodborne CUSA03173
 (the folder with eboot.bin, sce_module, sce_sys, dvdroot_ps4). Game version 1.09 is needed for
@@ -23,11 +26,28 @@ Starting
 - Advanced -> "Desktop shortcut" puts Bloodborne on the desktop.
 - Updates: when a new version is out, the launcher shows it at the bottom left; "Update"
   downloads and installs it and opens the launcher again (saves, settings and mods are kept).
-  Advanced -> "Check for updates" checks by hand.
+  Advanced -> "Check for updates" checks by hand. This revision checks only TatsunaKyo's
+  fork and accepts its Windows revision package; it does not install upstream releases.
 - Advanced -> "Launcher language": English, Russian, Arabic, Spanish, Portuguese, French,
   German, Italian, Polish, Turkish, Chinese, Japanese, Korean (default: the Windows language).
+- Play -> "Window mode": Windowed, Borderless fullscreen, Fullscreen (driver default).
+  Display & FPS has the same selector, "V-sync in borderless" and "In-game menu language".
+  Borderless uses the desktop resolution/refresh rate. V-sync off requests Immediate
+  presentation (possible tearing); V-sync on requests Mailbox, with FIFO as fallback.
+- Play / Graphics -> "DLSS render preset" ("DLSS preset" on Play): Default (driver),
+  E/F (CNN / legacy), J/K (Transformer 1st gen), M/L (Transformer 2nd gen).
+  The launcher selector always opens; presets take effect when using DLSS. It is
+  separate from the quality/render-scale preset. The R3+L3 / Insert menu has the same
+  choice; changing it recreates DLSS on the next frame, without a game restart.
+- "Show performance overlay" in Play, Graphics, Display & FPS and the in-game menu
+  hides/shows the top-right OSD. The settings menu remains accessible when it is hidden.
+  The DLSS OSD reports the hint requested by the accepted NGX feature, with a pending
+  line during changes. NVIDIA driver/profile overrides can supersede that hint.
+  Preset and OSD preferences are shared in bbport.menu.ini; the launcher preserves
+  recent in-game changes. Old bbport.ini show_fps settings are migrated automatically.
 - In the game, Insert (or L3+R3 on a gamepad) opens the port's menu (upscaler, resolution,
-  effects). Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square,
+  effects, window mode, menu language). The launcher and in-game menu share these preferences
+  in bbport.menu.ini. Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square,
   Q Triangle, 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab touchpad.
 
 Data
@@ -69,6 +89,7 @@ Mods and patches
 - Third-party patches: shadPS4/GoldHEN XML files for 1.09 in patches\.
 
 Credits
+- This revision: https://github.com/TatsunaKyo/bloodborne_pc
 - Online play: shadp2p by Wozzardman (https://github.com/Wozzardman/shadp2p), shadNet by the
   shadPS4 team, The Hunter's Dream by droogie.
 - bbport (the Linux port this is built on): https://github.com/deadinside28/bloodborne_pc

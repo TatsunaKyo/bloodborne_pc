@@ -53,6 +53,8 @@ ldd "$dest/bin/bb-probe.exe" "$dest/bin/bb-gpu-capabilities.exe" |
     done
 cp -r scripts patches "$dest/"
 cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
+cp -r docs "$dest/"
+cp packaging/windows/bbport.menu.ini "$dest/"
 if [[ -d fsr4_shaders ]]; then cp -r fsr4_shaders "$dest/"; fi
 # DLSS (NVIDIA RTX): the MSVC-built bridge and NVIDIA's runtime, next to bb-probe.exe
 # (packaging/windows/build_dlss.sh). Without them the DLSS option stays unavailable.
@@ -88,7 +90,13 @@ if [[ ${running:-0} != 0 ]]; then
 else
     mkdir -p "$play"
     find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name bbport.ini \
-        ! -name mods.json ! -name patches.json -exec rm -rf {} +
+        ! -name bbport.menu.ini ! -name mods.json ! -name patches.json -exec rm -rf {} +
+    if [[ -f "$play/bbport.menu.ini" ]]; then
+        cp "$play/bbport.menu.ini" out/stage/saved-menu.ini
+    fi
     cp -r "$dest/." "$play/"
+    if [[ -f out/stage/saved-menu.ini ]]; then
+        cp out/stage/saved-menu.ini "$play/bbport.menu.ini"
+    fi
 fi
 du -sh "$dest" dist/bbport-windows.zip
