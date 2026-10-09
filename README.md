@@ -96,11 +96,16 @@ are excluded. `BB_DLSS_PRESET=default|e|f|j|k|l|m` overrides the saved hint at s
 
 **Show performance overlay** in Play, Graphics, Display & FPS and near the top of the
 in-game menu controls the top-right OSD. Hiding it leaves the settings menu accessible.
-With DLSS enabled, the OSD displays the preset requested by the currently created NGX
-feature, and a pending request if the selection has changed. NVIDIA driver/profile
+**Show DLSS preset in overlay**, beside that control in both interfaces, adds only
+the preset letter on the original FPS/frame-time/upscaler line: `DLSS (M)`.
+The initial setting is off, preserving the original basic overlay. The descriptions
+such as Transformer generation and CNN / legacy remain in the preset dropdowns.
+With DLSS enabled and this option on, the OSD displays the preset requested by the
+currently created NGX feature; `DLSS (K>M)` means K is active and M is pending.
+Default is shown as `Default`, and `-` means no accepted DLSS feature yet. NVIDIA driver/profile
 overrides may choose a different internal model; this readout confirms the application's
 accepted feature configuration, rather than independently identifying NVIDIA's model.
-Both preferences share `bbport.menu.ini`, so cached launcher writes do not undo changes
+These preferences share `bbport.menu.ini`, so cached launcher writes do not undo changes
 made in-game. Existing `show_fps` settings in `bbport.ini` are migrated automatically.
 
 Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle,

@@ -84,9 +84,12 @@ class ForkUpdates(unittest.TestCase):
     def test_no_published_release_is_quiet_on_startup(self):
         app = launcher.Launcher.__new__(launcher.Launcher)
         app.ui_calls = queue.Queue()
-        with patch.object(launcher.urllib.request, 'urlopen', side_effect=HTTPError(
-                launcher.RELEASES_API, 404, 'Not Found', {}, None)):
-            app.check_update()
+        error = HTTPError(launcher.RELEASES_API, 404, 'Not Found', {}, None)
+        try:
+            with patch.object(launcher.urllib.request, 'urlopen', side_effect=error):
+                app.check_update()
+        finally:
+            error.close()
         self.assertTrue(app.ui_calls.empty())
 
 

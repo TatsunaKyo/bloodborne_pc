@@ -41,8 +41,11 @@ Starting
   choice; changing it recreates DLSS on the next frame, without a game restart.
 - "Show performance overlay" in Play, Graphics, Display & FPS and the in-game menu
   hides/shows the top-right OSD. The settings menu remains accessible when it is hidden.
-  The DLSS OSD reports the hint requested by the accepted NGX feature, with a pending
-  line during changes. NVIDIA driver/profile overrides can supersede that hint.
+  "Show DLSS preset in overlay" adds the preset letter to the same original line:
+  DLSS (M), or DLSS (K>M) while a change from K to M is pending. It defaults to off,
+  keeping the basic overlay. Full model descriptions remain in the dropdowns.
+  Default is shown as Default; - means no accepted DLSS feature yet. The readout
+  reports the accepted NGX feature's hint. Driver/profile overrides can supersede it.
   Preset and OSD preferences are shared in bbport.menu.ini; the launcher preserves
   recent in-game changes. Old bbport.ini show_fps settings are migrated automatically.
 - In the game, Insert (or L3+R3 on a gamepad) opens the port's menu (upscaler, resolution,

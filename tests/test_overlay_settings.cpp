@@ -28,7 +28,8 @@ int main() {
     Env("BB_RENDER_RES", nullptr);
     auto& settings = Get();
     Load();
-    assert(settings.menu_language == MenuEnglish && settings.window_mode == WindowFromLauncher);
+    assert(settings.menu_language == MenuEnglish && settings.window_mode == WindowFromLauncher &&
+           !settings.show_dlss_preset);
     for (int language : {MenuEnglish, MenuRussian}) {
         for (int mode : {WindowFromLauncher, Windowed, Borderless, Fullscreen}) {
             for (bool vsync : {false, true}) {
@@ -63,17 +64,22 @@ int main() {
     Env("BB_WINDOW_MODE", nullptr);
     for (int preset : DlssPresetValues) {
         for (bool show : {false, true}) {
-            settings.dlss_preset = preset;
-            settings.show_fps = show;
-            Save();
-            { std::ofstream file(config); file << "upscaler=dlss\npreset=2\nshow_fps=" << !show << '\n'; }
-            settings.dlss_preset = 0;
-            settings.show_fps = !show;
-            Load();
-            assert(settings.dlss_preset == preset && settings.show_fps == show);
-            assert(settings.preset == Balanced);
-            assert(ParseDlssPreset(DlssPresetKey(preset)) == preset);
-            assert(ParseDlssPreset(std::to_string(preset)) == preset);
+            for (bool show_preset : {false, true}) {
+                settings.dlss_preset = preset;
+                settings.show_fps = show;
+                settings.show_dlss_preset = show_preset;
+                Save();
+                { std::ofstream file(config); file << "upscaler=dlss\npreset=2\nshow_fps=" << !show << '\n'; }
+                settings.dlss_preset = 0;
+                settings.show_fps = !show;
+                settings.show_dlss_preset = !show_preset;
+                Load();
+                assert(settings.dlss_preset == preset && settings.show_fps == show &&
+                       settings.show_dlss_preset == show_preset);
+                assert(settings.preset == Balanced);
+                assert(ParseDlssPreset(DlssPresetKey(preset)) == preset);
+                assert(ParseDlssPreset(std::to_string(preset)) == preset);
+            }
         }
     }
     for (const char* invalid : {"a", "b", "d", "g", "i", "n", "1", "9", "14", "-1", "unknown", ""}) {
@@ -82,6 +88,15 @@ int main() {
         Load();
         assert(settings.dlss_preset == 0);
     }
+    const char* short_names[] = {"Default", "E", "F", "J", "K", "M", "L"};
+    for (int i = 0; i < DlssPresetCount; ++i) {
+        assert(std::string(DlssPresetShortName(DlssPresetValues[i])) == short_names[i]);
+    }
+    assert(std::string(DlssPresetShortName(-1)) == "-");
+    { std::ofstream file(menu); file << "show_dlss_preset=invalid\n"; }
+    settings.show_dlss_preset = true;
+    Load();
+    assert(!settings.show_dlss_preset);
     for (const auto& [name, value] : {std::pair{"E", 5}, {"F", 6}, {"J", 10},
                                     {"K", 11}, {"L", 12}, {"M", 13}, {"DEFAULT", 0}}) {
         assert(ParseDlssPreset(name) == value);
@@ -104,5 +119,5 @@ int main() {
     Env("BB_DLSS_PRESET", nullptr);
     Env("BB_CONFIG", nullptr);
     std::filesystem::remove_all(directory);
-    std::puts("PASS: overlay defaults, language/window/V-sync/DLSS/OSD persistence after launcher rewrites, all seven preset IDs, invalid/reserved values, legacy FPS migration, key order and environment overrides.");
+    std::puts("PASS: basic overlay by default, independent preset/OSD visibility persistence after launcher rewrites, all seven compact labels and preset IDs, language/window/V-sync round trips, invalid/reserved values, legacy FPS migration and environment overrides.");
 }

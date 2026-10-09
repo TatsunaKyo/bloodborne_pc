@@ -176,8 +176,8 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
                 'online_community': COMMUNITY_SERVER}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
-                 'dlss_preset': 'default', 'show_fps': '1'}
-MENU_FLAGS = {'borderless_vsync', 'show_fps'}
+                 'dlss_preset': 'default', 'show_fps': '1', 'show_dlss_preset': '0'}
+MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset'}
 DLSS_PRESETS = [('default', ('Default (driver)', 'По умолчанию (драйвер)')),
                 ('e', ('E (CNN / legacy)', 'E (CNN / устаревший)')),
                 ('f', ('F (CNN / legacy)', 'F (CNN / устаревший)')),
@@ -809,6 +809,9 @@ class Launcher:
         ttk.Checkbutton(quick, text=_('Show performance overlay', 'Показывать статистику'),
                         variable=self.var('show_fps', 'menu')).grid(
             row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
+        ttk.Checkbutton(quick, text=_('Show DLSS preset in overlay', 'Показывать пресет DLSS в статистике'),
+                        variable=self.var('show_dlss_preset', 'menu')).grid(
+            row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
         ttk.Checkbutton(quick, text=_('Play online'), variable=self.var('online', 'app')).grid(
             row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
         ttk.Button(quick, text=_('Add to Steam'), command=self.add_to_steam).grid(
@@ -917,6 +920,8 @@ class Launcher:
         self.row(f, _('Model detail (LOD)', 'Детализация моделей'), self.choice(f, 'model_lod', 'ini', LODS),
                  _('A game patch (game version 1.09).', 'Патч игры (версия 1.09).'))
         self.check(f, 'show_fps', 'menu', _('Show performance overlay', 'Показывать статистику'))
+        self.check(f, 'show_dlss_preset', 'menu',
+                   _('Show DLSS preset in overlay', 'Показывать пресет DLSS в статистике'))
 
     def build_display(self):
         ttk = self.ttk
@@ -925,8 +930,14 @@ class Launcher:
         self.version_warning(f)
         self.section(f, _('Performance overlay', 'Статистика'), top=4)
         self.check(f, 'show_fps', 'menu', _('Show performance overlay', 'Показывать статистику'),
-                   _('FPS, frame time, upscaler and active DLSS preset in the top-right corner.',
-                     'FPS, время кадра, апскейлер и активный пресет DLSS в правом верхнем углу.'))
+                   _('FPS, frame time and upscaler in the top-right corner.',
+                     'FPS, время кадра и апскейлер в правом верхнем углу.'))
+        self.check(f, 'show_dlss_preset', 'menu',
+                   _('Show DLSS preset in overlay', 'Показывать пресет DLSS в статистике'),
+                   _('Add the preset letter on the same line. K>M means K is active and M is pending. '
+                     'Turn this off to keep the original overlay.',
+                     'Буква пресета в той же строке. K>M: K активен, M ожидает применения. '
+                     'Выключите для исходной статистики.'))
         self.section(f, _('Frame rate', 'Частота кадров'), top=4)
         self.row(f, _('Frame rate', 'Режим'), self.choice(f, 'fps_mode', 'app', FPS_MODES),
                  _("Community patches for game version 1.09. Unlocked makes the game use the real frame time. "

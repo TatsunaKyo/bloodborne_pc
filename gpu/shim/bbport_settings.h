@@ -79,6 +79,7 @@ struct Values {
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
     std::atomic<bool> show_fps{false};
+    std::atomic<bool> show_dlss_preset{false};
     /// The port's overlay language, kept separately in bbport.menu.ini beside bbport.ini.
     std::atomic<int> menu_language{MenuEnglish};
     /// -1 follows BB_FULLSCREEN; explicit choices survive launcher config rewrites.
@@ -133,6 +134,7 @@ const char* PresetName(int preset);
 int ParseDlssPreset(std::string_view value);
 const char* DlssPresetKey(int preset);
 const char* DlssPresetName(int preset);
+const char* DlssPresetShortName(int preset);
 const char* UpscalerName(int upscaler);
 
 } // namespace BbSettings

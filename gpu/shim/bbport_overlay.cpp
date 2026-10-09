@@ -189,10 +189,16 @@ void Menu() {
     }
 
     Checkbox(Text("Show performance overlay###show_fps", "Показывать статистику###show_fps"), s.show_fps);
-    Hint(Text("FPS, frame time, upscaler and the current DLSS preset in the top-right corner. "
+    Hint(Text("FPS, frame time and upscaler in the top-right corner. "
               "Hide it without disabling this settings menu.",
-              "FPS, время кадра, апскейлер и текущий пресет DLSS в правом верхнем углу. "
+              "FPS, время кадра и апскейлер в правом верхнем углу. "
               "Отключение не скрывает это меню настроек."));
+    Checkbox(Text("Show DLSS preset in overlay###show_dlss_preset",
+                  "Показывать пресет DLSS в статистике###show_dlss_preset"), s.show_dlss_preset);
+    Hint(Text("Add the preset letter on the same line. K>M means K is active and M is pending. "
+              "Turn this off to keep the original overlay.",
+              "Буква пресета в той же строке. K>M: K активен, M ожидает применения. "
+              "Выключите для исходной статистики."));
 
     const char* window_modes[] = {
         Text("Launcher setting###window_launcher", "Настройка лаунчера###window_launcher"),
@@ -593,26 +599,29 @@ void FpsCounter() {
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::Text(Text("%.0f FPS  %.1f ms  %s", "%.0f FPS  %.1f мс  %s"),
-                frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f,
-                frame_ms_avg,
-                s.upscaler == BbSettings::UpscalerFsr3   ? "FSR 3.1"
+    const char* upscaler = s.upscaler == BbSettings::UpscalerFsr3   ? "FSR 3.1"
                 : s.upscaler == BbSettings::UpscalerFsr4 ? "FSR 4"
                 : s.upscaler == BbSettings::UpscalerFsr411 ? "FSR 4.1.1"
                 : s.upscaler == BbSettings::UpscalerTaa ? "TAA"
                 : s.upscaler == BbSettings::UpscalerDlss ? "DLSS"
-                                                         : "");
-    if (s.upscaler == BbSettings::UpscalerDlss) {
+                                                         : "";
+    char dlss_label[48];
+    if (s.upscaler == BbSettings::UpscalerDlss && s.show_dlss_preset) {
         const int active = s.dlss_active_preset.load();
         const int selected = s.dlss_preset.load();
-        if (active >= 0) {
-            ImGui::Text(Text("DLSS preset: %s", "Пресет DLSS: %s"), BbSettings::DlssPresetName(active));
+        if (active == selected) {
+            std::snprintf(dlss_label, sizeof(dlss_label), "DLSS (%s)",
+                          BbSettings::DlssPresetShortName(active));
+        } else {
+            std::snprintf(dlss_label, sizeof(dlss_label), "DLSS (%s>%s)",
+                          BbSettings::DlssPresetShortName(active),
+                          BbSettings::DlssPresetShortName(selected));
         }
-        if (active != selected) {
-            ImGui::Text(Text("DLSS request pending: %s", "Пресет DLSS ожидает применения: %s"),
-                        BbSettings::DlssPresetName(selected));
-        }
+        upscaler = dlss_label;
     }
+    ImGui::Text(Text("%.0f FPS  %.1f ms  %s", "%.0f FPS  %.1f мс  %s"),
+                frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f,
+                frame_ms_avg, upscaler);
     ImGui::End();
 }
 

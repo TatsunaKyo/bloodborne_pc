@@ -97,6 +97,7 @@ void Load() {
     v.borderless_vsync = false;
     v.dlss_preset = 0;
     v.show_fps = false;
+    v.show_dlss_preset = false;
     for (int e = 0; e < EffectCount; ++e) {
         v.effects[e] = Effects[e].default_on;
     }
@@ -134,6 +135,8 @@ void Load() {
                 v.dlss_preset = ParseDlssPreset(value);
             } else if (key == "show_fps") {
                 v.show_fps = value == "1";
+            } else if (key == "show_dlss_preset") {
+                v.show_dlss_preset = value == "1";
             }
         }
         std::fclose(file);
@@ -232,8 +235,9 @@ void Save() {
         std::fprintf(file, "window_mode=%s\nborderless_vsync=%d\n",
                      modes[std::clamp(v.window_mode.load(), -1, 2) + 1],
                      int(v.borderless_vsync.load()));
-        std::fprintf(file, "dlss_preset=%s\nshow_fps=%d\n", DlssPresetKey(v.dlss_preset),
-                     int(v.show_fps.load()));
+        std::fprintf(file, "dlss_preset=%s\nshow_fps=%d\nshow_dlss_preset=%d\n",
+                     DlssPresetKey(v.dlss_preset), int(v.show_fps.load()),
+                     int(v.show_dlss_preset.load()));
         std::fclose(file);
     } else {
         std::printf("Settings: cannot write %s\n", menu_path.c_str());
@@ -291,6 +295,14 @@ const char* DlssPresetName(int preset) {
         if (preset == DlssPresetValues[i]) return names[i];
     }
     return names[0];
+}
+
+const char* DlssPresetShortName(int preset) {
+    static constexpr const char* names[] = {"Default", "E", "F", "J", "K", "M", "L"};
+    for (int i = 0; i < DlssPresetCount; ++i) {
+        if (preset == DlssPresetValues[i]) return names[i];
+    }
+    return "-";
 }
 
 float PresetScale(int preset) {

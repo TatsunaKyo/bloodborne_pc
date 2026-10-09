@@ -164,6 +164,19 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
                 obj.collect()
                 assert launcher.load_menu()['show_fps'] == launcher.load_ini()[0]['show_fps']
             obj.vars['show_fps'].set(True)
+            preset_overlay_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
+                                     w.kwargs['variable'] is obj.vars['show_dlss_preset']]
+            assert len(preset_overlay_checks) == 3
+            assert not obj.vars['show_dlss_preset'].get()
+            for box in preset_overlay_checks:
+                previous_flag = obj.vars['show_dlss_preset'].get()
+                box.invoke()
+                obj.collect()
+                assert obj.vars['show_dlss_preset'].get() != previous_flag
+                assert launcher.load_menu()['show_dlss_preset'] == ('0' if previous_flag else '1')
+                assert launcher.load_menu()['show_fps'] == '1'
+                assert obj.vars['dlss_preset'].get() == 'default'
+            obj.vars['show_dlss_preset'].set(False)
             for index, mode in enumerate(('windowed', 'borderless', 'fullscreen')):
                 home.choose(index)
                 assert obj.vars['window_mode'].get() == mode and display.current() == index
@@ -185,7 +198,8 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
 
             # The in-game menu saves new choices while the launcher remains open.
             menu.write_text('# game changed this\nfuture_option=xyz\nmenu_language=en\n'
-                            'window_mode=windowed\nborderless_vsync=0\ndlss_preset=k\nshow_fps=0\n')
+                            'window_mode=windowed\nborderless_vsync=0\ndlss_preset=k\nshow_fps=0\n'
+                            'show_dlss_preset=1\n')
             obj.collect()
             assert home.current() == display.current() == 0
             assert obj.vars['menu_language'].get() == 'en' and not obj.vars['borderless_vsync'].get()
@@ -194,12 +208,13 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             assert obj.vars['dlss_preset'].get() == 'k'
             assert all(box.current() == 4 for box in dlss_choices)
             assert not obj.vars['show_fps'].get()
+            assert obj.vars['show_dlss_preset'].get()
             assert launcher.load_ini()[0]['show_fps'] == '0'
 
             # A deliberate launcher edit merges with other fresh in-game preferences.
             display.choose(1)
             menu.write_text('menu_language=ru\nwindow_mode=fullscreen\nborderless_vsync=1\n'
-                            'dlss_preset=m\nshow_fps=1\nfuture_option=abc\n')
+                            'dlss_preset=m\nshow_fps=1\nshow_dlss_preset=0\nfuture_option=abc\n')
             obj.collect()
             assert launcher.load_menu() == {**launcher.MENU_DEFAULTS, 'window_mode': 'borderless',
                                            'menu_language': 'ru', 'borderless_vsync': '1', 'dlss_preset': 'm'}
@@ -208,11 +223,12 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             # A deliberate preset/OSD edit also preserves other concurrent game changes.
             dlss_choices[1].choose(3)
             overlay_checks[0].invoke()
+            preset_overlay_checks[0].invoke()
             menu.write_text('menu_language=en\nwindow_mode=windowed\nborderless_vsync=0\n'
-                            'dlss_preset=l\nshow_fps=1\n')
+                            'dlss_preset=l\nshow_fps=1\nshow_dlss_preset=0\n')
             obj.collect()
             assert launcher.load_menu() == {**launcher.MENU_DEFAULTS, 'window_mode': 'windowed',
-                                           'dlss_preset': 'j', 'show_fps': '0'}
+                                           'dlss_preset': 'j', 'show_fps': '0', 'show_dlss_preset': '1'}
             assert launcher.load_ini()[0]['show_fps'] == '0'
 
             # "Launcher setting" in-game respects the new launcher's borderless mode.
@@ -227,5 +243,6 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
 
 print('PASS: launcher controls in Play/Graphics/Display, seven DLSS presets available even with FSR selected, '
       'exact E/F/J/K/M/L order, presets independent of quality/resolution, '
-      'shared OSD switch, legacy FPS/fullscreen migration, preservation of concurrent in-game changes, '
+      'shared OSD and preset visibility switches, basic overlay by default, legacy FPS/fullscreen migration, '
+      'preservation of concurrent in-game changes, '
       'preset normalization, environment and custom config paths.')

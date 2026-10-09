@@ -20,9 +20,14 @@ Based on [Supermedo's Windows v1.6 port](https://github.com/Supermedo/bloodborne
   game. The launcher selector remains available with other upscalers selected; the
   saved preset takes effect when DLSS is used.
 - The **top-right performance overlay** can be enabled or disabled from both interfaces.
-  With DLSS active it shows the accepted feature's requested preset and any pending
-  change. NVIDIA driver/profile overrides can choose a different internal model.
-- Menu language, window mode, borderless V-sync, DLSS preset and overlay preferences
+  A separate **Show DLSS preset in overlay** choice in the launcher and in-game keeps
+  the original basic overlay or adds the active preset letter on the same line:
+  `DLSS (M)`. `DLSS (K>M)` shows a pending change from K to M; Default is written as
+  `Default` and `-` means no accepted feature yet. There are no extra OSD rows or
+  model-generation descriptions. This option defaults to off. The readout tracks
+  the accepted feature's requested preset; NVIDIA driver/profile overrides can
+  choose a different internal model.
+- Menu language, window mode, borderless V-sync, DLSS preset and both overlay preferences
   are shared through `bbport.menu.ini`. Launcher saves preserve changes made in-game.
   Existing fullscreen and `show_fps` preferences are migrated automatically.
 - The launcher is branded **TatsunaKyo revision**. Its updater uses this fork and
@@ -53,7 +58,7 @@ No game files are included.
 When updating an existing installation manually, close the game and launcher, keep
 your saves, mods, `bbport.ini` and `bbport.menu.ini`, and copy all program files, including
 `bin/` and `_internal/`. The package's initial menu defaults are English, borderless,
-V-sync off, DLSS Default and performance overlay on. Keep your existing menu INI to
+V-sync off, DLSS Default and basic performance overlay on. Keep your existing menu INI to
 retain previous choices.
 
 ## Build and validation
