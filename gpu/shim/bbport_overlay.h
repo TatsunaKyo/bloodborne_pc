@@ -28,6 +28,8 @@ void UpdateTextInput(SDL_Window* window);
 
 /// Whether anything is drawn this frame (menu open or FPS counter on).
 bool Visible();
+/// Commit live menu choices before the supervisor handles a focus loss.
+void SavePendingSettings();
 
 /// Present thread: draws into `view` (layout ColorAttachmentOptimal).
 void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent);

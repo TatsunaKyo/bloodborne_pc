@@ -15,6 +15,7 @@ typedef bb_jmp_buf sigjmp_buf;
 extern __thread sigjmp_buf *runtime_fault_recover;
 /* Restarts the game (in-game settings menu, render resolution change). */
 void runtime_restart(void);
+uint64_t runtime_background_paused_ns(void);
 #define ABI __attribute__((sysv_abi))
 typedef void (ABI *GuestCallback)(void);
 void runtime_start(uint64_t capabilities);

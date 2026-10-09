@@ -5,7 +5,7 @@ Windows v1.6 port by [Supermedo](https://github.com/Supermedo).**
 
 This fork adds English in-game settings, borderless fullscreen, DLSS render preset
 selection and controls for the performance overlay. See the
-[release notes](docs/releases/windows-v1.6-tatsunakyo.2.md) for the latest changes
+[release notes](docs/releases/windows-v1.6-tatsunakyo.3.md) for the latest changes
 and [release guide](docs/releasing.md) for versioning and packaging.
 
 The original PlayStation 4 game runs directly on your PC: its own x86-64 code runs natively,
@@ -107,6 +107,24 @@ overrides may choose a different internal model; this readout confirms the appli
 accepted feature configuration, rather than independently identifying NVIDIA's model.
 These preferences share `bbport.menu.ini`, so cached launcher writes do not undo changes
 made in-game. Existing `show_fps` settings in `bbport.ini` are migrated automatically.
+
+**Show input/output resolution in overlay**, in Display & FPS and the in-game menu,
+adds the current scene render and output sizes to that same line, for example
+`854x480>1920x1080`. It starts disabled and is independent of the DLSS preset readout.
+The OSD fits the extra information in a compact width and scales its font down by
+at most 15%; it does not add another row. Output means the completed game frame,
+before the window's final scaling or letterboxing.
+
+**When in background**, in Display & FPS and the in-game menu, offers Keep running,
+Pause game and rendering, Limit to 30 FPS, and Limit to 60 FPS. Keep running is the
+default. On Windows, pause suspends the native game process while its launcher
+supervisor stays responsive to focus changes; bringing the game forward resumes it.
+Guest timers exclude the paused interval. The FPS choices throttle game flips and
+keep a lower foreground cap; focusing the window restores the foreground limit.
+The choice is saved in `bbport.menu.ini` as `background_mode=run|pause|30|60`.
+
+Frame Generation and the additional gameplay cheats are still planned. Their
+current integration requirements are tracked in [the revision roadmap](docs/tatsunakyo-next.md).
 
 Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle,
 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab touchpad.

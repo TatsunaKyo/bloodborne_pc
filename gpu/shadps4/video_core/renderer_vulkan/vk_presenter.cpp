@@ -13,6 +13,7 @@
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "bbport_overlay.h"
+#include "bbport_settings.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -568,6 +569,10 @@ Frame* Presenter::PrepareBlankFrame(bool present_thread) {
 }
 
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
+    if (is_game_frame && frame) {
+        BbSettings::Get().active_output_width = frame->width;
+        BbSettings::Get().active_output_height = frame->height;
+    }
     // Free the frame for reuse
     const auto free_frame = [&] {
         if (!is_reusing_frame) {

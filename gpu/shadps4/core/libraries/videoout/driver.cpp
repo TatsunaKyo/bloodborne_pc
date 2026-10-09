@@ -12,6 +12,7 @@
 #endif
 #include "common/assert.h"
 #include "bbport_toggles.h"
+#include "bbport_settings.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -593,10 +594,20 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     // bbport: frame limit (see EmulatorSettings::GetFrameLimit). A request waits in the queue
     // until its slot; slots advance by one period (no drift) but never lag behind by more.
-    const u32 frame_limit = EmulatorSettings.GetFrameLimit();
-    const auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
-                                          : std::chrono::nanoseconds(0);
+    const u32 foreground_limit = EmulatorSettings.GetFrameLimit();
+    u32 frame_limit = BbSettings::EffectiveFrameLimit(foreground_limit);
+    auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
+                                   : std::chrono::nanoseconds(0);
     auto next_flip = std::chrono::steady_clock::now();
+    const auto update_limit = [&] {
+        const u32 current = BbSettings::EffectiveFrameLimit(foreground_limit);
+        if (current != frame_limit) {
+            frame_limit = current;
+            frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
+                                       : std::chrono::nanoseconds(0);
+            next_flip = std::chrono::steady_clock::now();
+        }
+    };
     std::printf("VideoOut: vblank %u Hz, frame limit %u FPS\n",
                 EmulatorSettings.GetVblankFrequency(), frame_limit);
 
@@ -612,9 +623,9 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     // bbport: with a frame limit (uncapped presets) a queued flip is presented as soon as it
     // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
-    const bool immediate_flips = frame_limit != 0;
 
     while (!token.stop_requested()) {
+        update_limit();
         timer.Start();
         const auto tick_deadline = std::chrono::steady_clock::now() + vblank_period;
 
@@ -671,11 +682,12 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             main_port.vblank_cv.notify_all();
         }
 
-        if (!immediate_flips || main_port.flip_rate != 0) {
+        if (!frame_limit || main_port.flip_rate != 0) {
             timer.End();
             continue;
         }
         while (!token.stop_requested()) {
+            update_limit();
             {
                 std::unique_lock lk{mutex};
                 if (!request_cv.wait_until(lk, tick_deadline,

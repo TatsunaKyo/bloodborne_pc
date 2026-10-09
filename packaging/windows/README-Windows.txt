@@ -1,7 +1,7 @@
 Bloodborne (bbport) for Windows - TatsunaKyo revision
 ==================================================
 
-Revision 2, based on Supermedo's Windows v1.6 port.
+Revision 3, based on Supermedo's Windows v1.6 port.
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
 No game files are included. You need your own decrypted dump of Bloodborne CUSA03173
@@ -48,6 +48,14 @@ Starting
   reports the accepted NGX feature's hint. Driver/profile overrides can supersede it.
   Preset and OSD preferences are shared in bbport.menu.ini; the launcher preserves
   recent in-game changes. Old bbport.ini show_fps settings are migrated automatically.
+- Display & FPS -> "Show input/output resolution in overlay" adds the current scene
+  and output sizes, such as 854x480>1920x1080, on the same OSD line. It starts off.
+  The in-game menu has the same checkbox; it is separate from the DLSS preset readout.
+- Display & FPS -> "When in background": Keep running, Pause game and rendering,
+  Limit to 30 FPS, or Limit to 60 FPS. The in-game menu has the same choice.
+  Pause freezes the native Windows game process until its window regains focus;
+  game timers exclude the paused time. The FPS choices keep a lower foreground cap
+  and restore the foreground limit when you return. Keep running is the default.
 - In the game, Insert (or L3+R3 on a gamepad) opens the port's menu (upscaler, resolution,
   effects, window mode, menu language). The launcher and in-game menu share these preferences
   in bbport.menu.ini. Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square,
@@ -71,6 +79,8 @@ Cheats
   control the targeted enemy) and gameplay tweaks (no Rally, camera further away, no camera
   auto-rotation, run with less stick tilt, ragdoll physics). They are game patches for 1.09,
   applied when the game starts.
+- Frame Generation and the additional multiplier/stamina/consumable cheats are not
+  enabled in this build. See docs\tatsunakyo-next.md for the remaining work.
 
 Problems
 - Black screen at start: Advanced -> "Clear shader cache", then start again (the first minutes

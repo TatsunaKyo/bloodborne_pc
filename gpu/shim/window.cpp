@@ -7,10 +7,20 @@
 #include "sdl_window.h"
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace Frontend {
 
 WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}, height{height_} {
+#ifdef _WIN32
+    if (std::getenv("BB_BACKGROUND_CHANNEL")) {
+        // A deliberate pause must not replace this HWND with a hung-app ghost window:
+        // the external supervisor uses its real foreground ownership to resume us.
+        DisableProcessWindowsGhosting();
+    }
+#endif
     // Gamepads are sampled by runtime_pad.c; their events are pumped here with the window's.
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         UNREACHABLE_MSG("Failed to initialize SDL video: {}", SDL_GetError());
@@ -66,6 +76,7 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     SDL_GetWindowSizeInPixels(window, &w, &h);
     width = w;
     height = h;
+    BbSettings::Get().window_focused = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
     LOG_INFO(Frontend, "Window {}x{} on {}", w, h, driver);
 }
 
@@ -163,6 +174,13 @@ bool WindowSDL::PollEvents() {
             continue;
         }
         switch (event.type) {
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            BbSettings::Get().window_focused = false;
+            BbOverlay::SavePendingSettings();
+            break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            BbSettings::Get().window_focused = true;
+            break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_RESIZED: {
             int w = 0, h = 0;

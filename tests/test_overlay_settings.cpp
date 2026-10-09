@@ -29,7 +29,33 @@ int main() {
     auto& settings = Get();
     Load();
     assert(settings.menu_language == MenuEnglish && settings.window_mode == WindowFromLauncher &&
-           !settings.show_dlss_preset);
+           !settings.show_dlss_preset && !settings.show_resolution && settings.background_mode == BackgroundRun);
+    for (int mode : {BackgroundRun, BackgroundPause, Background30, Background60}) {
+        for (bool show : {false, true}) {
+            settings.background_mode = mode;
+            settings.show_resolution = show;
+            Save();
+            { std::ofstream file(config); file << "upscaler=fsr3\npreset=0\n"; }
+            settings.background_mode = BackgroundRun;
+            settings.show_resolution = !show;
+            Load();
+            assert(settings.background_mode == mode && settings.show_resolution == show);
+        }
+    }
+    { std::ofstream file(menu); file << "background_mode=invalid\nshow_resolution=invalid\n"; }
+    Load();
+    assert(settings.background_mode == BackgroundRun && !settings.show_resolution);
+    for (unsigned foreground : {0u, 24u, 30u, 60u, 90u, 120u}) {
+        for (int mode : {BackgroundRun, BackgroundPause, Background30, Background60}) {
+            settings.background_mode = mode;
+            settings.window_focused = true;
+            assert(EffectiveFrameLimit(foreground) == foreground);
+            settings.window_focused = false;
+            const unsigned cap = mode == BackgroundRun ? 0u : mode == Background60 ? 60u : 30u;
+            assert(EffectiveFrameLimit(foreground) == (cap ? (foreground ? std::min(foreground, cap) : cap) : foreground));
+        }
+    }
+    settings.window_focused = true;
     for (int language : {MenuEnglish, MenuRussian}) {
         for (int mode : {WindowFromLauncher, Windowed, Borderless, Fullscreen}) {
             for (bool vsync : {false, true}) {

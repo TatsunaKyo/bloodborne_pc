@@ -20,6 +20,7 @@ enum Preset : int { NativeAA = 0, Quality, Balanced, Performance, UltraPerforman
 enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugViewCount };
 enum MenuLanguage : int { MenuEnglish = 0, MenuRussian, MenuLanguageCount };
 enum WindowMode : int { WindowFromLauncher = -1, Windowed = 0, Borderless, Fullscreen };
+enum BackgroundMode : int { BackgroundRun = 0, BackgroundPause, Background30, Background60 };
 // NVIDIA NGX render-preset hints, separate from the upscaling quality/scene size.
 // Removed and reserved presets are deliberately excluded.
 inline constexpr int DlssPresetValues[] = {0, 5, 6, 10, 11, 13, 12};
@@ -80,6 +81,9 @@ struct Values {
     std::atomic<int> debug_view{DebugNone};
     std::atomic<bool> show_fps{false};
     std::atomic<bool> show_dlss_preset{false};
+    std::atomic<bool> show_resolution{false};
+    std::atomic<int> background_mode{BackgroundRun};
+    std::atomic<bool> window_focused{true};
     /// The port's overlay language, kept separately in bbport.menu.ini beside bbport.ini.
     std::atomic<int> menu_language{MenuEnglish};
     /// -1 follows BB_FULLSCREEN; explicit choices survive launcher config rewrites.
@@ -89,6 +93,7 @@ struct Values {
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};
     std::atomic<int> active_render_width{1920}, active_render_height{1080};
+    std::atomic<int> active_output_width{1920}, active_output_height{1080};
     /// Applied at start (patches.py); the menu shows when a restart is needed.
     std::atomic<bool> effects[EffectCount]{};
     std::atomic<int> model_lod{0}; ///< -2 highest .. 2 lowest, 0 the game's
@@ -114,6 +119,8 @@ struct Values {
 };
 
 Values& Get();
+/// Background caps never raise a lower foreground cap.
+unsigned EffectiveFrameLimit(unsigned foreground_limit);
 
 /// Reads the file, then the environment overrides. Called once at start.
 void Load();

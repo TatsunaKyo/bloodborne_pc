@@ -101,7 +101,8 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
         launcher.save_menu({'borderless_vsync': '1'})
         assert '# keep this' in menu.read_text() and 'future_option=abc' in menu.read_text()
         assert launcher.load_menu()['menu_language'] == 'ru'
-        menu.write_text('menu_language=invalid\nwindow_mode=invalid\nborderless_vsync=bad\n')
+        menu.write_text('menu_language=invalid\nwindow_mode=invalid\nborderless_vsync=bad\n'
+                        'background_mode=invalid\nshow_resolution=bad\n')
         assert launcher.load_menu() == launcher.MENU_DEFAULTS
 
         # Migrate the original FPS setting, then prefer the shared in-game setting.
@@ -177,6 +178,24 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
                 assert launcher.load_menu()['show_fps'] == '1'
                 assert obj.vars['dlss_preset'].get() == 'default'
             obj.vars['show_dlss_preset'].set(False)
+            resolution_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
+                                 w.kwargs['variable'] is obj.vars['show_resolution']]
+            assert len(resolution_checks) == 1
+            assert not obj.vars['show_resolution'].get()
+            resolution_checks[0].invoke()
+            obj.collect()
+            assert launcher.load_menu()['show_resolution'] == '1'
+            assert launcher.load_menu()['show_fps'] == '1'
+            resolution_checks[0].invoke()
+            bg = next(w for w in Widget.nodes if w.kwargs.get('values', [None])[0]
+                      in ('Keep running', 'Продолжать работу'))
+            frame_cap = obj.vars['frame_cap'].get()
+            for index, mode in enumerate(('run', 'pause', '30', '60')):
+                bg.choose(index)
+                obj.collect()
+                assert launcher.load_menu()['background_mode'] == mode
+                assert obj.vars['frame_cap'].get() == frame_cap
+            bg.choose(0)
             for index, mode in enumerate(('windowed', 'borderless', 'fullscreen')):
                 home.choose(index)
                 assert obj.vars['window_mode'].get() == mode and display.current() == index

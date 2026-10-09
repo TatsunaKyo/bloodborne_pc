@@ -221,7 +221,9 @@ def main():
                    '--user', str(user_dir),
                    '--timeout', env.get('BB_TIMEOUT', '0'), *args]
         # No stdin: an inherited pipe (shells such as Git Bash) cost the game its console output.
-        return subprocess.run(command, stdin=subprocess.DEVNULL, creationflags=no_console()).returncode
+        from background import run_game
+        return run_game(command, config=config, env=env.copy(), stdin=subprocess.DEVNULL,
+                        creationflags=no_console())
     finally:
         if mod_view:
             shutil.rmtree(mod_view, ignore_errors=True)

@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.2'
+VERSION = '1.6-tatsunakyo.3'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -176,8 +176,13 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
                 'online_community': COMMUNITY_SERVER}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
-                 'dlss_preset': 'default', 'show_fps': '1', 'show_dlss_preset': '0'}
-MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset'}
+                 'dlss_preset': 'default', 'show_fps': '1', 'show_dlss_preset': '0',
+                 'show_resolution': '0', 'background_mode': 'run'}
+MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution'}
+BACKGROUND_MODES = [('run', ('Keep running', 'Продолжать работу')),
+                    ('pause', ('Pause game and rendering', 'Приостановить игру и рендер')),
+                    ('30', ('Limit to 30 FPS', 'Лимит 30 FPS')),
+                    ('60', ('Limit to 60 FPS', 'Лимит 60 FPS'))]
 DLSS_PRESETS = [('default', ('Default (driver)', 'По умолчанию (драйвер)')),
                 ('e', ('E (CNN / legacy)', 'E (CNN / устаревший)')),
                 ('f', ('F (CNN / legacy)', 'F (CNN / устаревший)')),
@@ -277,6 +282,8 @@ def load_menu():
         values['menu_language'] = 'en'
     if values['window_mode'] not in ('launcher', 'windowed', 'borderless', 'fullscreen'):
         values['window_mode'] = 'launcher'
+    if values['background_mode'] not in dict(BACKGROUND_MODES):
+        values['background_mode'] = 'run'
     for key in MENU_FLAGS:
         values[key] = '1' if values[key] == '1' else '0'
     preset = values['dlss_preset'].lower()
@@ -316,7 +323,9 @@ def save_menu(changes):
         else:
             output.append(line)
     output += [f'{key}={value}' for key, value in changes.items() if key not in written]
-    menu_path().write_text('\n'.join(output) + '\n', encoding='utf-8')
+    temporary = menu_path().with_suffix('.menu.ini.launcher-tmp')
+    temporary.write_text('\n'.join(output) + '\n', encoding='utf-8')
+    os.replace(temporary, menu_path())
 
 
 def load_ini():
@@ -940,7 +949,17 @@ class Launcher:
                      'Turn this off to keep the original overlay.',
                      'Буква пресета в той же строке. K>M: K активен, M ожидает применения. '
                      'Выключите для исходной статистики.'))
+        self.check(f, 'show_resolution', 'menu',
+                   _('Show input/output resolution in overlay', 'Показывать разрешение входа/выхода'),
+                   _('Current render and output sizes on the same OSD line.',
+                     'Текущее разрешение рендера и вывода в той же строке статистики.'))
         self.section(f, _('Frame rate', 'Частота кадров'), top=4)
+        self.row(f, _('When in background', 'В фоне'),
+                 self.choice(f, 'background_mode', 'menu', BACKGROUND_MODES),
+                 _('Pause the entire game on Windows or cap background rendering when the window loses focus. '
+                   'The foreground frame cap is kept.',
+                   'При потере фокуса: приостановить всю игру в Windows или ограничить FPS в фоне. '
+                   'Основной лимит FPS сохраняется.'))
         self.row(f, _('Frame rate', 'Режим'), self.choice(f, 'fps_mode', 'app', FPS_MODES),
                  _("Community patches for game version 1.09. Unlocked makes the game use the real frame time. "
                    'Other game versions always run at 30 FPS (the patches would corrupt them).',

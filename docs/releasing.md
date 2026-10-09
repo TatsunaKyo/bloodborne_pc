@@ -2,12 +2,12 @@
 
 The launcher checks releases in `TatsunaKyo/bloodborne_pc`. Use these names consistently:
 
-| Item | Revision 2 |
+| Item | Revision 3 |
 |---|---|
-| Launcher `VERSION` | `1.6-tatsunakyo.2` |
-| GitHub release tag | `windows-v1.6-tatsunakyo.2` |
-| Windows asset | `Bloodborne-Windows-v1.6-TatsunaKyo-Revision-2.zip` |
-| Release title | `Bloodborne for Windows v1.6 — TatsunaKyo revision 2` |
+| Launcher `VERSION` | `1.6-tatsunakyo.3` |
+| GitHub release tag | `windows-v1.6-tatsunakyo.3` |
+| Windows asset | `Bloodborne-Windows-v1.6-TatsunaKyo-Revision-3.zip` |
+| Release title | `Bloodborne for Windows v1.6 — TatsunaKyo revision 3` |
 
 Increment the revision number for subsequent releases. Increase the upstream version
 when rebasing onto a newer upstream release. The updater compares the numeric version
@@ -27,6 +27,7 @@ Run the launcher settings and updater regressions before packaging:
 ```bash
 python tests/test_launcher_window_settings.py
 python tests/test_launcher_updates.py
+python tests/test_background.py
 ```
 
 On Windows, verify that `Bloodborne.exe` displays TatsunaKyo revision, the preset
@@ -37,7 +38,7 @@ your GPU and Windows version. Record validation limits in the release notes.
 ## Release
 
 Create a release in this fork using the names above and target the verified revision
-commit. Paste [the revision 2 notes](releases/windows-v1.6-tatsunakyo.2.md), attach the
+commit. Paste [the revision 3 notes](releases/windows-v1.6-tatsunakyo.3.md), attach the
 full Windows ZIP and its SHA-256 file, then publish when testing is complete. GitHub
 provides source archives for the release tag. Do not replace an existing release tag
 with a different commit.
@@ -45,12 +46,12 @@ with a different commit.
 With the GitHub CLI, a release can first be prepared as a draft:
 
 ```bash
-gh release create windows-v1.6-tatsunakyo.2 \
-  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-2.zip \
-  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-2.zip.sha256 \
+gh release create windows-v1.6-tatsunakyo.3 \
+  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-3.zip \
+  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-3.zip.sha256 \
   --repo TatsunaKyo/bloodborne_pc --target tatsunakyo-revision --draft \
-  --title 'Bloodborne for Windows v1.6 — TatsunaKyo revision 2' \
-  --notes-file docs/releases/windows-v1.6-tatsunakyo.2.md
+  --title 'Bloodborne for Windows v1.6 — TatsunaKyo revision 3' \
+  --notes-file docs/releases/windows-v1.6-tatsunakyo.3.md
 ```
 
 Only published, non-prerelease releases are returned by the launcher's latest-release

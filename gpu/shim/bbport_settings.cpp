@@ -9,8 +9,22 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace BbSettings {
+unsigned EffectiveFrameLimit(unsigned foreground_limit) {
+    const auto& s = Get();
+    if (s.window_focused) return foreground_limit;
+    const int mode = s.background_mode;
+    const unsigned cap = mode == Background60 ? 60u :
+                         (mode == Background30 || mode == BackgroundPause) ? 30u : 0u;
+    return cap ? (foreground_limit ? std::min(foreground_limit, cap) : cap) : foreground_limit;
+}
 
 namespace {
 
@@ -98,6 +112,8 @@ void Load() {
     v.dlss_preset = 0;
     v.show_fps = false;
     v.show_dlss_preset = false;
+    v.show_resolution = false;
+    v.background_mode = BackgroundRun;
     for (int e = 0; e < EffectCount; ++e) {
         v.effects[e] = Effects[e].default_on;
     }
@@ -137,6 +153,11 @@ void Load() {
                 v.show_fps = value == "1";
             } else if (key == "show_dlss_preset") {
                 v.show_dlss_preset = value == "1";
+            } else if (key == "show_resolution") {
+                v.show_resolution = value == "1";
+            } else if (key == "background_mode") {
+                v.background_mode = value == "pause" ? BackgroundPause
+                    : value == "30" ? Background30 : value == "60" ? Background60 : BackgroundRun;
             }
         }
         std::fclose(file);
@@ -229,7 +250,8 @@ bool ResolutionNeedsRestart() {
 void Save() {
     const auto& v = Get();
     const std::string menu_path = MenuPath();
-    if (FILE* file = std::fopen(menu_path.c_str(), "w")) {
+    const std::string temporary = menu_path + ".tmp";
+    if (FILE* file = std::fopen(temporary.c_str(), "w")) {
         std::fprintf(file, "menu_language=%s\n", v.menu_language == MenuRussian ? "ru" : "en");
         const char* modes[] = {"launcher", "windowed", "borderless", "fullscreen"};
         std::fprintf(file, "window_mode=%s\nborderless_vsync=%d\n",
@@ -238,7 +260,20 @@ void Save() {
         std::fprintf(file, "dlss_preset=%s\nshow_fps=%d\nshow_dlss_preset=%d\n",
                      DlssPresetKey(v.dlss_preset), int(v.show_fps.load()),
                      int(v.show_dlss_preset.load()));
-        std::fclose(file);
+        const char* background_modes[] = {"run", "pause", "30", "60"};
+        std::fprintf(file, "show_resolution=%d\nbackground_mode=%s\n",
+                     int(v.show_resolution.load()),
+                     background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
+        const bool complete = !std::ferror(file);
+        const bool closed = std::fclose(file) == 0;
+        // The focus supervisor must see a complete policy, even when the game saves
+        // while it is reading the file. Windows rename does not replace by default.
+#ifdef _WIN32
+        if (!complete || !closed || !MoveFileExA(temporary.c_str(), menu_path.c_str(), MOVEFILE_REPLACE_EXISTING))
+#else
+        if (!complete || !closed || std::rename(temporary.c_str(), menu_path.c_str()) != 0)
+#endif
+            std::printf("Settings: cannot replace %s\n", menu_path.c_str());
     } else {
         std::printf("Settings: cannot write %s\n", menu_path.c_str());
     }

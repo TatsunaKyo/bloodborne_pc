@@ -199,6 +199,33 @@ void Menu() {
               "Turn this off to keep the original overlay.",
               "Буква пресета в той же строке. K>M: K активен, M ожидает применения. "
               "Выключите для исходной статистики."));
+    Checkbox(Text("Show input/output resolution in overlay###show_resolution",
+                  "Показывать разрешение входа/выхода###show_resolution"), s.show_resolution);
+    Hint(Text("Add the current render and output sizes on the same OSD line.",
+              "Текущее разрешение рендера и вывода в той же строке статистики."));
+    const char* background_modes[] = {
+        Text("Keep running###background_run", "Продолжать работу###background_run"),
+        Text("Pause game and rendering###background_pause", "Приостановить игру и рендер###background_pause"),
+        "30 FPS", "60 FPS",
+    };
+    int background = s.background_mode;
+    if (ImGui::BeginCombo(Text("When in background###background_mode", "В фоне###background_mode"),
+                          background_modes[background])) {
+        for (int i = 0; i < 4; ++i) {
+            if (ImGui::Selectable(background_modes[i], i == background)) {
+                Store(s.background_mode, i, true);
+                // The parent supervisor reads this choice even while the child is frozen.
+                // Save before focus can be lost, rather than waiting for menu close.
+                BbSettings::Save();
+                dirty = false;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    Hint(Text("When the window loses focus: keep running, pause the entire game on Windows, "
+              "or cap background rendering. Your foreground frame cap is kept.",
+              "При потере фокуса: продолжать, приостановить всю игру в Windows "
+              "или ограничить FPS в фоне. Основной лимит FPS сохраняется."));
 
     const char* window_modes[] = {
         Text("Launcher setting###window_launcher", "Настройка лаунчера###window_launcher"),
@@ -357,6 +384,8 @@ void Menu() {
     }
     ImGui::Text(Text("Active scene render resolution: %d x %d", "Активный рендер сцены: %d x %d"), s.active_render_width.load(),
                 s.active_render_height.load());
+    ImGui::Text(Text("Active output resolution: %d x %d", "Активное разрешение вывода: %d x %d"),
+                s.active_output_width.load(), s.active_output_height.load());
     if (BbSettings::FixedRenderSession()) {
         ImGui::Text(Text("Startup preset: %s", "Пресет при запуске: %s"), BbSettings::PresetName(s.startup_preset));
         if (const char* automatic = std::getenv("BB_AUTO_RENDER_RES");
@@ -619,13 +648,36 @@ void FpsCounter() {
         }
         upscaler = dlss_label;
     }
-    ImGui::Text(Text("%.0f FPS  %.1f ms  %s", "%.0f FPS  %.1f мс  %s"),
-                frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f,
-                frame_ms_avg, upscaler);
+    char line[192];
+    const float fps = frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f;
+    if (s.show_resolution) {
+        std::snprintf(line, sizeof(line), "%.0ffps %.1fms %s  %dx%d>%dx%d", fps, frame_ms_avg, upscaler,
+                      s.active_render_width.load(), s.active_render_height.load(),
+                      s.active_output_width.load(), s.active_output_height.load());
+        // Keep one row and the original height. Fit extra details within a modest width,
+        // retaining at least 85% of the normal font size even at a small viewport.
+        const float limit = std::min(420.0f * base_scale, viewport->WorkSize.x - pad * 2.0f);
+        const float natural = ImGui::CalcTextSize(line).x;
+        ImGui::SetWindowFontScale(std::clamp((limit - ImGui::GetStyle().WindowPadding.x * 2.0f) /
+                                              std::max(natural, 1.0f), 0.85f, 1.0f));
+    } else {
+        std::snprintf(line, sizeof(line), Text("%.0f FPS  %.1f ms  %s", "%.0f FPS  %.1f мс  %s"),
+                      fps, frame_ms_avg, upscaler);
+    }
+    ImGui::TextUnformatted(line);
+    ImGui::SetWindowFontScale(1.0f);
     ImGui::End();
 }
 
 } // namespace
+
+void SavePendingSettings() {
+    std::scoped_lock lock{imgui_mutex};
+    if (dirty) {
+        BbSettings::Save();
+        dirty = false;
+    }
+}
 
 void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) {
     std::scoped_lock lock{imgui_mutex};
@@ -710,6 +762,11 @@ bool HandleEvent(const SDL_Event& event) {
     ImGuiIO& io = ImGui::GetIO();
     const bool is_open = menu_open;
     switch (event.type) {
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+        io.AddFocusEvent(event.type == SDL_EVENT_WINDOW_FOCUS_GAINED);
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) l3_down = r3_down = false;
+        return false; // WindowSDL also updates the background frame-cap policy.
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;

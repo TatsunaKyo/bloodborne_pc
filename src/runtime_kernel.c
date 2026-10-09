@@ -60,6 +60,12 @@ static int clock_read(uint32_t id,GuestTimespec *ts) {
     if (!ts || !host_clock(id,&host)) return EINVAL;
     struct timespec t;
     if (clock_gettime(host,&t)) return errno;
+    if (host == CLOCK_MONOTONIC) {
+        uint64_t ns=(uint64_t)t.tv_sec*1000000000+(uint64_t)t.tv_nsec;
+        uint64_t paused=runtime_background_paused_ns();
+        ns=ns>paused ? ns-paused : 0;
+        t.tv_sec=(time_t)(ns/1000000000); t.tv_nsec=(long)(ns%1000000000);
+    }
     if (id==13) t.tv_nsec=0;
     ts->sec=t.tv_sec; ts->nsec=t.tv_nsec; return 0;
 }
@@ -78,14 +84,17 @@ static ABI int32_t posix_clock_getres(uint32_t id,GuestTimespec *ts) {
 }
 static ABI uint64_t process_time(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
-    return (uint64_t)(t.tv_sec-process_start.tv_sec)*1000000+(uint64_t)((t.tv_nsec-process_start.tv_nsec)/1000);
+    int64_t ns=(int64_t)(t.tv_sec-process_start.tv_sec)*1000000000+(t.tv_nsec-process_start.tv_nsec);
+    uint64_t paused=runtime_background_paused_ns();
+    return ns>0 && (uint64_t)ns>paused ? ((uint64_t)ns-paused)/1000 : 0;
 }
 static ABI uint64_t process_time_counter(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
-    return (uint64_t)(t.tv_sec-process_start.tv_sec)*1000000000+(uint64_t)(t.tv_nsec-process_start.tv_nsec);
+    int64_t ns=(int64_t)(t.tv_sec-process_start.tv_sec)*1000000000+(t.tv_nsec-process_start.tv_nsec);
+    uint64_t paused=runtime_background_paused_ns();
+    return ns>0 && (uint64_t)ns>paused ? (uint64_t)ns-paused : 0;
 }
 static ABI uint64_t process_time_frequency(void) { return 1000000000; }
-static ABI uint64_t read_tsc(void) { return __rdtsc(); }
 static uint64_t tsc_hz;
 static ABI uint64_t tsc_frequency(void) {
     if (!tsc_hz) {
@@ -102,10 +111,21 @@ static ABI uint64_t tsc_frequency(void) {
     }
     return tsc_hz;
 }
+static ABI uint64_t read_tsc(void) {
+    uint64_t paused=runtime_background_paused_ns();
+    uint64_t correction=paused ? (uint64_t)((__uint128_t)paused*tsc_frequency()/1000000000) : 0;
+    return __rdtsc()-correction;
+}
 /* Shared with the GPU library so flip/label timestamps use the guest's clock. */
 uint64_t runtime_process_time_us(void) { return process_time(); }
 uint64_t runtime_process_time_counter(void) { return process_time_counter(); }
 uint64_t runtime_tsc_frequency(void) { return tsc_frequency(); }
+uint64_t runtime_read_tsc(void) {
+    _mm_lfence();
+    uint64_t ticks=read_tsc();
+    _mm_lfence();
+    return ticks;
+}
 static int sleep_ns(uint64_t ns) {
 #ifdef _WIN32
     compat_sleep_ns(ns);
