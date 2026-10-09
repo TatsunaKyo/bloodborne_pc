@@ -1,7 +1,7 @@
 # Bloodborne for Windows — TatsunaKyo revision
 
 **Revision maintained by [TatsunaKyo](https://github.com/TatsunaKyo), based on the
-Windows v1.6 port by [Supermedo](https://github.com/Supermedo) Mohammed Albarghouthi.**
+Windows v1.6 port by [Supermedo](https://github.com/Supermedo).**
 
 This fork adds English in-game settings, borderless fullscreen, DLSS render preset
 selection and controls for the performance overlay. See the
