@@ -5,7 +5,7 @@ Windows v1.6 port by [Supermedo](https://github.com/Supermedo).**
 
 This fork adds English in-game settings, borderless fullscreen, DLSS render preset
 selection and controls for the performance overlay. See the
-[revision 1 release notes](docs/releases/windows-v1.6-tatsunakyo.1.md) for the changes
+[release notes](docs/releases/windows-v1.6-tatsunakyo.2.md) for the latest changes
 and [release guide](docs/releasing.md) for versioning and packaging.
 
 The original PlayStation 4 game runs directly on your PC: its own x86-64 code runs natively,

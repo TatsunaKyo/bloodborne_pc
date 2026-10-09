@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.1'
+VERSION = '1.6-tatsunakyo.2'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -705,8 +705,10 @@ class Launcher:
         tk.Label(side, text='BLOODBORNE', bg=BG, fg=GOLD, font=('Georgia', 16)).pack(anchor='w', padx=22, pady=(24, 0))
         self.side = side
         tk.Label(side, text=_('by Super Medo'), bg=BG, fg=TEXT, font=('Segoe UI', 10)).pack(anchor='w', padx=22)
-        tk.Label(side, text=_('native port · Windows', 'нативный порт · Windows') + f'  ·  v{VERSION}' + ('\n' + _('co-op test build') if COOP_TEST else ''), bg=BG, fg=MUTED, justify='left',
-                 font=('Segoe UI', 9)).pack(anchor='w', padx=22, pady=(0, 20))
+        tk.Label(side, text=_('native port · Windows', 'нативный порт · Windows') + f'\nv{VERSION}' + ('\n' + _('co-op test build') if COOP_TEST else ''),
+                 bg=BG, fg=MUTED, anchor='w', justify='left',
+                 wraplength=self.px(220) - 44, bd=0, padx=0,
+                 font=('Segoe UI', 9)).pack(fill='x', padx=22, pady=(0, 20))
         tk.Label(side, text=LAUNCHER_BUILD, bg=BG, fg=GOLD,
                  font=('Segoe UI', 9)).pack(anchor='w', padx=22, pady=(0, 10))
         self.nav, self.current_page = {}, None

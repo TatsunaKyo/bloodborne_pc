@@ -1,7 +1,7 @@
 Bloodborne (bbport) for Windows - TatsunaKyo revision
 ==================================================
 
-Revision 1, based on Supermedo's Windows v1.6 port.
+Revision 2, based on Supermedo's Windows v1.6 port.
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
 No game files are included. You need your own decrypted dump of Bloodborne CUSA03173
