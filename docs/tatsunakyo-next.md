@@ -2,6 +2,8 @@
 
 The in-game menu stays in English and Russian. Additional translations are out of scope. Revision 7 fixes the cheat player lookup, adds FSR HDR10, and introduces experimental NVIDIA FG/MFG, independent Reflex and an optional output cap. The implementation and its test limits are described in [the FG guide](frame-generation.md).
 
+Revision 9 fixes the conditional Play layout and adds the continuous stamina guards. Next quality/performance candidates are camera-cut history resets, motion coverage, FG HUD separation and measured bottleneck work; see [the audit notes](quality-and-performance.md). None is described as an FPS gain before a controlled gameplay comparison.
+
 ## Frame Generation
 
 - Classical **FSR Frame Generation** is implemented for SDR/HDR10 and the temporal upscalers. Physical-GPU gameplay, desktop pacing and HUD quality still need testing.

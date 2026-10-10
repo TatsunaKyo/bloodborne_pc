@@ -25,11 +25,11 @@ else:
 
 
 class ForkUpdates(unittest.TestCase):
-    def release(self, tag='windows-v1.6-tatsunakyo.9', assets=None):
+    def release(self, tag='windows-v1.6-tatsunakyo.10', assets=None):
         return {'tag_name': tag, 'html_url': 'https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/' + tag,
                 'assets': assets if assets is not None else [
                     {'name': 'source.zip', 'browser_download_url': 'https://example.invalid/source.zip'},
-                    {'name': 'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-9.zip',
+                    {'name': 'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-10.zip',
                      'browser_download_url': 'https://example.invalid/windows.zip'}]}
 
     def latest(self, release):
@@ -54,11 +54,11 @@ class ForkUpdates(unittest.TestCase):
         return calls
 
     def test_channel_and_exact_windows_asset(self):
-        self.assertEqual(launcher.VERSION, '1.6-tatsunakyo.8')
+        self.assertEqual(launcher.VERSION, '1.6-tatsunakyo.9')
         self.assertEqual(launcher.RELEASES_PAGE, 'https://github.com/TatsunaKyo/bloodborne_pc/releases/latest')
         version, url, page = self.latest(self.release())
-        self.assertEqual((version, url), ('1.6-tatsunakyo.9', 'https://example.invalid/windows.zip'))
-        self.assertTrue(page.endswith('/windows-v1.6-tatsunakyo.9'))
+        self.assertEqual((version, url), ('1.6-tatsunakyo.10', 'https://example.invalid/windows.zip'))
+        self.assertTrue(page.endswith('/windows-v1.6-tatsunakyo.10'))
 
     def test_source_zip_is_not_installed(self):
         self.assertIsNone(self.latest(self.release(assets=[
@@ -73,7 +73,7 @@ class ForkUpdates(unittest.TestCase):
         self.assertEqual(self.check(self.release('windows-v1.7'), manual=True)[0][0], 'error')
 
     def test_revision_comparison_and_offer(self):
-        self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.8')), [])
+        self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.9')), [])
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.6')), [])
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.5')), [])
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.2')), [])

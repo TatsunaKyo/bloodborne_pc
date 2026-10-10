@@ -85,14 +85,18 @@ static void original_game_paths(const char *path) {
     unsigned char *image=fixture();
     FILE *file=fopen(path,"rb");assert(file);
     const struct {size_t begin,end;} ranges[]={{0x1a56ae0,0x1a56b5d},{0x1a57190,0x1a5720f},
-        {0x18fc6ab,0x18fc6f8},{0x18fc73b,0x18fc789}};
-    for (unsigned i=0;i<4;++i) {
+        {0x18fc6ab,0x18fc6f8},{0x18fc73b,0x18fc789},
+        {0x18ca591,0x18ca605},{0x1a11d17,0x1a11d98},{0x18d5c90,0x18d5d18}};
+    for (unsigned i=0;i<sizeof(ranges)/sizeof(ranges[0]);++i) {
         assert(!fseek(file,(long)ranges[i].begin,SEEK_SET));
         assert(fread(image+ranges[i].begin,1,ranges[i].end-ranges[i].begin,file)==ranges[i].end-ranges[i].begin);
-        if (i>=2) image[ranges[i].end]=0xc3;
+        if (i>=2 && i!=6) image[ranges[i].end]=0xc3;
     }
     fclose(file);
-    unsigned char actor[64]={0},enemy[64]={0},stats[0x400]={0},world[0x68]={0},data[0x100]={0};
+    image[0x1a12519]=0xc3; // authored return after the original inline update
+    unsigned char actor[0x400]={0},enemy[0x400]={0},stats[0x400]={0},world[0x68]={0},data[0x100]={0};
+    unsigned char modules[0x28]={0};
+    put_pointer(actor,0x3b0,modules);put_pointer(enemy,0x3b0,modules);put_pointer(modules,0x20,stats);
     put_pointer(image,WORLD_CHR_MAN,world);put_pointer(world,0x60,actor);
     put_pointer(image,0x553e880,world);put_pointer(stats,8,actor);
     assert(runtime_cheats_install(image,image_size,"01.09")==BB_CHEAT_ALL);
@@ -109,6 +113,32 @@ static void original_game_paths(const char *path) {
         assert(get_int(stats,0x138)==160 && stats[0x200]==0);
     }
     Registers input={0},out;unsigned char state[512];
+    /* Running uses an inline proportional update, not the attack helper. Execute
+     * the original clamp/store blocks repeatedly, including negative stamina. */
+    for (int on=0;on<=1;++on) for(int npc=0;npc<=1;++npc) {
+        atomic_store(&mask,on ? BB_CHEAT_STAMINA : 0);
+        put_pointer(stats,8,npc ? enemy : actor);
+        put_int(stats,0x138,160);put_int(stats,0x134,100);
+        for (int tick=0;tick<50;++tick) {
+            input=(Registers){.r15=(uintptr_t)stats,.rax=(uint32_t)-3};
+            run(&input,image+0x18ca591,&out,state);
+            assert(get_int(stats,0x134)==(on && !npc ? 100 : 100-3*(tick+1)));
+        }
+        input=(Registers){.r15=(uintptr_t)stats,.rax=20};
+        run(&input,image+0x18ca591,&out,state);
+        assert(get_int(stats,0x134)==(on && !npc ? 120 : -30));
+        put_int(stats,0x134,100);
+        input=(Registers){.r14=(uintptr_t)stats,.rax=(uint32_t)-30};
+        run(&input,image+0x1a11d17,&out,state);
+        assert(get_int(stats,0x134)==(on && !npc ? 100 : 70));
+        typedef void (ABI *ActorSetter)(void*,int);
+        ActorSetter setter=(ActorSetter)(image+0x18d5c90);
+        put_int(stats,0x134,100);setter(npc ? enemy : actor,60);
+        assert(get_int(stats,0x134)==(on && !npc ? 100 : 60));
+        setter(npc ? enemy : actor,130);assert(get_int(stats,0x134)==130);
+        assert(get_int(stats,0x138)==160 && stats[0x200]==0);
+    }
+    puts("PASS: original continuous stamina drain, inline script update and complete ChrIns setter; 50 running ticks, Off/On, NPCs, negative stamina, regeneration and maximum unchanged.");
     for (unsigned factor=1;factor<=16;factor*=2) for(unsigned hook=15;hook<=16;++hook) {
         selected.echoes=factor;atomic_store(&mask,BB_CHEAT_ALL);
         for(int npc=0;npc<=1;++npc) {
@@ -149,7 +179,7 @@ int main(int argc, char **argv) {
         assert(0x18c2d11+displacement==WORLD_CHR_MAN);
         assert(!fseek(file,0x18c2d3d,SEEK_SET) && fread(bytes,1,7,file)==7);
         assert(!memcmp(bytes,player_compare,7));
-        fclose(file); puts("PASS: eighteen hook signatures and the actual WorldChrMan/mainPlayer lookup match the supplied 1.09 image.");
+        fclose(file); printf("PASS: %u hook signatures and the actual WorldChrMan/mainPlayer lookup match the supplied 1.09 image.\n",HOOK_COUNT);
     }
     unsigned char *image=fixture();
 #ifdef TEST_WINDOWS_OBJECT
@@ -190,6 +220,10 @@ int main(int argc, char **argv) {
         case 15: input[i].rbx=(uintptr_t)actor;input[i].rdx=(uintptr_t)data;input[i].rax=100;break;
         case 16: input[i].rbx=(uintptr_t)actor;input[i].rcx=(uintptr_t)data;input[i].r14=100;break;
         case 17: input[i].rax=(uintptr_t)component;break;
+        case 18: input[i].r15=(uintptr_t)component;break;
+        case 19: case 20: input[i].r14=(uintptr_t)component;break;
+        case 21: input[i].r13=(uintptr_t)component;break;
+        case 22: input[i].rbx=(uintptr_t)component;break;
         }
         run(&input[i],image+hooks[i].offset,&baseline[i],baseline_ymm[i]);
     }

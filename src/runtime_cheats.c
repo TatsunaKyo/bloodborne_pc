@@ -131,6 +131,10 @@ static ABI void stamina_action(Registers *r, unsigned char *fpu) {
     (void)fpu;
     if (component_is_player(r->r15)) test_nonzero(r, 0x80);
 }
+static ABI void stamina_continuous(Registers *r, unsigned char *fpu) {
+    (void)fpu;
+    if (component_is_player(r->r13)) test_nonzero(r, 0x80);
+}
 static ABI void no_fall_damage(Registers *r,unsigned char *fpu) {
     (void)fpu;
     // The FallModule's own no-fall-damage guard; no HP setter is altered.
@@ -178,6 +182,13 @@ static const Hook hooks[] = {
     {0x18fc6ab, {0x8b,0xb2,0x94,0,0,0}, 6,0, BB_CHEAT_ECHOES, echoes_reward_scaled},
     {0x18fc73b, {0x8b,0x91,0x94,0,0,0}, 6,0, BB_CHEAT_ECHOES, echoes_reward},
     {0x1a35b75, {0xf6,0x80,0,0x02,0,0,0x08}, 7,0, BB_CHEAT_FALL, no_fall_damage},
+    /* Continuous movement and direct ChrIns/script writes do not call the
+     * attack setter. Preserve their original no-consumption branches too. */
+    {0x18ca5a2, {0x41,0xf6,0x87,0,0x02,0,0,0x80}, 8,0, BB_CHEAT_STAMINA, stamina_action},
+    {0x18d5cad, {0x41,0xf6,0x86,0,0x02,0,0,0x80}, 8,0, BB_CHEAT_STAMINA, stamina_general},
+    {0x1a11d27, {0x41,0xf6,0x86,0,0x02,0,0,0x80}, 8,0, BB_CHEAT_STAMINA, stamina_general},
+    {0x1916602, {0x41,0xf6,0x85,0,0x02,0,0,0x80}, 8,0, BB_CHEAT_STAMINA, stamina_continuous},
+    {0x18fd54a, {0xf6,0x83,0,0x02,0,0,0x80}, 7,0, BB_CHEAT_STAMINA, stamina_guard_overmax},
 };
 
 typedef struct { unsigned char *start, *next; } Emitter;

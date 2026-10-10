@@ -1,7 +1,7 @@
 Bloodborne (bbport) for Windows - TatsunaKyo revision
 ==================================================
 
-Revision 8, based on Supermedo's Windows v1.6 port.
+Revision 9, based on Supermedo's Windows v1.6 port.
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
 No game files are included. You need your own decrypted dump of Bloodborne CUSA03173
@@ -36,11 +36,10 @@ Starting
   presentation (possible tearing); V-sync on requests Mailbox, with FIFO as fallback.
 - Play / Graphics -> "DLSS render preset" ("DLSS preset" on Play): Default (driver),
   E/F (CNN / legacy), J/K (Transformer 1st gen), M/L (Transformer 2nd gen).
-  The launcher selector stays visible and is enabled only with DLSS selected. It preserves the saved preset when another upscaler is chosen and is separate from the quality/render-scale preset. The R3+L3 / Insert menu has the same
-  choice; changing it recreates DLSS on the next frame, without a game restart.
+  On Play, this row appears only with DLSS selected. In Graphics, it stays visible and is disabled for other upscalers. It preserves the saved preset and is separate from the quality/render-scale preset. The R3+L3 / Insert menu has the same choice; changing it recreates DLSS on the next frame, without a game restart.
 - "Show performance overlay" in Play, Graphics, Display & FPS and the in-game menu
   hides/shows the top-right OSD. The settings menu remains accessible when it is hidden.
-  "Show DLSS preset in overlay" adds the preset letter to the same original line:
+  Play's "Customize overlay..." link opens Display & FPS. "Show DLSS preset in overlay" there, in Graphics and in-game adds the preset letter to the same original line:
   DLSS (M), or DLSS (K>M) while a change from K to M is pending. It defaults to off,
   keeping the basic overlay. Full model descriptions remain in the dropdowns.
   Default is shown as Default; - means no accepted DLSS feature yet. The readout
@@ -78,7 +77,7 @@ Cheats
   control the targeted enemy) and gameplay tweaks (no Rally, camera further away, no camera
   auto-rotation, run with less stick tilt, ragdoll physics). They are game patches for 1.09,
   applied when the game starts.
-- The same Cheats page includes player damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina, consumables kept after use and No Fall Damage. These can also change during play from the in-game menu. Revision 8 covers the missing stamina and ordinary Echoes paths. They default to off and require verified game version 1.09 hooks. See docs\cheats.md.
+- The same Cheats page includes player damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina, consumables kept after use and No Fall Damage. These can also change during play from the in-game menu. Revision 9 adds continuous running and direct/script stamina guards to the earlier attack and ordinary Echoes paths. They default to off and require verified game version 1.09 hooks. See docs\cheats.md.
 - Experimental FSR Frame Generation (2x) supports SDR and HDR10. NVIDIA DLSS FG/MFG and independent Reflex are available through Streamline 2.14.1, with the supported multiplier checked at runtime. The normal FPS cap counts real frames; an optional total cap has its own drag control and numeric entry. FG is available on Play, Graphics and the in-game menu. NVIDIA gameplay/HDR on a physical RTX remains untested on the build host. The game HUD may show interpolation artifacts. AMD ML FG and FG model presets A/B are not included; see docs\frame-generation.md.
 
 Problems

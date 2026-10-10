@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.8'
+VERSION = '1.6-tatsunakyo.9'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -858,8 +858,10 @@ class Launcher:
     def row(self, parent, title, widget, hint=None):
         ttk = self.ttk
         r = self.next_row(parent)
-        ttk.Label(parent, text=title).grid(row=r, column=0, sticky='nw', padx=(0, 18), pady=(8, 0))
+        label = ttk.Label(parent, text=title)
+        label.grid(row=r, column=0, sticky='nw', padx=(0, 18), pady=(8, 0))
         widget.grid(row=r, column=1, sticky='w', pady=(5, 0))
+        widget.row_label = label
         if hint:
             ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(560), justify='left').grid(
                 row=r + 1, column=1, sticky='w', pady=(2, 2))
@@ -918,6 +920,7 @@ class Launcher:
         bar.pack(side='right', fill='y')
         canvas.pack(side='left', fill='both', expand=True)
         outer.scroll = lambda units: canvas.yview_scroll(units, 'units') if inner.winfo_height() > canvas.winfo_height() else None
+        outer.scroll_to_top = lambda: canvas.yview_moveto(0)
         self.pages[name] = outer
         return inner
 
@@ -1004,6 +1007,11 @@ class Launcher:
         elif name == 'play':
             self.refresh_status()
 
+    def show_overlay_settings(self, _event=None):
+        self.show('display')
+        self.pages['display'].scroll_to_top()
+        return 'break'
+
     def build_play(self):
         tk, ttk = self.tk, self.ttk
         page = tk.Frame(self.content, bg=PANEL)
@@ -1029,44 +1037,62 @@ class Launcher:
         self.row(quick, _('Frame rate', 'Частота кадров'), self.choice(quick, 'fps_mode', 'app', FPS_MODES, 26))
         self.row(quick, _('Upscaler', 'Апскейлер'), self.choice(quick, 'upscaler', 'ini', UPSCALERS, 26))
         self.row(quick, _('Preset', 'Пресет'), self.choice(quick, 'preset', 'ini', PRESETS, 26))
-        self.quick_dlss_row = ttk.Frame(quick)
-        self.quick_dlss_row.grid(row=self.next_row(quick), column=0, columnspan=2, sticky='w')
-        self.row(self.quick_dlss_row, _('DLSS preset', 'Пресет DLSS'),
-                 self.dlss_preset_choice(self.quick_dlss_row, 26))
+        self.quick_dlss_row = self.dlss_preset_choice(quick, 26)
+        self.row(quick, _('DLSS preset', 'Пресет DLSS'), self.quick_dlss_row)
         def show_dlss_row(*_args):
-            if self.var('upscaler', 'ini').get() == 'dlss':
-                self.quick_dlss_row.grid()
-            else:
-                self.quick_dlss_row.grid_remove()
-        self.var('upscaler', 'ini').trace_add('write', show_dlss_row)
-        show_dlss_row()
+            for widget in (self.quick_dlss_row.row_label, self.quick_dlss_row):
+                if self.var('upscaler', 'ini').get() == 'dlss':
+                    widget.grid()
+                else:
+                    widget.grid_remove()
         self.row(quick, _('Frame Generation', 'Генерация кадров'),
                  self.frame_generation_choice(quick, 26))
-        self.quick_fg_multiplier_row = ttk.Frame(quick)
-        self.quick_fg_multiplier_row.grid(row=self.next_row(quick), column=0, columnspan=2, sticky='w')
-        quick_multiplier=self.choice(self.quick_fg_multiplier_row, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS, 26)
-        self.row(self.quick_fg_multiplier_row, _('NVIDIA FG multiplier', 'Множитель NVIDIA FG'),quick_multiplier)
+        quick_multiplier = self.choice(quick, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS, 26)
+        self.quick_fg_multiplier_row = quick_multiplier
+        self.row(quick, _('NVIDIA FG multiplier', 'Множитель NVIDIA FG'), quick_multiplier)
         def show_fg_multiplier(*_args):
-            if self.var('frame_generation', 'menu').get() == 'nvidia':
-                quick_multiplier.configure(state='readonly')
-                self.quick_fg_multiplier_row.grid()
-            else:
-                quick_multiplier.configure(state='disabled')
-                self.quick_fg_multiplier_row.grid_remove()
-        self.var('frame_generation', 'menu').trace_add('write', show_fg_multiplier)
-        show_fg_multiplier()
+            visible = self.var('frame_generation', 'menu').get() == 'nvidia'
+            quick_multiplier.configure(state='readonly' if visible else 'disabled')
+            for widget in (quick_multiplier.row_label, quick_multiplier):
+                if visible:
+                    widget.grid()
+                else:
+                    widget.grid_remove()
         self.row(quick, _('Output', 'Разрешение'), self.choice(quick, 'output_res', 'ini', OUTPUTS, 26))
         self.row(quick, _('Window mode', 'Режим окна'), self.choice(quick, 'window_mode', 'menu', WINDOW_MODES, 26))
         ttk.Checkbutton(quick, text=_('Show performance overlay', 'Показывать статистику'),
                         variable=self.var('show_fps', 'menu')).grid(
             row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
-        ttk.Checkbutton(quick, text=_('Show DLSS preset in overlay', 'Показывать пресет DLSS в статистике'),
-                        variable=self.var('show_dlss_preset', 'menu')).grid(
+        self.overlay_link = ttk.Label(quick, text=_('Customize overlay…', 'Настроить статистику…'),
+                                      foreground=GOLD, font=('Segoe UI', 10, 'underline'),
+                                      cursor='hand2', takefocus=True)
+        self.overlay_link.grid(
             row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
+        for event in ('<Button-1>', '<Return>', '<space>'):
+            self.overlay_link.bind(event, self.show_overlay_settings)
         ttk.Checkbutton(quick, text=_('Play online'), variable=self.var('online', 'app')).grid(
             row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
         ttk.Button(quick, text=_('Add to Steam'), command=self.add_to_steam).grid(
             row=self.next_row(quick), column=1, sticky='w', pady=(10, 0))
+        # Reserve every grid row before hiding optional controls. Hidden rows have
+        # zero height, but must never be reused by Output or another setting.
+        self.var('upscaler', 'ini').trace_add('write', show_dlss_row)
+        self.var('frame_generation', 'menu').trace_add('write', show_fg_multiplier)
+        show_dlss_row()
+        show_fg_multiplier()
+        def fit_play(_event=None):
+            # Leave space for the quick settings at narrow widths and high DPI.
+            width = max(self.px(140), min(self.px(440),
+                        body.winfo_width() - quick.winfo_reqwidth() - 80))
+            for label in self.checks.values():
+                if int(label.cget('wraplength')) != width:
+                    label.configure(wraplength=width)
+            required = max(quick.winfo_reqheight(), info.winfo_reqheight()) + 20
+            height = max(self.px(90), min(self.px(290), page.winfo_height() - required))
+            if int(self.banner.cget('height')) != height:
+                self.banner.configure(height=height)
+        for widget in (page, body, quick, info):
+            widget.bind('<Configure>', fit_play)
         for key in ('fps_mode', 'upscaler', 'output_res'):
             self.vars[key].trace_add('write', lambda *_a: self.refresh_status())
 

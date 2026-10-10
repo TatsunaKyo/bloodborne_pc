@@ -267,7 +267,10 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             obj.vars['show_fps'].set(True)
             preset_overlay_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
                                      w.kwargs['variable'] is obj.vars['show_dlss_preset']]
-            assert len(preset_overlay_checks) == 3
+            assert len(preset_overlay_checks) == 2  # Graphics and Display & FPS.
+            assert obj.overlay_link.parent is obj.quick_dlss_row.parent
+            assert all(event in obj.overlay_link.bindings for event in ('<Button-1>', '<Return>', '<space>'))
+            assert not any(box.parent is obj.quick_dlss_row.parent for box in preset_overlay_checks)
             assert not obj.vars['show_dlss_preset'].get()
             for box in preset_overlay_checks:
                 previous_flag = obj.vars['show_dlss_preset'].get()
