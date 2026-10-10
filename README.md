@@ -2,7 +2,7 @@
 
 **Revision maintained by [TatsunaKyo](https://github.com/TatsunaKyo), based on the Windows v1.6 port by [Supermedo](https://github.com/Supermedo).**
 
-This fork adds English in-game settings, borderless fullscreen, DLSS render preset selection and controls for the performance overlay. See the [release notes](docs/releases/windows-v1.6-tatsunakyo.4.md) for the latest changes and [release guide](docs/releasing.md) for versioning and packaging.
+This fork adds English in-game settings, borderless fullscreen, DLSS render preset selection and controls for the performance overlay. See the [release notes](docs/releases/windows-v1.6-tatsunakyo.5.md) for the latest changes and [release guide](docs/releasing.md) for versioning and packaging.
 
 The original PlayStation 4 game runs directly on your PC: its own x86-64 code runs natively, and the graphics are translated to Vulkan. No emulator window, no setup scripts: unpack the zip, start `Bloodborne.exe`, pick your game folder and press **PLAY**.
 
@@ -54,7 +54,7 @@ In the game, **Insert** (or **L3+R3** on a controller) opens the settings menu. 
 
 The choice is saved in `bbport.menu.ini` as `background_mode=run|pause|30|60`. The launcher also offers 75 FPS, using the variable frame-time patch with a native 75 FPS cap. The DLSS preset selector stays visible and is enabled when DLSS is selected; choosing another upscaler preserves your saved preset.
 
-Frame Generation and the additional gameplay cheats are still planned. Their current integration requirements are tracked in [the revision roadmap](docs/tatsunakyo-next.md).
+The new [live cheats](docs/cheats.md) are available from the launcher and the in-game menu: damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina and consumables kept after use. All are off by default and require verified 1.09 hooks. Frame Generation is still being integrated; its requirements are tracked in [the revision roadmap](docs/tatsunakyo-next.md).
 
 Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle, 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab touchpad.
 

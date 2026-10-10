@@ -1,6 +1,6 @@
 # Next work for the TatsunaKyo revision
 
-The in-game menu stays in English and Russian. Additional menu translations are out of scope for now. Resolution readout and background behavior are in revision 3; the items below are still work to do, not features enabled by that package.
+The in-game menu stays in English and Russian. Additional menu translations are out of scope for now. Resolution readout and background behavior are in revision 3; the control/pause fixes are in revision 4 and live cheats are in revision 5. Frame Generation remains the implementation work below.
 
 ## Frame Generation
 
@@ -19,15 +19,6 @@ References: [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan), [Streamline DL
 
 ## Gameplay cheats
 
-| Choice | Values | Intended behavior |
-|---|---|---|
-| Player damage | Off, x2, x4, x8, x16 | Multiply damage dealt by the player |
-| Damage reduction | Off, x2, x4, x8, x16 | Divide incoming enemy damage; keep defense stats unchanged |
-| Blood Echoes earned | Off, x2, x4, x8, x16 | Multiply newly earned echoes, not the stored balance |
-| Movement speed | Off, x1.5, x2, x4, x8, x16 | Scale player movement |
-| Infinite stamina | Off, On | Keep player stamina from being consumed |
-| Consumables | Off, On | Preserve quantity when an item is used |
+Implemented in revision 5; see [the live-cheat guide](cheats.md). The supplied CUSA03173 1.09 executable's instruction signatures match all ten hooks. The runtime uses its own code allocation and the game's local-player method, with whole-feature signature guards. Stamina and normal item/ammunition use follow the engine's no-consumption branches. The equipped-ammunition path keeps its decrement at zero when enabled; generic inventory writes are untouched.
 
-The supplied CUSA03173 1.09 executable has been checked. Its trainer addresses are image offsets; XML patch addresses include the PS4 base. Damage, stamina, echo and movement sites have been identified, while consumable use still needs to be separated from inventory transfers and purchases. Existing PS4 trainer hooks cannot be copied directly: some use PS4 heap pointers or caves outside the port's ELF load segments. Item patches that force the count to 20 also do not implement the requested behavior.
-
-Check the original instructions before installing each hook, use port-owned code storage, distinguish the player from enemies and separate item use from selling, discarding or buying. Keep all new cheats disabled by default. Test each multiplier, scene transitions, player death and reloads, and the unmodified game path before claiming support.
+Tests execute the generated hooks, check every multiplier, preserve CPU state, leave NPC behavior and disabled features unchanged, and save/reload the actual launcher and in-game controls. Player death, loading screens, scene changes and save reloads still require a gameplay test on Windows. The build does not claim those tests have been performed.

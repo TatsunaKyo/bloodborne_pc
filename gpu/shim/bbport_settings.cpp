@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "bbport_settings.h"
+#include "../bbcheats.h"
 
 #include <algorithm>
 #include <cctype>
@@ -103,6 +104,17 @@ Values& Get() {
     return values;
 }
 
+void UpdateCheatMask() {
+    auto& v = Get();
+    const uint32_t mask = (v.cheat_damage ? uint32_t(BB_CHEAT_DAMAGE) : 0u) |
+        (v.cheat_incoming ? uint32_t(BB_CHEAT_INCOMING) : 0u) |
+        (v.cheat_echoes ? uint32_t(BB_CHEAT_ECHOES) : 0u) |
+        (v.cheat_movement ? uint32_t(BB_CHEAT_MOVEMENT) : 0u) |
+        (v.cheat_infinite_stamina ? uint32_t(BB_CHEAT_STAMINA) : 0u) |
+        (v.cheat_no_consume ? uint32_t(BB_CHEAT_CONSUMABLES) : 0u);
+    v.cheat_active_mask.store(mask & v.cheat_supported.load(), std::memory_order_release);
+}
+
 void Load() {
     auto& v = Get();
     // Existing installations and unknown language codes use the English overlay.
@@ -114,6 +126,8 @@ void Load() {
     v.show_dlss_preset = false;
     v.show_resolution = false;
     v.background_mode = BackgroundRun;
+    v.cheat_damage = v.cheat_incoming = v.cheat_echoes = v.cheat_movement = 0;
+    v.cheat_infinite_stamina = v.cheat_no_consume = false;
     for (int e = 0; e < EffectCount; ++e) {
         v.effects[e] = Effects[e].default_on;
     }
@@ -158,6 +172,20 @@ void Load() {
             } else if (key == "background_mode") {
                 v.background_mode = value == "pause" ? BackgroundPause
                     : value == "30" ? Background30 : value == "60" ? Background60 : BackgroundRun;
+            } else if (key == "cheat_damage" || key == "cheat_incoming" || key == "cheat_echoes") {
+                int index = 0;
+                for (int i = 0; i < 5; ++i) if (value == CheatMultiplierKeys[i]) index = i;
+                if (key == "cheat_damage") v.cheat_damage = index;
+                if (key == "cheat_incoming") v.cheat_incoming = index;
+                if (key == "cheat_echoes") v.cheat_echoes = index;
+            } else if (key == "cheat_movement") {
+                int index = 0;
+                for (int i = 0; i < 6; ++i) if (value == MovementMultiplierKeys[i]) index = i;
+                v.cheat_movement = index;
+            } else if (key == "cheat_infinite_stamina") {
+                v.cheat_infinite_stamina = value == "1";
+            } else if (key == "cheat_no_consume") {
+                v.cheat_no_consume = value == "1";
             }
         }
         std::fclose(file);
@@ -198,6 +226,7 @@ void Load() {
     v.startup_model_lod = v.model_lod;
     v.startup_output_res = v.output_res;
     v.startup_live_resolution = v.live_resolution;
+    UpdateCheatMask();
 }
 
 void ConfigureUpscalerSupport(bool fsr4, bool fsr411) {
@@ -248,6 +277,7 @@ bool ResolutionNeedsRestart() {
 }
 
 void Save() {
+    UpdateCheatMask();
     const auto& v = Get();
     const std::string menu_path = MenuPath();
     const std::string temporary = menu_path + ".tmp";
@@ -264,6 +294,13 @@ void Save() {
         std::fprintf(file, "show_resolution=%d\nbackground_mode=%s\n",
                      int(v.show_resolution.load()),
                      background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
+        std::fprintf(file, "cheat_damage=%s\ncheat_incoming=%s\ncheat_echoes=%s\ncheat_movement=%s\n"
+                          "cheat_infinite_stamina=%d\ncheat_no_consume=%d\n",
+                     CheatMultiplierKeys[std::clamp(v.cheat_damage.load(), 0, 4)],
+                     CheatMultiplierKeys[std::clamp(v.cheat_incoming.load(), 0, 4)],
+                     CheatMultiplierKeys[std::clamp(v.cheat_echoes.load(), 0, 4)],
+                     MovementMultiplierKeys[std::clamp(v.cheat_movement.load(), 0, 5)],
+                     int(v.cheat_infinite_stamina.load()), int(v.cheat_no_consume.load()));
         const bool complete = !std::ferror(file);
         const bool closed = std::fclose(file) == 0;
         // The focus supervisor must see a complete policy, even when the game saves
@@ -357,3 +394,25 @@ const char* UpscalerName(int upscaler) {
 }
 
 } // namespace BbSettings
+
+extern "C" const void* bbgpu_cheat_mask_address() {
+    static_assert(std::atomic<uint32_t>::is_always_lock_free);
+    static_assert(sizeof(std::atomic<uint32_t>) == sizeof(uint32_t));
+    return &BbSettings::Get().cheat_active_mask;
+}
+
+extern "C" void bbgpu_cheat_options(BbCheatOptions* options) {
+    const auto& v = BbSettings::Get();
+    static constexpr unsigned multipliers[] = {1, 2, 4, 8, 16};
+    static constexpr float movement[] = {1.0f, 1.5f, 2.0f, 4.0f, 8.0f, 16.0f};
+    *options = {multipliers[std::clamp(v.cheat_damage.load(), 0, 4)],
+                multipliers[std::clamp(v.cheat_incoming.load(), 0, 4)],
+                multipliers[std::clamp(v.cheat_echoes.load(), 0, 4)],
+                movement[std::clamp(v.cheat_movement.load(), 0, 5)],
+                int(v.cheat_infinite_stamina.load()), int(v.cheat_no_consume.load())};
+}
+
+extern "C" void bbgpu_cheat_support(uint32_t mask) {
+    BbSettings::Get().cheat_supported = mask;
+    BbSettings::UpdateCheatMask();
+}

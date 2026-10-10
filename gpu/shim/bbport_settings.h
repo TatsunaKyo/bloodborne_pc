@@ -6,6 +6,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <string_view>
 
 namespace BbSettings {
@@ -64,6 +65,9 @@ inline constexpr int OutputCount = 4;
 inline constexpr int OutputDefault = 1; ///< 1920x1080, the game's own size
 
 struct Values {
+    std::atomic<int> cheat_damage{0}, cheat_incoming{0}, cheat_echoes{0}, cheat_movement{0};
+    std::atomic<bool> cheat_infinite_stamina{false}, cheat_no_consume{false};
+    std::atomic<uint32_t> cheat_supported{0}, cheat_active_mask{0};
     std::atomic<int> upscaler{UpscalerFsr3};
     std::atomic<int> preset{NativeAA};
     std::atomic<int> dlss_preset{0};
@@ -119,6 +123,11 @@ struct Values {
 };
 
 Values& Get();
+void UpdateCheatMask();
+inline constexpr const char* CheatMultipliers[] = {"Off", "x2", "x4", "x8", "x16"};
+inline constexpr const char* MovementMultipliers[] = {"Off", "x1.5", "x2", "x4", "x8", "x16"};
+inline constexpr const char* CheatMultiplierKeys[] = {"1", "2", "4", "8", "16"};
+inline constexpr const char* MovementMultiplierKeys[] = {"1", "1.5", "2", "4", "8", "16"};
 /// Background caps never raise a lower foreground cap.
 unsigned EffectiveFrameLimit(unsigned foreground_limit);
 

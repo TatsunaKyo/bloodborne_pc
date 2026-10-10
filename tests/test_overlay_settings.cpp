@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include "bbport_settings.h"
+#include "../gpu/bbcheats.h"
 
 static void Env(const char* key, const char* value) {
 #ifdef _WIN32
@@ -26,6 +27,26 @@ int main() {
     Env("BB_WINDOW_MODE", nullptr);
     Env("BB_DLSS_PRESET", nullptr);
     Env("BB_RENDER_RES", nullptr);
+    auto& cheat = Get();
+    assert(cheat.cheat_damage==0 && cheat.cheat_movement==0 && !cheat.cheat_infinite_stamina);
+    bbgpu_cheat_support(BB_CHEAT_ALL);
+    for (int i=0;i<5;++i) {
+        cheat.cheat_damage=i; cheat.cheat_incoming=i; cheat.cheat_echoes=i;
+        for (int m=0;m<6;++m) {
+            cheat.cheat_movement=m; cheat.cheat_infinite_stamina=i%2; cheat.cheat_no_consume=m%2;
+            Save();
+            { std::ofstream rewritten(config); rewritten << "upscaler=fsr3\npreset=0\n"; }
+            Load();
+            assert(cheat.cheat_damage==i && cheat.cheat_incoming==i && cheat.cheat_echoes==i);
+            assert(cheat.cheat_movement==m && cheat.cheat_infinite_stamina==bool(i%2) && cheat.cheat_no_consume==bool(m%2));
+            BbCheatOptions options; bbgpu_cheat_options(&options);
+            assert(options.damage==unsigned(std::atoi(CheatMultiplierKeys[i])) && options.incoming==options.damage && options.echoes==options.damage);
+            assert(options.movement==float(std::atof(MovementMultiplierKeys[m])));
+        }
+    }
+    bbgpu_cheat_support(0); assert(cheat.cheat_active_mask==0);
+    std::filesystem::remove(menu);
+    Load();
     auto& settings = Get();
     Load();
     assert(settings.menu_language == MenuEnglish && settings.window_mode == WindowFromLauncher &&

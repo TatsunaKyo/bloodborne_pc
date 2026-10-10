@@ -133,6 +133,7 @@ template <typename T>
 void Store(std::atomic<T>& target, T value, bool changed) {
     if (changed) {
         target = value;
+        BbSettings::UpdateCheatMask();
         dirty = true;
     }
 }
@@ -216,7 +217,6 @@ void Menu() {
         for (int i = 0; i < 4; ++i) {
             if (ImGui::Selectable(background_modes[i], i == background)) {
                 Store(s.background_mode, i, true);
-                // The parent supervisor reads this choice even while the child is frozen.
                 // Save before focus can be lost, rather than waiting for menu close.
                 BbSettings::Save();
                 dirty = false;
@@ -524,6 +524,40 @@ void Menu() {
               "игры остаётся в 1080p — на Steam Deck и старых видеокартах это заметно медленнее. "
               "Выключена: всё рисуется в разрешении пресета, смена — через перезапуск. Авто "
               "включает её на мощных дискретных видеокартах. Применяется после перезапуска игры."));
+    ImGui::SeparatorText(Text("Live cheats", "Читы без перезапуска"));
+    const auto multiplier = [&](const char* label, std::atomic<int>& target,
+                                uint32_t feature, bool motion = false) {
+        const char* const* labels = motion ? BbSettings::MovementMultipliers : BbSettings::CheatMultipliers;
+        const int count = motion ? 6 : 5;
+        const int current = std::clamp(target.load(), 0, count - 1);
+        ImGui::BeginDisabled(!(s.cheat_supported.load() & feature));
+        if (ImGui::BeginCombo(label, current ? labels[current] : Text("Off", "Выключено"))) {
+            for (int i = 0; i < count; ++i) {
+                if (ImGui::Selectable(i ? labels[i] : Text("Off", "Выключено"), current == i))
+                    Store(target, i, true);
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+    };
+    multiplier(Text("Player damage###cheat_damage", "Урон игрока###cheat_damage"), s.cheat_damage, 1u);
+    multiplier(Text("Reduce enemy damage###cheat_incoming", "Снизить урон врагов###cheat_incoming"), s.cheat_incoming, 2u);
+    Hint(Text("x2 halves damage received from an enemy; x16 divides it by 16. Defense stats stay the same.",
+              "x2 делит полученный от врага урон на 2; x16 — на 16. Характеристики защиты не меняются."));
+    multiplier(Text("Blood Echoes gained###cheat_echoes", "Полученные эхо крови###cheat_echoes"), s.cheat_echoes, 4u);
+    multiplier(Text("Movement speed###cheat_movement", "Скорость движения###cheat_movement"), s.cheat_movement, 8u, true);
+    ImGui::BeginDisabled(!(s.cheat_supported.load() & 16u));
+    Checkbox(Text("Infinite stamina###cheat_infinite_stamina", "Бесконечная выносливость###cheat_infinite_stamina"), s.cheat_infinite_stamina);
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!(s.cheat_supported.load() & 32u));
+    Checkbox(Text("Consumables are not reduced on use###cheat_no_consume",
+                  "Расходники не тратятся при использовании###cheat_no_consume"), s.cheat_no_consume);
+    ImGui::EndDisabled();
+    Hint(Text("Includes ammunition. You still need to own the item; selling, dropping and buying keep their normal behavior.",
+              "Включая боеприпасы. Предмет должен быть в инвентаре; продажа, выбрасывание и покупка работают как обычно."));
+    if (s.cheat_supported.load() != 63u)
+        ImGui::TextWrapped("%s", Text("Some live cheats are unavailable for this executable or conflict with a patch. See last_run.log.",
+                                     "Часть читов недоступна для этого исполняемого файла или конфликтует с патчем. См. last_run.log."));
     ImGui::SeparatorText(Text("Game effects (restart required)", "Эффекты игры (после перезапуска)"));
     const char* lods[] = {
         Text("Highest (-2)###lod_highest", "Максимальная (-2)###lod_highest"),

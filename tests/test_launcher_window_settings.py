@@ -79,6 +79,7 @@ def build(settings):
     obj.build_display()
     display_choice = [w for w in Widget.nodes if 'values' in w.kwargs and
                       w.kwargs['values'][0] in ('Windowed', 'Оконный')][-1]
+    obj.build_cheats()
     return obj, home_choice, display_choice
 
 
@@ -129,6 +130,22 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             assert obj.borderless_vsync_check.kwargs['state'] == 'normal'
             assert obj.presentation_choice.kwargs['state'] == 'disabled'
             assert obj.vars['menu_language'].get() == 'en'
+            for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
+                options = launcher.MOVEMENT_MULTIPLIERS if key == 'cheat_movement' else launcher.CHEAT_MULTIPLIERS
+                choice = next(w for w in Widget.nodes if w.kwargs.get('values') == [launcher._(*text) for _value, text in options]
+                              and obj.vars[key] is not None and w.bindings.get('<<ComboboxSelected>>')
+                              and w.bindings['<<ComboboxSelected>>'].__closure__
+                              and any(c.cell_contents is obj.vars[key] for c in w.bindings['<<ComboboxSelected>>'].__closure__))
+                assert obj.vars[key].get() == '1'
+                for index, (value, _labels) in enumerate(options):
+                    choice.choose(index); obj.collect()
+                    assert launcher.load_menu()[key] == value
+                choice.choose(0); obj.collect()
+            for key in ('cheat_infinite_stamina', 'cheat_no_consume'):
+                check = next(w for w in Widget.nodes if w.kwargs.get('variable') is obj.vars[key])
+                for desired in (True, False):
+                    obj.vars[key].set(not desired); check.invoke(); obj.collect()
+                    assert launcher.load_menu()[key] == ('1' if desired else '0')
             dlss_choices = obj.dlss_preset_choices
             assert len(dlss_choices) == 2
             assert all(box.kwargs['state'] == 'disabled' for box in dlss_choices)

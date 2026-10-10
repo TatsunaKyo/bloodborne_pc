@@ -79,8 +79,8 @@ Cheats
   control the targeted enemy) and gameplay tweaks (no Rally, camera further away, no camera
   auto-rotation, run with less stick tilt, ragdoll physics). They are game patches for 1.09,
   applied when the game starts.
-- Frame Generation and the additional multiplier/stamina/consumable cheats are not
-  enabled in this build. See docs\tatsunakyo-next.md for the remaining work.
+- Live cheats add player damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina and consumables kept after use. Choose them in the Cheats page or the in-game menu. They default to off and require verified game version 1.09 hooks. See docs\cheats.md.
+- Frame Generation is still being integrated and is not enabled in this build.
 
 Problems
 - Black screen at start: Advanced -> "Clear shader cache", then start again (the first minutes

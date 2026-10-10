@@ -61,10 +61,14 @@ ImRect language_rect, russian_rect, english_rect, window_rect, borderless_rect, 
 ImRect dlss_rect, preset_m_rect, preset_k_rect, osd_rect, osd_preset_rect, resolution_rect, background_rect, pause_rect, run_rect;
 std::map<std::string,ImRect> controls;
 std::map<std::string,ImGuiID> control_ids;
+std::map<std::string,ImRect> selectables;
 ImGuiID language_id=0;
 bool saw_russian=false, saw_english=false;
 bool TrackedCombo(const char* label,const char* preview) {
     bool result=ImGui::BeginCombo(label,preview);
+    if (const char* key=std::strstr(label,"###")) {
+        controls[key+3]=GImGui->LastItemData.Rect; control_ids[key+3]=GImGui->LastItemData.ID;
+    }
     if (std::strstr(label,"###menu_language")) {
         language_rect=GImGui->LastItemData.Rect;
         language_id=GImGui->LastItemData.ID;
@@ -76,6 +80,7 @@ bool TrackedCombo(const char* label,const char* preview) {
 }
 bool TrackedSelectable(const char* label,bool selected) {
     bool result=ImGui::Selectable(label,selected);
+    selectables[label]=GImGui->LastItemData.Rect;
     if (std::strcmp(label,"Русский")==0) { russian_rect=GImGui->LastItemData.Rect; saw_russian=true; }
     if (std::strcmp(label,"English")==0) { english_rect=GImGui->LastItemData.Rect; saw_english=true; }
     if (std::strstr(label,"###window_borderless")) borderless_rect=GImGui->LastItemData.Rect;
@@ -173,6 +178,20 @@ void TestSlider(const char* key,std::atomic<float>& value,float lo,float hi) {
     assert(std::abs(value-selected)<0.015f);
     SetOpen(true);
 }
+void TestMultiplier(const char* key,std::atomic<int>& value,bool movement=false) {
+    const int count=movement ? 6 : 5;
+    const char* const* labels=movement ? BbSettings::MovementMultipliers : BbSettings::CheatMultipliers;
+    for (int i=1;i<=count;++i) {
+        const int selected=i%count;
+        Reveal(key);
+        selectables.clear(); Click(controls.at(key).GetCenter()); Frame(); Frame();
+        const char* label=selected ? labels[selected] : Text("Off","Выключено");
+        assert(selectables.contains(label)); Click(selectables.at(label).GetCenter());
+        assert(value==selected && dirty);
+        SetOpen(false); value=(selected+1)%count; BbSettings::Load();
+        assert(value==selected); SetOpen(true);
+    }
+}
 void TestNavigation(ImGuiKey key) {
     auto& io=ImGui::GetIO();
     auto& s=BbSettings::Get();
@@ -198,6 +217,7 @@ int main(int argc,char** argv) {
     std::filesystem::remove(menu_path);
     auto& s=BbSettings::Get();
     assert(s.menu_language==BbSettings::MenuEnglish);
+    s.cheat_supported=63u;
     // Existing files, valid codes, and unknown values must load deterministically.
     for (const char* config : {"upscaler=dlss\npreset=2\noutput_res=2560x1440\n",
                               "menu_language=en\n", "menu_language=ru\n",
@@ -424,6 +444,12 @@ int main(int argc,char** argv) {
         TestBoolean("jitter",s.jitter);
         TestBoolean("reactive",s.reactive);
         TestBoolean("object_motion",s.object_motion);
+        TestBoolean("cheat_infinite_stamina",s.cheat_infinite_stamina);
+        TestBoolean("cheat_no_consume",s.cheat_no_consume);
+        TestMultiplier("cheat_damage",s.cheat_damage);
+        TestMultiplier("cheat_incoming",s.cheat_incoming);
+        TestMultiplier("cheat_echoes",s.cheat_echoes);
+        TestMultiplier("cheat_movement",s.cheat_movement,true);
         for (int e=0;e<BbSettings::EffectCount;++e) TestBoolean(BbSettings::Effects[e].key,s.effects[e]);
         s.upscaler=BbSettings::UpscalerFsr4;
         TestBoolean("fsr4_auto_exposure",s.fsr4_auto_exposure);

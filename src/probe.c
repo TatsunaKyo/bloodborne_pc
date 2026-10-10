@@ -6,6 +6,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include "runtime.h"
+#include "../gpu/bbcheats.h"
 #include "gpu/bbgpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
@@ -422,6 +423,7 @@ int main(int argc, char **argv) {
         }
         runtime_content_configure(values);
     }
+    char game_version[16] = "";
     if (app0) {
         runtime_file_configure(app0, user_dir ? user_dir : "user");
         char sfo[4096], id[16]="";
@@ -432,6 +434,7 @@ int main(int argc, char **argv) {
         sfo_value(sfo,"TITLE_ID",serial,sizeof(serial),NULL);
         sfo_value(sfo,"TITLE",title,sizeof(title),NULL);
         sfo_value(sfo,"APP_VER",version,sizeof(version),NULL);
+        snprintf(game_version, sizeof(game_version), "%s", version);
         bbnet_configure(app0,serial,title,version);
     }
     bbgpu_register_kernel();
@@ -604,6 +607,7 @@ int main(int argc, char **argv) {
         memcpy(image + relocs[i].target, &value, 8);
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
+    if (!cpu_only) runtime_cheats_install(image, size, game_version);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif

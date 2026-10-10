@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.4'
+VERSION = '1.6-tatsunakyo.5'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -177,8 +177,13 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'online_community': COMMUNITY_SERVER}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'show_fps': '1', 'show_dlss_preset': '0',
-                 'show_resolution': '0', 'background_mode': 'run'}
-MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution'}
+                 'show_resolution': '0', 'background_mode': 'run',
+                 'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
+                 'cheat_infinite_stamina': '0', 'cheat_no_consume': '0'}
+MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution',
+              'cheat_infinite_stamina', 'cheat_no_consume'}
+CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
+MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
 BACKGROUND_MODES = [('run', ('Keep running', 'Продолжать работу')),
                     ('pause', ('Pause game and rendering', 'Приостановить игру и рендер')),
                     ('30', ('Limit to 30 FPS', 'Лимит 30 FPS')),
@@ -287,6 +292,10 @@ def load_menu():
         values['background_mode'] = 'run'
     for key in MENU_FLAGS:
         values[key] = '1' if values[key] == '1' else '0'
+    for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
+        options = MOVEMENT_MULTIPLIERS if key == 'cheat_movement' else CHEAT_MULTIPLIERS
+        if values[key] not in dict(options):
+            values[key] = '1'
     preset = values['dlss_preset'].lower()
     preset = dict(zip(('0', '5', '6', '10', '11', '12', '13'),
                       ('default', 'e', 'f', 'j', 'k', 'l', 'm'))).get(preset, preset)
@@ -1054,6 +1063,24 @@ class Launcher:
                                  'play-through.', 'Патчи игры для версии 1.09, применяются при запуске. Для обычного '
                                  'прохождения оставьте их выключенными.'))
         self.version_warning(f)
+        self.section(f, _('Live cheats', 'Читы без перезапуска'), top=4)
+        self.row(f, _('Player damage', 'Урон игрока'),
+                 self.choice(f, 'cheat_damage', 'menu', CHEAT_MULTIPLIERS))
+        self.row(f, _('Reduce enemy damage', 'Снизить урон врагов'),
+                 self.choice(f, 'cheat_incoming', 'menu', CHEAT_MULTIPLIERS),
+                 _('x2 halves damage received from enemies; x16 divides it by 16. Defense stats stay the same.',
+                   'x2 делит урон врагов на 2; x16 — на 16. Характеристики защиты не меняются.'))
+        self.row(f, _('Blood Echoes gained', 'Полученные эхо крови'),
+                 self.choice(f, 'cheat_echoes', 'menu', CHEAT_MULTIPLIERS))
+        self.row(f, _('Movement speed', 'Скорость движения'),
+                 self.choice(f, 'cheat_movement', 'menu', MOVEMENT_MULTIPLIERS))
+        self.check(f, 'cheat_infinite_stamina', 'menu', _('Infinite stamina', 'Бесконечная выносливость'))
+        self.check(f, 'cheat_no_consume', 'menu',
+                   _('Consumables are not reduced on use', 'Расходники не тратятся при использовании'),
+                   _('Includes ammunition. You still need to own the item; selling, dropping and buying behave normally.',
+                     'Включая боеприпасы. Нужен предмет в инвентаре; продажа, выбрасывание и покупка работают как обычно.'))
+        self.note(f, _('These choices can also be changed from the in-game menu. They are enabled only when the version 1.09 hooks pass verification.',
+                      'Эти настройки можно менять в меню игры. Они доступны только после проверки кода версии 1.09.'))
         self.section(f, _('Cheats', 'Читы'), top=4)
         for key, title, _on in CHEATS:
             self.check(f, key, 'ini', _(*title))
