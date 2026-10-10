@@ -29,7 +29,7 @@ The in-game checkbox handling also supports repeated mouse clicks, keyboard acti
 
 ### Borderless fullscreen and background behavior
 
-I added several, different options for window management when compared to the (already great, original work). You can choose **Windowed**, **Borderless fullscreen** or **Fullscreen (driver default)** from the Play, Display & FPS tabs or the in-game menu. Borderless uses the current monitor's desktop resolution and refresh rate, without a display mode switch when you Alt-Tab, which was my main complaint from the original branch.
+I added several, different options for window management when compared to the already great, original work. You can choose **Windowed**, **Borderless fullscreen** or **Fullscreen (driver default)** from the Play, Display & FPS tabs or the in-game menu. Borderless uses the current monitor's desktop resolution and refresh rate, without a display mode switch when you Alt-Tab, which was my main complaint from the original branch.
 
 With **V-sync in borderless** off, the renderer requests Vulkan Immediate presentation and retains the default one-frame GPU queue. This avoids a V-sync wait but can tear. Turning it on requests Mailbox, with FIFO as the compatibility fallback. Windows and the driver determine whether independent flip is available; borderless by itself cannot guarantee a particular measured latency.
 
