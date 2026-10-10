@@ -6,8 +6,6 @@ My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborn
 
 **Current build: v1.6, revision 10.** [Download Windows builds](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 10 notes](docs/releases/windows-v1.6-tatsunakyo.10.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
-I have rebuilt the Revision 10 ZIP and it is ready for release. GitHub Releases currently has Revision 7 as its latest downloadable package, so check the revision number when downloading. Publishing updated source does not replace the ZIP attached to an older release.
-
 Always remember that NO game files are included — you NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump. The game folder must contain `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09 and will NOT work on any other version of the game.
 
 <img width="1956" height="1331" alt="immagine" src="https://github.com/user-attachments/assets/77133653-0e06-4a9d-a0eb-5f4f9f84774b" />
