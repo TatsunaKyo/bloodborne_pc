@@ -27,7 +27,7 @@ I wanted more control over image quality and more choices for people playing on 
 
 | Upscaler | Available option |
 |---|---|
-| DLSS 3.7, 4 & 4.5 | Quality/render scale plus a separate model preset; requires a supported RTX GPU. |
+| DLSS 3.7, 4 & 4.5 | Quality/render scale plus a separate model preset; requires a RTX GPU. |
 | FSR 3.1 | The existing reconstruction path, also used as a fallback if another provider fails. |
 | FSR 4 | Available with its shader assets and the required device features. |
 | XeSS Super Resolution 3.0.2 | The added Intel Vulkan integration, for supported Intel and other GPUs. |
