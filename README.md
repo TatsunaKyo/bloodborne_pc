@@ -6,6 +6,8 @@ My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborn
 
 **Current build: v1.6, revision 10.** [Download Windows builds](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 10 notes](docs/releases/windows-v1.6-tatsunakyo.10.md)
 
+The rebuilt Revision 10 ZIP is ready for release. GitHub Releases currently has Revision 7 as its latest downloadable package, so check the revision number when downloading. Publishing updated source does not replace the ZIP attached to an older release.
+
 Always remember that NO game files are included — you NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump. The game folder must contain `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09 and will NOT work on any other version of the game.
 
 ## How to use it
@@ -144,9 +146,9 @@ I test the revisions on my **Windows 11 PC with a GeForce RTX 5070 Ti**. This is
 
 ## Problems and feedback
 
-Include your GPU, driver version, settings, reproduction steps and `user/last_run.log` when sending a bug report. For a crash, enable the optional diagnostics before reproducing it and attach that session's output. The reported crash while firing with several cheats enabled is still under investigation. The game HUD can also show FG interpolation artifacts; separating it is follow-up work.
+Include your GPU, driver version, settings, reproduction steps and `user/last_run.log` when sending a bug report. For a crash, enable the optional diagnostics before reproducing it and attach that session's output. The reported crash while firing with several cheats enabled and uneven frame pacing are still under investigation. The inherited character-creation preview and AMD world-loading issues also remain open. The game HUD can show FG interpolation artifacts; separating it is follow-up work.
 
-For black screens, try **Advanced → Clear shader cache**. Rebuilding the cache can cause initial stutter. Dynamic NVIDIA MFG, Intel XeSS FG, AMD ML FG and FG model presets A/B are not included; their status is listed in [the roadmap](docs/tatsunakyo-next.md).
+For black screens, try **Advanced → Clear shader cache**. Rebuilding the cache can cause initial stutter. The [development roadmap](docs/tatsunakyo-next.md) covers save protection, input, ultrawide, pacing and each proposed cheat, with their existing foundations and dependencies. Dynamic NVIDIA MFG, Intel XeSS FG, AMD ML FG and FG model presets A/B remain follow-up work.
 
 Report fork-specific issues here. The [upstream community Discord](https://discord.gg/yTMG8c4Bqm) is maintained by the original project; check the original Windows build before sending a fork regression upstream.
 
