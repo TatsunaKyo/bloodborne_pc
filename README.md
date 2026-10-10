@@ -25,7 +25,7 @@ After setting things up once, **Play Bloodborne.exe** starts the game with the s
 
 The menu opened with **L3+R3 / Insert** defaults to English. You can switch between **English and Russian** immediately, independently of the launcher language and the language of the game. The existing launcher still offers its 13 languages.
 
-The in-game checkbox handling also supports repeated mouse clicks, keyboard activation and controller input. Settings are shared with the launcher through `bbport.menu.ini`, so saving launcher preferences preserves changes made during play.
+The in-game checkbox handling also supports repeated mouse clicks, keyboard activation and controller input. Settings are shared with the launcher through `bbport.menu.ini`, so saving launcher preferences preserves changes made during play. I was planning to work on adding the other languages for the in-game menu but it proved to be a bit more difficult than I initially thought, or rather — it's a bit time consuming and I want to make sure that I work on more fundamental QoL improvements first. I do plan to add it down the line though.
 
 ### Borderless fullscreen and background behavior
 
