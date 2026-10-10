@@ -4,7 +4,7 @@
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, a configurable overlay and settings you can change during play. This project would NOT be possible without the aforementioned work and people.
 
-**Current build: v1.6, revision 10.** [Download Windows builds](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 10 notes](docs/releases/windows-v1.6-tatsunakyo.10.md)
+**Current build: v1.6, revision 10.** [Download Windows builds](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 10 notes](docs/releases/windows-v1.6-tatsunakyo.10.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 I have rebuilt the Revision 10 ZIP and it is ready for release. GitHub Releases currently has Revision 7 as its latest downloadable package, so check the revision number when downloading. Publishing updated source does not replace the ZIP attached to an older release.
 
@@ -129,7 +129,7 @@ I also removed repeated camera memory checks after capture, cached the unchanged
 
 These are targeted changes for stale history and avoidable renderer work. I still need to improve motion coverage and separate the HUD from interpolation; the [quality and performance notes](docs/quality-and-performance.md) explain those next steps.
 
-### Optional developer diagnostics
+### Optional developer diagnostics and data profiling
 
 I added **General → Diagnostics → Developer profiling and crash diagnostics** to make crashes easier to investigate. It keeps per-session logs, active settings, timings, exit codes and Windows crash dumps when available. I left it off by default because ordinary play should not require the profiler. [Performance notes](docs/performance.md) describe optional comparisons.
 
@@ -148,9 +148,9 @@ The upstream features remain available: keyboard/controller support, mod and com
 
 I test the revisions on my **Windows 11 PC with a GeForce RTX 5070 Ti**. This is the main gameplay test configuration for the fork. Automated tests also cover settings, controls, hook behavior, renderer contracts and package contents. Coverage and open problems are collected in [Testing and known issues](docs/testing.md), rather than repeated throughout the documentation. AMD/Intel hardware and other Windows configurations depend on community feedback.
 
-## Problems and feedback
+## IF YOU HAVE ANY ISSUE WHATSOEVER
 
-Include your GPU, driver version, settings, reproduction steps and `user/last_run.log` when sending a bug report. For a crash, enable the optional diagnostics before reproducing it and attach that session's output. The reported crash while firing with several cheats enabled and uneven frame pacing are still under investigation. The inherited character-creation preview and AMD world-loading issues also remain open. The game HUD can show FG interpolation artifacts; separating it is follow-up work.
+Include your GPU, driver version, settings, reproduction steps and `user/last_run.log` when sending a bug report. For a crash or performance issues, enable the optional diagnostics before reproducing it and attach that session's output. The reported crash while firing with several cheats enabled and uneven frame pacing are still under investigation. The inherited character-creation preview and AMD world-loading issues also remain open. The game HUD can show FG interpolation artifacts; separating it is follow-up work.
 
 For black screens, try **Advanced → Clear shader cache**. Rebuilding the cache can cause initial stutter. The [development roadmap](docs/tatsunakyo-next.md) covers save protection, input, ultrawide, pacing and each proposed cheat, with their existing foundations and dependencies. Dynamic NVIDIA MFG, Intel XeSS FG, AMD ML FG and FG model presets A/B remain follow-up work.
 
