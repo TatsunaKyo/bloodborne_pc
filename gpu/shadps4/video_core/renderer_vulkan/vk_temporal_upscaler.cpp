@@ -997,7 +997,8 @@ bool TemporalUpscaler::RecordReactive(vk::ImageView color_view) {
 void TemporalUpscaler::Run() {
     if (auto* profiler = GpuProfiler::Get()) {
         const char* label = BbSettings::Get().upscaler == BbSettings::UpscalerTaa
-            ? "upscaler Run (TAA)" : "upscaler Run (FSR)";
+            ? "upscaler Run (TAA)" : BbSettings::Get().upscaler == BbSettings::UpscalerDlss
+            ? "upscaler Run (DLSS)" : "upscaler Run (FSR)";
         profiler->Mark(0xF5A0'0000ull ^ std::hash<std::string_view>{}(label),
                        [label] { return std::string{label}; });
     }
@@ -1528,7 +1529,8 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
 void TemporalUpscaler::RunScaled() {
     if (auto* profiler = GpuProfiler::Get()) {
         const char* label = BbSettings::Get().upscaler == BbSettings::UpscalerTaa
-            ? "upscaler RunScaled (TAA)" : "upscaler RunScaled (FSR)";
+            ? "upscaler RunScaled (TAA)" : BbSettings::Get().upscaler == BbSettings::UpscalerDlss
+            ? "upscaler RunScaled (DLSS)" : "upscaler RunScaled (FSR)";
         profiler->Mark(0xF5A0'0000ull ^ std::hash<std::string_view>{}(label),
                        [label] { return std::string{label}; });
     }
@@ -1889,13 +1891,20 @@ bool TemporalUpscaler::RedirectSampled(VideoCore::ImageId image,
     return true;
 }
 
-bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
+bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display, vk::Format view_format) {
     std::scoped_lock lock{display_mutex};
     const auto it = displays.find(address);
     if (it == displays.end() || !it->second.valid) {
         return false;
     }
-    display = {vk::Image(it->second.image), it->second.format, it->second.width, it->second.height};
+    auto& source = it->second;
+    // Reuse the buffer's format/swizzle cache instead of creating and retiring a
+    // fresh Vulkan image view on every flip. Resize already finishes the owning
+    // scheduler before clearing these views and replacing the image.
+    const auto view = Mirror(vk::Image(source.image), source.views, view_format,
+        {vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
+         vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eOne});
+    display = {vk::Image(source.image), source.format, source.width, source.height, view};
     // Diagnostic capture of the actual completed display buffer, including native UI.
     // BB_PRESENT_DUMP_COUNT=N: the trigger dumps N consecutive frames (temporal stability).
     static const char* dump = std::getenv("BB_PRESENT_DUMP_TRIGGER");

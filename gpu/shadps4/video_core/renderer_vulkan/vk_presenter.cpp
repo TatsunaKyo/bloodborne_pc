@@ -14,6 +14,7 @@
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
+#include "bbport_background.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -362,7 +363,8 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
     // bbport: scaled upscaler presets: the output-size display buffer drawn by the port.
     TemporalUpscaler::Display display{};
-    const bool upscaled = rasterizer->GetUpscaler().DisplayOverride(cpu_address, display);
+    const bool upscaled = rasterizer->GetUpscaler().DisplayOverride(
+        cpu_address, display, GetFrameViewFormat(attribute.attrib.pixel_format));
     VideoCore::ImageId image_id{};
     if (!upscaled) {
         auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
@@ -406,16 +408,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     vk::ImageView image_view{};
     vk::Extent2D image_size{};
     if (upscaled) {
-        const auto device = instance.GetDevice();
-        image_view = Check(device.createImageView({
-            .image = display.image,
-            .viewType = vk::ImageViewType::e2D,
-            .format = view_info.format,
-            .components = {vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
-                           vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eOne},
-            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
-        }));
-        draw_scheduler.DeferOperation([device, image_view] { device.destroyImageView(image_view); });
+        image_view = display.view;
         image_size = vk::Extent2D{display.width, display.height};
         const vk::ImageMemoryBarrier2 to_read{
             .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -569,6 +562,7 @@ Frame* Presenter::PrepareBlankFrame(bool present_thread) {
 }
 
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
+    BbBackground::Wait();
     if (is_game_frame && frame) {
         BbSettings::Get().active_output_width = frame->width;
         BbSettings::Get().active_output_height = frame->height;

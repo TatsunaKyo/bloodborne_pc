@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.3'
+VERSION = '1.6-tatsunakyo.4'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -210,6 +210,7 @@ LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарт�
 LODS = [('0', ('As in the game', 'Как в игре')), ('-2', ('Highest (−2)', 'Максимальная (−2)')),
         ('1', ('Lower (1)', 'Ниже (1)')), ('2', ('Lowest (2)', 'Минимальная (2)'))]
 FPS_MODES = [('uncap', ('Unlocked (frame-time patch)', 'Без ограничения (патч)')), ('60', ('60 FPS',)),
+             ('75', ('75 FPS',)),
              ('90', ('90 FPS',)), ('30', ('30 FPS (as on PS4)', '30 FPS (как на PS4)'))]
 PRESENT_MODES = [('Mailbox', ('Mailbox (low latency, no tearing)', 'Mailbox (без разрывов)')),
                  ('Fifo', ('FIFO (VSync)',)), ('FifoRelaxed', ('FIFO Relaxed',)),
@@ -224,7 +225,7 @@ READBACKS = [('', ('Relaxed (default)', 'Relaxed (по умолчанию)')), (
 # Frame cap of the unlocked mode (BB_FPS_LIMIT). '' leaves the port's own: the display refresh,
 # at most 120, because the game's movement timing breaks above about 120 FPS.
 FRAME_CAPS = [('', ('Auto: display refresh, max 120 (recommended)', 'Авто: частота монитора, макс. 120 (рекомендуется)')),
-              ('60', ('60',)), ('90', ('90',)), ('120', ('120',)), ('144', ('144  ⚠',)), ('165', ('165  ⚠',)),
+              ('60', ('60',)), ('75', ('75',)), ('90', ('90',)), ('120', ('120',)), ('144', ('144  ⚠',)), ('165', ('165  ⚠',)),
               ('240', ('240  ⚠',)), ('0', ('No limit  ⚠', 'Без ограничения  ⚠'))]
 FRAMES_AHEAD = [('', ('1 (default)', '1 (по умолчанию)')), ('2', ('2',)), ('0', ('Unbounded', 'Без ограничения'))]
 UI_LANGUAGES = bbport_lang.LANGUAGE_NAMES
@@ -439,8 +440,11 @@ def game_environment(s):
     env['BB_PRESENT_MODE'] = s['present_mode']
     if s['hdr']:
         env['BB_HDR'] = '1'
-    env['BB_FPS'] = s['fps_mode']
-    if s.get('frame_cap', ''):
+    # 75 uses the variable frame-time patch, not a fixed 60/90 timing patch.
+    env['BB_FPS'] = 'uncap' if s['fps_mode'] == '75' else s['fps_mode']
+    if s['fps_mode'] == '75':
+        env['BB_FPS_LIMIT'] = '75'
+    elif s.get('frame_cap', ''):
         env['BB_FPS_LIMIT'] = s['frame_cap']
     for key, name in (('draw_pipe', 'BB_DRAW_PIPE'), ('readbacks', 'BB_READBACKS'), ('frames_ahead', 'BB_FRAMES_AHEAD')):
         if s[key]:
@@ -637,6 +641,11 @@ class Launcher:
         if not hasattr(self, 'dlss_preset_choices'):
             self.dlss_preset_choices = []
         self.dlss_preset_choices.append(box)
+        upscaler = self.var('upscaler', 'ini')
+        def availability(*_args):
+            box.configure(state='readonly' if upscaler.get() == 'dlss' else 'disabled')
+        upscaler.trace_add('write', availability)
+        availability()
         return box
 
     def row(self, parent, title, widget, hint=None):
@@ -813,8 +822,7 @@ class Launcher:
         self.row(quick, _('Frame rate', 'Частота кадров'), self.choice(quick, 'fps_mode', 'app', FPS_MODES, 26))
         self.row(quick, _('Upscaler', 'Апскейлер'), self.choice(quick, 'upscaler', 'ini', UPSCALERS, 26))
         self.row(quick, _('Preset', 'Пресет'), self.choice(quick, 'preset', 'ini', PRESETS, 26))
-        self.row(quick, _('DLSS preset', 'Пресет DLSS'), self.dlss_preset_choice(quick, 26),
-                 _('Used when the upscaler is DLSS.', 'Используется при выборе DLSS.'))
+        self.row(quick, _('DLSS preset', 'Пресет DLSS'), self.dlss_preset_choice(quick, 26))
         self.row(quick, _('Output', 'Разрешение'), self.choice(quick, 'output_res', 'ini', OUTPUTS, 26))
         self.row(quick, _('Window mode', 'Режим окна'), self.choice(quick, 'window_mode', 'menu', WINDOW_MODES, 26))
         ttk.Checkbutton(quick, text=_('Show performance overlay', 'Показывать статистику'),
@@ -887,10 +895,10 @@ class Launcher:
                  _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
                    'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'))
         self.row(f, _('DLSS render preset', 'Пресет модели DLSS'), self.dlss_preset_choice(f),
-                 _('Used when the upscaler is DLSS. Model hint, separate from render scale. '
+                 _('Model hint, separate from render scale. '
                    'In-game changes apply on the next frame. '
                    'E/F are legacy; driver/profile overrides may supersede this choice.',
-                   'Используется при выборе DLSS. Модель отдельно от масштаба. '
+                   'Модель отдельно от масштаба. '
                    'Изменения в игре применяются на следующем кадре. '
                    'E/F устарели; драйвер или профиль может переопределить выбор.'))
         self.row(f, _('Output resolution', 'Разрешение вывода'), self.choice(f, 'output_res', 'ini', OUTPUTS),

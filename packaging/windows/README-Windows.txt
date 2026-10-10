@@ -53,7 +53,7 @@ Starting
   The in-game menu has the same checkbox; it is separate from the DLSS preset readout.
 - Display & FPS -> "When in background": Keep running, Pause game and rendering,
   Limit to 30 FPS, or Limit to 60 FPS. The in-game menu has the same choice.
-  Pause freezes the native Windows game process until its window regains focus;
+  Pause stops game submissions and rendering while the window stays responsive;
   game timers exclude the paused time. The FPS choices keep a lower foreground cap
   and restore the foreground limit when you return. Keep running is the default.
 - In the game, Insert (or L3+R3 on a gamepad) opens the port's menu (upscaler, resolution,

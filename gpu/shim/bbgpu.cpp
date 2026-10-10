@@ -232,7 +232,7 @@ extern "C" int bbgpu_init(const BbGpuConfig* config) {
         }
         g_window_cv.notify_all();
         while (window->PollEvents()) {
-            SDL_Delay(2);
+            SDL_Delay(BbSettings::Get().window_focused ? 2 : 20);
         }
         LOG_INFO(Frontend, "Window closed by user");
         std::fflush(stdout);

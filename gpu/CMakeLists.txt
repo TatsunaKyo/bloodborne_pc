@@ -306,3 +306,7 @@ add_executable(fsr4-bench EXCLUDE_FROM_ALL tools/fsr4_bench.cpp
     shadps4/video_core/renderer_vulkan/fsr411/fsr411.cpp)
 target_include_directories(fsr4-bench PRIVATE shadps4/video_core/renderer_vulkan/fsr411)
 target_link_libraries(fsr4-bench PRIVATE ffx-vulkan::fsr4-v07-vulkan ffx-vulkan::fsr4-v07-assets Vulkan::Vulkan)
+
+add_executable(background-pause-test EXCLUDE_FROM_ALL ../tests/test_background_pause.cpp shim/bbport_background.cpp)
+target_include_directories(background-pause-test PRIVATE shim)
+target_compile_options(background-pause-test PRIVATE -UNDEBUG)

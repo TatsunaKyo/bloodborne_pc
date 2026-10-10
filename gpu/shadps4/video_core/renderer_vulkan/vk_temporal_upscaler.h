@@ -119,8 +119,9 @@ public:
         vk::Image image;
         vk::Format format;
         u32 width, height;
+        vk::ImageView view;
     };
-    bool DisplayOverride(VAddr address, Display& display);
+    bool DisplayOverride(VAddr address, Display& display, vk::Format view_format);
 
 private:
     /// bbport: views of guest images the upscaler reads, kept across frames: FSR 4 registers

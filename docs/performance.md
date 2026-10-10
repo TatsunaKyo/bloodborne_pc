@@ -1,0 +1,9 @@
+# Checking performance in Central Yharnam
+
+Keep the same save, location, camera direction, output resolution and window mode for each comparison. Let the shader cache warm up before recording. A lower input resolution improving FPS suggests that part of the cost depends on rendering resolution, but CPU and GPU utilization percentages do not locate that cost. A busy game or renderer thread can be hidden by the CPU average; GPU percentage also combines different types of work and waits.
+
+In **Advanced**, enable **Frame statistics in the log (every 5 s)** and **GPU time per pass in the log**. Start the game, wait for the scene to settle, and stay in the slow sewer area for at least 20 seconds with **DLSS Performance, preset L**. Repeat with **Ultra Performance** using the same output resolution and preset. For an additional comparison, try **Frames ahead of the GPU: 2**, then restore the default if it adds latency or worsens pacing. That option can help overlap CPU recording with GPU execution, but it is not a guaranteed improvement.
+
+The log page shows the capture and `last_run.log` is written to your saves folder, or `user` beside the launcher when no custom folder is set. The frame-stat lines separate guest GPU-command processing, compilation and waits. GPU profile lines contain actual timestamp durations by pass; the upscaler is labeled DLSS in revision 4. Check the median, p99 and spikes alongside average FPS. The diagnostic profiler adds overhead, so disable both switches after capturing.
+
+Revision 4 removes repeated Vulkan image-view creation from upscaled presentation. The buffer already has a view cache and a safe resize path, so the presenter now reuses that cache. This change reduces that driver work without increasing the frame queue. No before/after FPS result for the sewer area has been measured on the build host.

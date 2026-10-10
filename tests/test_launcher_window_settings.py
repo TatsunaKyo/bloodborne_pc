@@ -131,10 +131,10 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             assert obj.vars['menu_language'].get() == 'en'
             dlss_choices = obj.dlss_preset_choices
             assert len(dlss_choices) == 2
-            assert all(box.kwargs['state'] == 'readonly' for box in dlss_choices)
+            assert all(box.kwargs['state'] == 'disabled' for box in dlss_choices)
             assert [key for key, _text in launcher.DLSS_PRESETS] == ['default', 'e', 'f', 'j', 'k', 'm', 'l']
             other_upscaler = obj.vars['upscaler'].get()
-            dlss_choices[0].choose(5)  # Can save M even while FSR is selected.
+            obj.vars['dlss_preset'].set('m')  # Previously saved choice survives another upscaler.
             obj.collect()
             assert launcher.load_menu()['dlss_preset'] == 'm'
             assert obj.vars['upscaler'].get() == other_upscaler
@@ -153,7 +153,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
                 assert obj.vars['preset'].get() == quality
                 assert obj.vars['output_res'].get() == resolution
             obj.vars['upscaler'].set('fsr3')
-            assert all(box.kwargs['state'] == 'readonly' for box in dlss_choices)
+            assert all(box.kwargs['state'] == 'disabled' for box in dlss_choices)
             obj.vars['dlss_preset'].set('default')
             overlay_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
                               w.kwargs['variable'] is obj.vars['show_fps']]
@@ -260,8 +260,13 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
         if previous is None: os.environ.pop('BB_CONFIG', None)
         else: os.environ['BB_CONFIG'] = previous
 
-print('PASS: launcher controls in Play/Graphics/Display, seven DLSS presets available even with FSR selected, '
+print('PASS: launcher controls in Play/Graphics/Display, seven DLSS presets enabled only with DLSS selected, '
       'exact E/F/J/K/M/L order, presets independent of quality/resolution, '
       'shared OSD and preset visibility switches, basic overlay by default, legacy FPS/fullscreen migration, '
       'preservation of concurrent in-game changes, '
       'preset normalization, environment and custom config paths.')
+
+s = dict(launcher.APP_DEFAULTS, fps_mode='75', frame_cap='120')
+assert launcher.game_environment(s)['BB_FPS'] == 'uncap'
+assert launcher.game_environment(s)['BB_FPS_LIMIT'] == '75'
+assert '75' in dict(launcher.FPS_MODES) and '75' in dict(launcher.FRAME_CAPS)

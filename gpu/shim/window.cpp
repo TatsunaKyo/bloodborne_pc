@@ -7,6 +7,7 @@
 #include "sdl_window.h"
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
+#include "bbport_background.h"
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -14,13 +15,6 @@
 namespace Frontend {
 
 WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}, height{height_} {
-#ifdef _WIN32
-    if (std::getenv("BB_BACKGROUND_CHANNEL")) {
-        // A deliberate pause must not replace this HWND with a hung-app ghost window:
-        // the external supervisor uses its real foreground ownership to resume us.
-        DisableProcessWindowsGhosting();
-    }
-#endif
     // Gamepads are sampled by runtime_pad.c; their events are pumped here with the window's.
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         UNREACHABLE_MSG("Failed to initialize SDL video: {}", SDL_GetError());
@@ -197,6 +191,9 @@ bool WindowSDL::PollEvents() {
             break;
         }
     }
+    const auto& settings = BbSettings::Get();
+    BbBackground::Update(is_open && !settings.window_focused &&
+                         settings.background_mode == BbSettings::BackgroundPause);
     return is_open;
 }
 

@@ -34,6 +34,8 @@ int bbgpu_text_input_poll(char *out_utf8, uint64_t size);
 int bbgpu_overlay_captures_input(void);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned bbgpu_symbol_count(void);
+/* Completed and current cooperative pause time; the window event loop keeps running. */
+uint64_t bbgpu_background_paused_ns(void);
 #ifdef __cplusplus
 }
 #endif

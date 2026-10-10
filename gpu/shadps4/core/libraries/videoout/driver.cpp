@@ -13,6 +13,7 @@
 #include "common/assert.h"
 #include "bbport_toggles.h"
 #include "bbport_settings.h"
+#include "bbport_background.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -625,6 +626,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
 
     while (!token.stop_requested()) {
+        const bool was_paused = BbBackground::Paused();
+        BbBackground::Wait(token);
+        if (token.stop_requested()) return;
+        if (was_paused) next_flip = std::chrono::steady_clock::now();
         update_limit();
         timer.Start();
         const auto tick_deadline = std::chrono::steady_clock::now() + vblank_period;
@@ -687,6 +692,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             continue;
         }
         while (!token.stop_requested()) {
+            if (BbBackground::Paused()) break;
             update_limit();
             {
                 std::unique_lock lk{mutex};
