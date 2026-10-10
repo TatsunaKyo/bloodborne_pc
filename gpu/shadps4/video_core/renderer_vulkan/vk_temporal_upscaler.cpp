@@ -21,6 +21,7 @@
 #include "video_core/host_shaders/upscale_reactive_comp.h"
 #include "video_core/host_shaders/taa_comp.h"
 #include "video_core/host_shaders/taa_sharpen_comp.h"
+#include "video_core/host_shaders/xess_color_comp.h"
 #include "video_core/host_shaders/taa_sharpen_ldr_comp.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
@@ -199,6 +200,11 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
             render_height = h;
         }
     }
+    if (Xess* xess=Xess::Get(); !xess || !xess->Available()) {
+        auto& settings=BbSettings::Get();
+        settings.xess_problem=xess ? xess->Problem() : "Intel XeSS runtime is missing or disabled.";
+        if (settings.upscaler==BbSettings::UpscalerXess) settings.upscaler=BbSettings::UpscalerFsr3;
+    }
     // Scene depth copied into the output-size UI depth by a blit (depth aspect).
     const auto features = instance.GetPhysicalDevice()
                               .getFormatProperties(vk::Format::eD32SfloatS8Uint)
@@ -219,6 +225,7 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
 
 TemporalUpscaler::~TemporalUpscaler() {
     if (resources_ready) scheduler.Finish();
+    if (Xess* xess=Xess::Get()) xess->ReleaseFeature();
     if (context) {
         scheduler.Finish();
         ffxVkPortableUpscaleContextDestroy(context);
@@ -231,13 +238,14 @@ bool TemporalUpscaler::Active() const {
            (BbSettings::Get().upscaler == BbSettings::UpscalerFsr3 ||
             BbSettings::IsFsr4(BbSettings::Get().upscaler) ||
             BbSettings::Get().upscaler == BbSettings::UpscalerTaa ||
-            BbSettings::Get().upscaler == BbSettings::UpscalerDlss) &&
+            BbSettings::Get().upscaler == BbSettings::UpscalerDlss ||
+            BbSettings::Get().upscaler == BbSettings::UpscalerXess) &&
            !BbToggle::Disabled(1u << 24);
 }
 
 bool TemporalUpscaler::ReactiveOn() const {
     // FSR 4 takes no reactive mask: the opaque snapshot and the mask pass would be wasted.
-    return BbSettings::Get().reactive && !BbToggle::Disabled(1u << 27) && !UseFsr4() && !UseDlss() &&
+    return BbSettings::Get().reactive && !BbToggle::Disabled(1u << 27) && !UseFsr4() && !UseDlss() && !UseXess() &&
            BbSettings::Get().upscaler != BbSettings::UpscalerTaa;
 }
 
@@ -372,7 +380,7 @@ void TemporalUpscaler::OnDispatch(u64 cs_hash) {
 
 bool TemporalUpscaler::EnsureResources(u32 w, u32 h, u32 ow, u32 oh, bool hdr) {
     // DLSS, like FSR 4, has its own context: no portable FSR 3 context is made.
-    const bool use_fsr4 = UseFsr4() || UseDlss();
+    const bool use_fsr4 = UseFsr4() || UseDlss() || UseXess();
     const bool use_taa = BbSettings::Get().upscaler == BbSettings::UpscalerTaa;
     if (use_taa && (w != ow || h != oh)) {
         std::printf("TAA: remove BB_RENDER_RES to use native-resolution TAA\n");
@@ -732,7 +740,8 @@ void TemporalUpscaler::RecordTaa(vk::CommandBuffer cmdbuf, vk::ImageView color,
 void TemporalUpscaler::ExtraSharpen(vk::CommandBuffer cmdbuf, vk::Image target, bool ldr, u32 w,
                                     u32 h) {
     const auto& settings = BbSettings::Get();
-    const float extra = std::clamp(settings.sharpness.load(), 0.0f, 2.0f) - 1.0f;
+    const float extra = std::clamp(settings.sharpness.load(), 0.0f, 2.0f) -
+                        (settings.upscaler==BbSettings::UpscalerXess ? 0.0f : 1.0f);
     if (!settings.sharpen || extra <= 0.0f) {
         return;
     }
@@ -1096,6 +1105,10 @@ void TemporalUpscaler::Run() {
     } else if (UseFsr4()) {
         dispatched = RecordFsr4(cmdbuf, {input_color, input_color_view, w, h},
                                 {input_depth, input_depth_view, w, h}, w, h, ow, oh, frame_ms);
+    } else if (UseXess()) {
+        dispatched=RecordXess(cmdbuf,
+            {input_color,input_color_view,color.info.pixel_format,vk::ImageAspectFlagBits::eColor,w,h},
+            {input_depth,input_depth_view,depth_format,vk::ImageAspectFlagBits::eDepth,w,h},w,h,ow,oh,true);
     } else if (UseDlss()) {
         dispatched = RecordDlss(
             cmdbuf,
@@ -1628,13 +1641,18 @@ void TemporalUpscaler::RunScaled() {
     }
 
     // bbport: FSR 4 writes its HDR-format output, copied into the output-size UI image.
-    if (UseFsr4() || UseDlss() || BbSettings::Get().upscaler == BbSettings::UpscalerTaa) {
+    if (UseFsr4() || UseDlss() || UseXess() || BbSettings::Get().upscaler == BbSettings::UpscalerTaa) {
         barrier(vk::Image(output_image), vk::ImageAspectFlagBits::eColor,
                 vk::ImageLayout::eUndefined, all, vk::AccessFlagBits2::eNone,
                 vk::ImageLayout::eGeneral, all, rw);
         bool ok4 = true;
         if (BbSettings::Get().upscaler == BbSettings::UpscalerTaa) {
             RecordTaa(cmdbuf, color_view, depth_view);
+        } else if (UseXess()) {
+            ok4=RecordXess(cmdbuf,
+                {color_image,color_view,color.info.pixel_format,vk::ImageAspectFlagBits::eColor,source_width,source_height},
+                {depth_image,depth_view,depth_format,vk::ImageAspectFlagBits::eDepth,source_width,source_height},
+                w,h,ow,oh,false);
         } else if (UseDlss()) {
             ok4 = RecordDlss(cmdbuf,
                              {color_image, color_view, color.info.pixel_format,
@@ -2004,6 +2022,80 @@ bool TemporalUpscaler::UseDlss() const {
     const Dlss* dlss = Dlss::Get();
     return BbSettings::Get().upscaler == BbSettings::UpscalerDlss && dlss && dlss->Available() &&
            !dlss_failed;
+}
+
+bool TemporalUpscaler::UseXess() const {
+    const Xess* xess=Xess::Get();
+    return BbSettings::Get().upscaler==BbSettings::UpscalerXess && xess && xess->Available();
+}
+bool TemporalUpscaler::RecordXess(vk::CommandBuffer command,const Xess::Resource& color,
+    const Xess::Resource& depth,u32 w,u32 h,u32 ow,u32 oh,bool hdr) {
+    Xess* xess=Xess::Get();
+    const Xess::FeatureDesc desc{w,h,ow,oh,hdr};
+    bool ok=true;
+    if (!xess->HasFeature(desc)) {
+        scheduler.WaitSubmitted();xess->ReleaseFeature();
+        ok=xess->CreateFeature(desc);reset=true;
+    }
+    const auto device=instance.GetDevice();
+    if (ok && (xess_width!=w || xess_height!=h)) {
+        scheduler.WaitSubmitted();xess_color_view.reset();
+        xess_color=VideoCore::UniqueImage(device,instance.GetAllocator());
+        xess_color.Create({.imageType=vk::ImageType::e2D,.format=vk::Format::eR16G16B16A16Sfloat,
+            .extent={w,h,1},.mipLevels=1,.arrayLayers=1,.samples=vk::SampleCountFlagBits::e1,
+            .tiling=vk::ImageTiling::eOptimal,.usage=vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eSampled});
+        xess_color_view=Check(device.createImageViewUnique({.image=vk::Image(xess_color),
+            .viewType=vk::ImageViewType::e2D,.format=vk::Format::eR16G16B16A16Sfloat,
+            .subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}}));
+        xess_width=w;xess_height=h;
+    }
+    if (ok && !xess_color_pipeline) {
+        const std::array bindings{
+            vk::DescriptorSetLayoutBinding{.binding=0,.descriptorType=vk::DescriptorType::eSampledImage,
+                .descriptorCount=1,.stageFlags=vk::ShaderStageFlagBits::eCompute},
+            vk::DescriptorSetLayoutBinding{.binding=1,.descriptorType=vk::DescriptorType::eStorageImage,
+                .descriptorCount=1,.stageFlags=vk::ShaderStageFlagBits::eCompute}};
+        xess_color_descriptors=Check(device.createDescriptorSetLayoutUnique({
+            .flags=vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .bindingCount=2,.pBindings=bindings.data()}));
+        xess_color_layout=Check(device.createPipelineLayoutUnique({.setLayoutCount=1,
+            .pSetLayouts=&*xess_color_descriptors}));
+        auto shader=Check(device.createShaderModuleUnique({.codeSize=sizeof(XESS_COLOR_COMP),.pCode=XESS_COLOR_COMP}));
+        xess_color_pipeline=Check(device.createComputePipelineUnique({},vk::ComputePipelineCreateInfo{
+            .stage={.stage=vk::ShaderStageFlagBits::eCompute,.module=*shader,.pName="main"},.layout=*xess_color_layout}));
+    }
+    if (ok) {
+        // Sampling through the original view preserves its sRGB decoding and
+        // channel swizzle. XeSS always receives typed linear RGBA16F color.
+        const vk::ImageMemoryBarrier2 prepare{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,.dstAccessMask=vk::AccessFlagBits2::eShaderWrite,
+            .oldLayout=vk::ImageLayout::eUndefined,.newLayout=vk::ImageLayout::eGeneral,
+            .image=vk::Image(xess_color),.subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}};
+        command.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&prepare});
+        const std::array<vk::DescriptorImageInfo,2> images{{
+            {.imageView=color.view,.imageLayout=vk::ImageLayout::eGeneral},
+            {.imageView=*xess_color_view,.imageLayout=vk::ImageLayout::eGeneral}}};
+        const std::array writes{
+            vk::WriteDescriptorSet{.dstBinding=0,.descriptorCount=1,.descriptorType=vk::DescriptorType::eSampledImage,.pImageInfo=&images[0]},
+            vk::WriteDescriptorSet{.dstBinding=1,.descriptorCount=1,.descriptorType=vk::DescriptorType::eStorageImage,.pImageInfo=&images[1]}};
+        command.bindPipeline(vk::PipelineBindPoint::eCompute,*xess_color_pipeline);
+        command.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,*xess_color_layout,0,writes);
+        command.dispatch((w+7)/8,(h+7)/8,1);
+        const float sign=BbToggle::Disabled(1u<<26) ? -1.0f : 1.0f;
+        ok=xess->Evaluate(command,{
+            .color={vk::Image(xess_color),*xess_color_view,vk::Format::eR16G16B16A16Sfloat,vk::ImageAspectFlagBits::eColor,w,h},
+            .depth=depth,
+            .motion={vk::Image(motion_image),*motion_view,vk::Format::eR16G16Sfloat,vk::ImageAspectFlagBits::eColor,w,h},
+            .output={vk::Image(output_image),*output_view,vk::Format::eR16G16B16A16Sfloat,vk::ImageAspectFlagBits::eColor,ow,oh},
+            .jitter_x=sign*jitter[0],.jitter_y=sign*jitter[1],.reset=reset,.frame_ms=0,.sharpness=0});
+    }
+    if (!ok) {
+        BbSettings::Get().upscaler=BbSettings::UpscalerFsr3;
+        BbSettings::Get().xess_problem=xess->Problem();reset=true;
+        std::puts("Upscaler: XeSS failed; falling back to FSR 3.1.");
+    }
+    return ok;
 }
 
 bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource& color,

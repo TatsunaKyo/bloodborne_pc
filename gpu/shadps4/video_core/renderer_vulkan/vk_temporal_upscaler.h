@@ -21,6 +21,7 @@
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 #include "video_core/renderer_vulkan/vk_dlss.h"
+#include "video_core/renderer_vulkan/vk_xess.h"
 #include "video_core/renderer_vulkan/vk_fsr4.h"
 #include "video_core/renderer_vulkan/vk_frame_generation.h"
 #include "video_core/texture_cache/image.h"
@@ -171,6 +172,9 @@ private:
     [[nodiscard]] bool UseFsr4() const;
     /// bbport: DLSS selected and the bridge is ready (NVIDIA RTX, bbport_dlss.dll).
     [[nodiscard]] bool UseDlss() const;
+    [[nodiscard]] bool UseXess() const;
+    bool RecordXess(vk::CommandBuffer command,const Xess::Resource& color,
+                    const Xess::Resource& depth,u32 w,u32 h,u32 ow,u32 oh,bool hdr);
     /// Records DLSS into `cmdbuf` (output in General). `hdr`: linear scene color input.
     bool RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource& color,
                     const Dlss::Resource& depth, u32 w, u32 h, u32 ow, u32 oh, float frame_ms,
@@ -257,6 +261,12 @@ private:
     bool fsr4_failed = false;
     bool dlss_failed = false;
     VideoCore::UniqueImage motion_image;
+    VideoCore::UniqueImage xess_color;
+    vk::UniqueImageView xess_color_view;
+    vk::UniqueDescriptorSetLayout xess_color_descriptors;
+    vk::UniquePipelineLayout xess_color_layout;
+    vk::UniquePipeline xess_color_pipeline;
+    u32 xess_width{},xess_height{};
     VideoCore::UniqueImage output_image;
     vk::UniqueImageView motion_view;
     vk::UniqueImageView output_view;

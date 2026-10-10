@@ -28,11 +28,15 @@ class Widget:
 
     def __init__(self, parent=None, **kwargs):
         self.parent, self.kwargs, self.bindings, self.index, self.rows = parent, kwargs, {}, 0, 0
+        self.visible=True
         self.nodes.append(self)
 
     def grid(self, **kwargs):
+        self.visible=True
         if self.parent:
             self.parent.rows = max(self.parent.rows, kwargs.get('row', 0) + 1)
+
+    def grid_remove(self): self.visible=False
 
     def set(self, value):
         if 'command' in self.kwargs: self.kwargs['command'](str(value))
@@ -59,7 +63,7 @@ tk_api = types.SimpleNamespace(
     StringVar=lambda **kwargs: tk.StringVar(master=interpreter, **kwargs),
     DoubleVar=lambda **kwargs: tk.DoubleVar(master=interpreter, **kwargs))
 ttk_api = types.SimpleNamespace(Frame=Widget, Label=Widget, Combobox=Widget,
-                                Checkbutton=Widget, Button=Widget, Scale=Widget, Progressbar=Widget)
+                                Checkbutton=Widget, Button=Widget, Scale=Widget, Spinbox=Widget, Progressbar=Widget)
 
 
 def build(settings):
@@ -180,6 +184,32 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             assert launcher.load_menu()['generated_fps_limit'] == '137'
             assert launcher.load_menu()['limit_generated_fps'] == '1'
             obj.vars['limit_generated_fps'].set(False)
+            def cap_widgets(key):
+                value=obj.vars[key]
+                def closes(callback):
+                    return callback and any(cell.cell_contents is value for cell in callback.__closure__ or ())
+                entry=next(w for w in Widget.nodes if closes(w.bindings.get('<Return>')))
+                slider=next(w for w in Widget.nodes if closes(w.bindings.get('<B1-Motion>')))
+                return entry,slider
+            obj.vars['limit_generated_fps'].set(True)
+            entry,slider=cap_widgets('generated_fps_limit')
+            entry.kwargs['textvariable'].set('130');entry.bindings['<Return>'](None)
+            assert obj.vars['generated_fps_limit'].get()=='130'
+            slider.bindings['<ButtonPress-1>'](types.SimpleNamespace(x=100,state=0))
+            slider.bindings['<B1-Motion>'](types.SimpleNamespace(x=105,state=0))
+            assert obj.vars['generated_fps_limit'].get()=='135'
+            slider.bindings['<Left>'](None)
+            assert obj.vars['generated_fps_limit'].get()=='134'
+            entry.kwargs['textvariable'].set('137');obj.collect()
+            assert launcher.load_menu()['generated_fps_limit']=='137'
+            obj.vars['limit_generated_fps'].set(False)
+            assert entry.kwargs['state']==slider.kwargs['state']=='disabled'
+            entry,slider=cap_widgets('frame_cap')
+            entry.kwargs['textvariable'].set('93');entry.bindings['<FocusOut>'](None);obj.collect()
+            assert launcher.game_environment(obj.app)['BB_FPS_LIMIT']=='93'
+            entry.kwargs['textvariable'].set('0');entry.bindings['<Return>'](None)
+            assert obj.vars['frame_cap'].get()=='0'
+            obj.vars['frame_cap'].set('')
             for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
                 options = launcher.MOVEMENT_MULTIPLIERS if key == 'cheat_movement' else launcher.CHEAT_MULTIPLIERS
                 choice = next(w for w in Widget.nodes if w.kwargs.get('values') == [launcher._(*text) for _value, text in options]
@@ -191,7 +221,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
                     choice.choose(index); obj.collect()
                     assert launcher.load_menu()[key] == value
                 choice.choose(0); obj.collect()
-            for key in ('cheat_infinite_stamina', 'cheat_no_consume'):
+            for key in ('cheat_infinite_stamina', 'cheat_no_consume', 'cheat_no_fall_damage'):
                 check = next(w for w in Widget.nodes if w.kwargs.get('variable') is obj.vars[key])
                 for desired in (True, False):
                     obj.vars[key].set(not desired); check.invoke(); obj.collect()
@@ -199,6 +229,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             dlss_choices = obj.dlss_preset_choices
             assert len(dlss_choices) == 2
             assert all(box.kwargs['state'] == 'disabled' for box in dlss_choices)
+            assert not obj.quick_dlss_row.visible
             assert [key for key, _text in launcher.DLSS_PRESETS] == ['default', 'e', 'f', 'j', 'k', 'm', 'l']
             other_upscaler = obj.vars['upscaler'].get()
             obj.vars['dlss_preset'].set('m')  # Previously saved choice survives another upscaler.
@@ -208,6 +239,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             assert launcher.load_ini()[0]['upscaler'] == other_upscaler
             assert all(box.current() == 5 for box in dlss_choices)
             obj.vars['upscaler'].set('dlss')
+            assert obj.quick_dlss_row.visible
             assert all(box.kwargs['state'] == 'readonly' for box in dlss_choices)
             quality = obj.vars['preset'].get()
             resolution = obj.vars['output_res'].get()
@@ -220,6 +252,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
                 assert obj.vars['preset'].get() == quality
                 assert obj.vars['output_res'].get() == resolution
             obj.vars['upscaler'].set('fsr3')
+            assert not obj.quick_dlss_row.visible
             assert all(box.kwargs['state'] == 'disabled' for box in dlss_choices)
             obj.vars['dlss_preset'].set('default')
             overlay_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and

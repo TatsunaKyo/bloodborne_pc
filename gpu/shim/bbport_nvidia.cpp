@@ -3,12 +3,15 @@
 #include "bbport_nvidia.h"
 #include "bbport_settings.h"
 #include "bbport_background.h"
+#include "bbport_latency.h"
+#include "bbport_frame_metrics.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <chrono>
 #include <mutex>
 #ifdef _WIN32
 #include <windows.h>
@@ -48,6 +51,9 @@ uint32_t configured_generated{},configured_width{},configured_height{},configure
 const sl::ViewportHandle viewport{0};
 struct Flip { int index; int64_t argument; sl::FrameToken* token; };
 std::deque<Flip> flips;
+std::chrono::steady_clock::time_point latency_query{},latency_updated{};
+uint64_t latency_frame{};
+BbFrameMetrics::Counter frame_metrics;
 template<class T> bool Import(T*& target, const char* name) {
     target=reinterpret_cast<T*>(GetProcAddress(module,name)); return target!=nullptr;
 }
@@ -67,8 +73,26 @@ void Mark(sl::PCLMarker marker, sl::FrameToken* token) {
 }
 bool Wanted() {
     const auto& s=BbSettings::Get();
-    return (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia) &&
+    return (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia ||
+            (s.show_fps && s.show_latency)) &&
            (s.window_focused || s.background_mode==BbSettings::BackgroundRun);
+}
+void UpdateLatency() {
+    auto& s=BbSettings::Get();
+    if (!s.show_fps || !s.show_latency || !reflex_state || !Wanted()) {
+        s.pc_latency_ms=-1.0f;return;
+    }
+    const auto now=std::chrono::steady_clock::now();
+    if (now-latency_updated>std::chrono::milliseconds(500)) s.pc_latency_ms=-1.0f;
+    if (now-latency_query<std::chrono::milliseconds(100)) return;
+    latency_query=now;
+    sl::ReflexState state;
+    if (reflex_state(state)!=sl::Result::eOk || !state.latencyReportAvailable) {
+        s.pc_latency_ms=-1.0f;return;
+    }
+    if (const auto sample=BbLatency::Latest(state.frameReport,latency_frame)) {
+        latency_frame=sample->frame;latency_updated=now;s.pc_latency_ms=sample->milliseconds;
+    }
 }
 void WaitLatestInputs() {
     if (latest_fence && latest_value && device) {
@@ -88,8 +112,11 @@ void Off() {
         fg_options(viewport,options);
     }
     fg_on=false;
-    if (BbSettings::Get().frame_generation==BbSettings::FrameGenerationNvidia)
-        BbSettings::Get().frame_generation_active=0;
+    auto& s=BbSettings::Get();
+    s.frame_generation_cap_multiplier=0;
+    s.nvidia_real_fps=s.nvidia_output_fps=-1.0f;
+    frame_metrics.Reset();
+    if (s.frame_generation==BbSettings::FrameGenerationNvidia) s.frame_generation_active=0;
 }
 using Matrix=std::array<float,16>;
 Matrix View(const std::array<float,12>& view) {
@@ -169,6 +196,11 @@ void BindDevice(vk::PhysicalDevice physical,vk::Device dev) {
     reflex_supported=reflex_supported && reflex_state(state)==sl::Result::eOk && state.lowLatencyAvailable;
     BbSettings::Get().nvidia_fg_supported=fg_supported && reflex_supported;
     BbSettings::Get().reflex_supported=reflex_supported.load();
+    if (fg_supported) {
+        sl::DLSSGState state;
+        if (fg_state(viewport,state,nullptr)==sl::Result::eOk)
+            BbSettings::Get().nvidia_max_generated=state.numFramesToGenerateMax;
+    }
     std::printf("NVIDIA Vulkan: FG supported=%d, Reflex supported=%d\n",int(fg_supported),int(reflex_supported));
 }
 void BeginRender() {
@@ -193,12 +225,13 @@ void NextSimulation() {
         std::scoped_lock lock{mutex};
         sl::ReflexOptions options;
         const auto& s=BbSettings::Get();
-        options.mode=Wanted() ? s.reflex==2 ? sl::ReflexMode::eLowLatencyWithBoost : sl::ReflexMode::eLowLatency : sl::ReflexMode::eOff;
+        const bool low_latency=Wanted() && (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia);
+        options.mode=low_latency ? s.reflex==2 ? sl::ReflexMode::eLowLatencyWithBoost : sl::ReflexMode::eLowLatency : sl::ReflexMode::eOff;
         // Preserve the real-frame limiter in VideoOut. Passing its 75 directly
         // as a display limiter would incorrectly cap FG to 75 total FPS.
         options.frameLimitUs=0;
         if (reflex_options(options)!=sl::Result::eOk) return;
-        if (!Wanted()) {simulation_token=nullptr;rendering=false;return;}
+        if (!Wanted()) {simulation_token=nullptr;rendering=false;BbSettings::Get().pc_latency_ms=-1.0f;return;}
         const uint32_t id=++frame_index;
         if (new_token(next,&id)!=sl::Result::eOk || !next) return;
     }
@@ -224,23 +257,24 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
     if (s.frame_generation==BbSettings::FrameGenerationNvidia && (!fg_supported || !reflex_supported))
         s.frame_generation_problem="NVIDIA FG requires a supported GPU/driver and Hardware-accelerated GPU scheduling. Real frames are kept.";
     if (!game_frame || !Wanted() || !token || !snapshot || !fg_supported || !reflex_supported || failed || s.nvidia_api_error) {
+        if (s.frame_generation==BbSettings::FrameGenerationNvidia && fg_supported && reflex_supported && !failed) {
+            s.frame_generation_problem=s.nvidia_api_error ? "NVIDIA FG reported an API error. Turn FG off and on to retry; see last_run.log." :
+                !Wanted() ? "NVIDIA FG is suspended while the game is in the background." :
+                !game_frame ? "NVIDIA FG is waiting for a new game frame." :
+                !token ? "NVIDIA FG is missing the frame's submission token; see last_run.log." :
+                "NVIDIA FG is waiting for scene depth and motion vectors.";
+        }
         Off();if (s.nvidia_api_error) {failed=true;s.frame_generation_problem="NVIDIA FG reported an API error. Turn FG off and on to retry; see last_run.log.";}
         Mark(sl::PCLMarker::ePresentStart,token);return;
     }
     if (s.frame_generation!=BbSettings::FrameGenerationNvidia) {Mark(sl::PCLMarker::ePresentStart,token);return;}
     const auto& source=snapshot->source;
-    if (source.projection[0]==0 || source.projection[1]==0 || source.projection[3]==0) {Off();Mark(sl::PCLMarker::ePresentStart,token);return;}
-    sl::DLSSGState state;
-    const auto state_result=fg_state(viewport,state,nullptr);
-    if (state_result!=sl::Result::eOk) {
-        Off();failed=true;
-        std::printf("NVIDIA FG state query failed (%u)\n",unsigned(state_result));
-        s.frame_generation_problem="NVIDIA FG state query failed. Real frames are kept; see last_run.log.";
-        Mark(sl::PCLMarker::ePresentStart,token);return;
+    if (source.projection[0]==0 || source.projection[1]==0 || source.projection[3]==0) {
+        s.frame_generation_problem="NVIDIA FG is waiting for a valid scene camera.";
+        Off();Mark(sl::PCLMarker::ePresentStart,token);return;
     }
-    s.nvidia_max_generated=state.numFramesToGenerateMax;
     const uint32_t generated=uint32_t(std::clamp(s.nvidia_generated_frames.load(),1,
-        std::max(1,int(state.numFramesToGenerateMax))));
+        std::max(1,s.nvidia_max_generated.load())));
     if (fg_on && (configured_generated!=generated || configured_width!=snapshot->width ||
         configured_height!=snapshot->height || configured_format!=uint32_t(format))) Off();
     sl::DLSSGOptions options;options.mode=sl::DLSSGMode::eOn;options.numFramesToGenerate=generated;
@@ -279,7 +313,9 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
         fg_on=options_result==sl::Result::eOk;
         Off();failed=true;s.frame_generation_problem="NVIDIA FG input/options failed. Real frames are kept; see last_run.log.";
     } else {
+        if (!fg_on) frame_metrics.Reset();
         fg_on=true;s.frame_generation_problem=nullptr;
+        s.frame_generation_cap_multiplier=int(generated+1);
         configured_generated=generated;configured_width=snapshot->width;
         configured_height=snapshot->height;configured_format=uint32_t(format);
     }
@@ -291,16 +327,24 @@ bool Present(Vulkan::Frame* frame,const std::function<bool()>& present) {
     std::scoped_lock lock{mutex};
     const bool presented=present();
     Mark(sl::PCLMarker::ePresentEnd,static_cast<sl::FrameToken*>(frame->nvidia_token));
+    UpdateLatency();
     if (fg_state && fg_on) {
         sl::DLSSGState state;
         const auto result=fg_state(viewport,state,nullptr);
         if (result==sl::Result::eOk) {
+            auto& s=BbSettings::Get();
+            s.nvidia_max_generated=state.numFramesToGenerateMax;
+            frame_metrics.Output(state.numFramesActuallyPresented);
+            if (presented && frame_metrics.Present(true)) {
+                const auto measured=frame_metrics.Get();
+                s.nvidia_real_fps=measured.real_fps;s.nvidia_output_fps=measured.output_fps;
+                s.frame_generation_active=int(std::clamp(measured.multiplier,1u,state.numFramesToGenerateMax+1));
+            }
             frame->nvidia_fence=vk::Semaphore(reinterpret_cast<VkSemaphore>(state.inputsProcessingCompletionFence));
             frame->nvidia_fence_value=state.lastPresentInputsProcessingCompletionFenceValue;
             frame->nvidia_fence_epoch=input_epoch;
             latest_fence=frame->nvidia_fence;latest_value=frame->nvidia_fence_value;
             const bool ok=state.status==sl::DLSSGStatus::eOk && !BbSettings::Get().nvidia_api_error;
-            BbSettings::Get().frame_generation_active=ok ? std::clamp(BbSettings::Get().nvidia_generated_frames.load(),1,std::max(1,int(state.numFramesToGenerateMax)))+1 : 0;
             if (!ok) {
                 std::printf("NVIDIA FG status=0x%x, API error=%d\n",unsigned(state.status),int(BbSettings::Get().nvidia_api_error.load()));
                 Off();failed=true;BbSettings::Get().frame_generation_problem="NVIDIA FG is unavailable for the current GPU/driver/output. Real frames are kept; see last_run.log.";

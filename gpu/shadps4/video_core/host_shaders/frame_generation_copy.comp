@@ -20,6 +20,13 @@ vec3 encodePQ(vec3 linear) {
     vec3 p=pow(clamp(linear/125.0,0.0,1.0),vec3(0.1593017578125));
     return pow((0.8359375+18.8515625*p)/(1.0+18.6875*p),vec3(78.84375));
 }
+vec3 decodeSrgb(vec3 encoded) {
+    return mix(encoded/12.92,pow((encoded+0.055)/1.055,vec3(2.4)),greaterThan(encoded,vec3(0.04045)));
+}
+vec3 encodeSrgb(vec3 linear) {
+    linear=max(linear,vec3(0));
+    return mix(linear*12.92,1.055*pow(linear,vec3(1.0/2.4))-0.055,greaterThan(linear,vec3(0.0031308)));
+}
 void main() {
     ivec2 p=ivec2(gl_GlobalInvocationID.xy);
     // sRGB sampled views decode to linear scRGB; no second post-processing pass.
@@ -28,9 +35,11 @@ void main() {
         vec3 color=texelFetch(scene,p,0).rgb;
         if (parameters.transfer==1) color=decodePQ(color);
         if (parameters.transfer==2) color=encodePQ(color);
+        if (parameters.transfer==4) color=decodeSrgb(color);
+        if (parameters.transfer==5) color=encodeSrgb(color);
         imageStore(color_snapshot,p,vec4(color,1.0));
     }
-    if (parameters.transfer==2) return;
+    if (parameters.transfer==2 || parameters.transfer==5) return;
     if (all(lessThan(uvec2(p),parameters.render_size))) {
         vec2 scale=vec2(parameters.render_size)/vec2(parameters.source_size);
         ivec2 source_p=min(ivec2((vec2(p)+0.5)/scale),ivec2(parameters.source_size)-1);

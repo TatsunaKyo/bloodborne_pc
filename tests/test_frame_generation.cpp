@@ -2,6 +2,7 @@
 #include "video_core/renderer_vulkan/vk_frame_generation.h"
 #include "bbport_background.h"
 #include "bbport_settings.h"
+#include "video_core/host_shaders/xess_color_comp.h"
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 #include <cassert>
@@ -209,9 +210,10 @@ struct Inputs {
     u32 rw,rh,w,h;
     vk::Format color_format;
     InputImage color,depth,motion;
-    Inputs(Device& gpu_,u32 rw_,u32 rh_,u32 w_,u32 h_,bool hdr=false)
+    Inputs(Device& gpu_,u32 rw_,u32 rh_,u32 w_,u32 h_,bool hdr=false,
+           vk::Format sdr=vk::Format::eR8G8B8A8Unorm)
         : gpu{gpu_},rw{rw_},rh{rh_},w{w_},h{h_},
-          color_format{hdr ? vk::Format::eA2B10G10R10UnormPack32 : vk::Format::eR8G8B8A8Srgb},
+          color_format{hdr ? vk::Format::eA2B10G10R10UnormPack32 : sdr},
           color{*gpu.device,gpu.allocator,color_format,w,h,vk::ImageAspectFlagBits::eColor},
           depth{*gpu.device,gpu.allocator,vk::Format::eD32Sfloat,rw,rh,vk::ImageAspectFlagBits::eDepth},
           motion{*gpu.device,gpu.allocator,vk::Format::eR16G16Sfloat,rw,rh,vk::ImageAspectFlagBits::eColor,true} {
@@ -259,6 +261,48 @@ bool Generate(Device& gpu,Vulkan::FrameGeneration& fg,const std::shared_ptr<Vulk
     auto cmd=gpu.Begin(); const bool generated=fg.Record(*cmd,snapshot);
     fg.Submitted(gpu.Submit(*cmd)); return generated;
 }
+void TestXessColor(Device& gpu) {
+    const vk::DescriptorSetLayoutBinding bindings[]={
+        {.binding=0,.descriptorType=vk::DescriptorType::eSampledImage,.descriptorCount=1,.stageFlags=vk::ShaderStageFlagBits::eCompute},
+        {.binding=1,.descriptorType=vk::DescriptorType::eStorageImage,.descriptorCount=1,.stageFlags=vk::ShaderStageFlagBits::eCompute}};
+    auto descriptor=Check(gpu.device->createDescriptorSetLayoutUnique({.flags=vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .bindingCount=2,.pBindings=bindings}));
+    auto layout=Check(gpu.device->createPipelineLayoutUnique({.setLayoutCount=1,.pSetLayouts=&*descriptor}));
+    auto shader=Check(gpu.device->createShaderModuleUnique({.codeSize=sizeof(XESS_COLOR_COMP),.pCode=XESS_COLOR_COMP}));
+    auto pipeline=Check(gpu.device->createComputePipelineUnique({}, {
+        .stage={.stage=vk::ShaderStageFlagBits::eCompute,.module=*shader,.pName="main"},.layout=*layout}));
+    for (bool hdr : {false,true}) {
+        Inputs sdr(gpu,8,8,8,8,false,vk::Format::eR8G8B8A8Srgb);
+        InputImage linear(*gpu.device,gpu.allocator,vk::Format::eR16G16B16A16Sfloat,8,8,vk::ImageAspectFlagBits::eColor);
+        InputImage output(*gpu.device,gpu.allocator,vk::Format::eR16G16B16A16Sfloat,8,8,vk::ImageAspectFlagBits::eColor,true);
+        auto cmd=gpu.Begin();
+        for (auto image : {linear.image,output.image}) {
+            const vk::ImageMemoryBarrier2 transition{.dstStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+                .dstAccessMask=vk::AccessFlagBits2::eMemoryWrite,.oldLayout=vk::ImageLayout::eUndefined,
+                .newLayout=vk::ImageLayout::eGeneral,.image=image,.subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}};
+            cmd->pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&transition});
+        }
+        if(hdr) cmd->clearColorImage(linear.image,vk::ImageLayout::eGeneral,
+            vk::ClearColorValue{std::array<float,4>{5,10,20,1}},vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor,0,1,0,1});
+        const vk::MemoryBarrier2 read{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,.srcAccessMask=vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,.dstAccessMask=vk::AccessFlagBits2::eShaderRead|vk::AccessFlagBits2::eShaderWrite};
+        cmd->pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&read});
+        const vk::DescriptorImageInfo images[]={
+            {.imageView=hdr ? *linear.view : *sdr.color.view,.imageLayout=vk::ImageLayout::eGeneral},
+            {.imageView=*output.view,.imageLayout=vk::ImageLayout::eGeneral}};
+        const vk::WriteDescriptorSet writes[]={
+            {.dstBinding=0,.descriptorCount=1,.descriptorType=vk::DescriptorType::eSampledImage,.pImageInfo=images},
+            {.dstBinding=1,.descriptorCount=1,.descriptorType=vk::DescriptorType::eStorageImage,.pImageInfo=images+1}};
+        cmd->bindPipeline(vk::PipelineBindPoint::eCompute,*pipeline);
+        cmd->pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,*layout,0,writes);
+        cmd->dispatch(1,1,1);gpu.Submit(*cmd);
+        const auto data=gpu.Read(output.image,8,8,8);const auto* pixel=reinterpret_cast<const u16*>(data.data());
+        assert(std::abs(Half(pixel[0])-(hdr ? 5 : .21586f))<.002f);
+        assert(std::abs(Half(pixel[1])-(hdr ? 10 : .05127f))<.002f);
+        assert(std::abs(Half(pixel[2])-(hdr ? 20 : .52712f))<.002f && Half(pixel[3])==1);
+    }
+    std::puts("PASS: production XeSS FP16 conversion shader preserves sampled sRGB colors and HDR highlights above 1.0, with Vulkan synchronization validation.");
+}
 void Test(Device& gpu) {
     auto& settings=BbSettings::Get();
     settings.window_focused=true; settings.background_mode=BbSettings::BackgroundRun;
@@ -288,6 +332,11 @@ void Test(Device& gpu) {
     assert(Generate(gpu,fg,snapshot)); assert(settings.frame_generation_active==2);
     const auto generated=gpu.Read(vk::Image(snapshot->generated),128,128,8);
     const auto* output=reinterpret_cast<const u16*>(generated.data());
+    const auto presented=gpu.Read(snapshot->PresentImage(),128,128,8);
+    const auto* encoded=reinterpret_cast<const u16*>(presented.data());
+    assert(std::abs(Half(encoded[0])-128.0f/255.0f)<.003f);
+    assert(std::abs(Half(encoded[1])-64.0f/255.0f)<.003f);
+    assert(std::abs(Half(encoded[2])-192.0f/255.0f)<.003f);
     unsigned lit=0;
     for (u32 i=0;i<128*128*4;++i) {
         assert(std::isfinite(Half(output[i])));
@@ -356,6 +405,14 @@ void Test(Device& gpu) {
     inputs.Capture(fg,snapshot);assert(Generate(gpu,fg,snapshot));
     std::puts("PASS: HDR10 500/1000/2000-nit decode, FI/OF highlights above SDR white, PQ re-encoding, HDR-to-SDR history reset.");
     settings.frame_generation=BbSettings::FrameGenerationNvidia;
+    // The desktop swapchain uses UNORM with an sRGB color space, not SRGB
+    // image formats. Revision 7 incorrectly rejected both actual SDR formats.
+    for (auto format : {vk::Format::eR8G8B8A8Unorm,vk::Format::eB8G8R8A8Unorm,
+                        vk::Format::eR8G8B8A8Srgb,vk::Format::eB8G8R8A8Srgb}) {
+        Inputs desktop(gpu,64,64,128,128,false,format);
+        desktop.Capture(fg,snapshot);
+        assert(snapshot && snapshot->nvidia_input_only && !snapshot->hdr);
+    }
     for (auto* input : {&inputs,&hdr,&reduced}) {
         input->Capture(fg,snapshot);
         assert(snapshot && snapshot->nvidia_input_only);
@@ -384,7 +441,7 @@ void Test(Device& gpu) {
 int main() {
     try {
         { Device gpu; if (!gpu.Create()) { std::puts("SKIP: Vulkan GPU and current Khronos validation layer required."); return 77; }
-          Test(gpu); }
+          Test(gpu); TestXessColor(gpu); }
         assert(validation_errors==0);
         std::printf("Frame Generation integration: GPU color/depth/motion copies, real FI/OF output, history reset, queue lifetime, resize and background modes passed; validation errors=%u, warnings=%u.\n",
                     validation_errors,validation_warnings);

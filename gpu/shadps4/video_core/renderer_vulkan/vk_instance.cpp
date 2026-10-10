@@ -13,6 +13,7 @@
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_dlss.h"
+#include "video_core/renderer_vulkan/vk_xess.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 
@@ -189,6 +190,7 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
 Instance::~Instance() {
     ImGui::Core::Shutdown(GetDevice());
     BbNvidia::Shutdown();
+    if (Xess* xess=Xess::Get()) xess->Shutdown();
     vmaDestroyAllocator(allocator);
 }
 
@@ -240,7 +242,7 @@ bool Instance::CreateDevice() {
         return false;
     }
 
-    boost::container::static_vector<const char*, 64> enabled_extensions;
+    boost::container::static_vector<const char*, 96> enabled_extensions;
     const auto add_extension = [&](std::string_view extension) -> bool {
         const auto result =
             std::find_if(available_extensions.begin(), available_extensions.end(),
@@ -417,16 +419,13 @@ bool Instance::CreateDevice() {
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
     // bbport: DLSS (optional bridge DLL) needs its own device extensions on NVIDIA GPUs.
-    std::vector<const char*> dlss_extensions;
-    if (Dlss* dlss = Dlss::Get()) {
-        dlss->AppendDeviceExtensions(*instance, physical_device, dlss_extensions);
-        for (const char* name : dlss_extensions) {
-            if (std::none_of(enabled_extensions.begin(), enabled_extensions.end(),
-                             [&](const char* e) { return std::string_view{e} == name; }) &&
-                enabled_extensions.size() < enabled_extensions.capacity()) {
-                enabled_extensions.push_back(name);
-            }
-        }
+    std::vector<const char*> provider_extensions;
+    if (Xess* xess=Xess::Get()) xess->AppendDeviceExtensions(*instance,physical_device,provider_extensions);
+    if (Dlss* dlss=Dlss::Get()) dlss->AppendDeviceExtensions(*instance,physical_device,provider_extensions);
+    for (const char* name:provider_extensions) {
+        if (std::none_of(enabled_extensions.begin(),enabled_extensions.end(),
+                         [&](const char* e) {return std::string_view{e}==name;}))
+            enabled_extensions.push_back(name);
     }
     vk::StructureChain device_chain = {
         vk::DeviceCreateInfo{
@@ -639,7 +638,12 @@ bool Instance::CreateDevice() {
         device_chain.unlink<vk::PhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE>();
     }
 
-    auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());
+    auto xess_chain=device_chain;
+    void* xess_features=const_cast<void*>(xess_chain.get().pNext);
+    const bool use_xess=Xess::Get() &&
+        Xess::Get()->PrepareDeviceFeatures(*instance,physical_device,xess_features);
+    if (use_xess) xess_chain.get().pNext=xess_features;
+    auto [device_result, dev] = physical_device.createDeviceUnique(use_xess ? xess_chain.get() : device_chain.get());
     if (device_result != vk::Result::eSuccess) {
         LOG_CRITICAL(Render_Vulkan, "Failed to create device: {}", vk::to_string(device_result));
         return false;
@@ -650,6 +654,7 @@ bool Instance::CreateDevice() {
     if (Dlss* dlss = Dlss::Get()) {
         dlss->Initialize(*instance, physical_device, *device);
     }
+    if (Xess* xess=Xess::Get()) xess->Initialize(*instance,physical_device,*device);
 
     graphics_queue = device->getQueue(queue_family_index, 0);
     present_queue = device->getQueue(queue_family_index, 0);

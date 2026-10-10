@@ -2,7 +2,7 @@
 
 **Revision maintained by [TatsunaKyo](https://github.com/TatsunaKyo), based on the Windows v1.6 port by [Supermedo](https://github.com/Supermedo).**
 
-This fork adds English in-game settings, borderless fullscreen, DLSS render preset selection, controls for the performance overlay, cheats and experimental Frame Generation. Revision 7 corrects the cheat player lookup, adds HDR10 to FSR FG, and introduces NVIDIA FG/MFG and independent Reflex controls. See the [release notes](docs/releases/windows-v1.6-tatsunakyo.7.md) for the changes and test limits, and the [release guide](docs/releasing.md) for versioning and packaging.
+This fork adds English in-game settings, borderless fullscreen, DLSS preset selection, optional overlay details, cheats and experimental Frame Generation. Revision 8 adds exact FPS entry, FG on the Play page, SDK-confirmed NVIDIA output FPS, optional PC latency, XeSS upscaling, stamina/Echoes fixes, No Fall Damage and opt-in developer diagnostics. See the [release notes](docs/releases/windows-v1.6-tatsunakyo.8.md) for changes and test limits, and the [release guide](docs/releasing.md) for packaging.
 
 The original PlayStation 4 game runs directly on your PC: its own x86-64 code runs natively, and the graphics are translated to Vulkan. No emulator window, no setup scripts: unpack the zip, start `Bloodborne.exe`, pick your game folder and press **PLAY**.
 

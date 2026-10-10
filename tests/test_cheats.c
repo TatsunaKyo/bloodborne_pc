@@ -38,6 +38,7 @@ void *runtime_low_map(size_t size, int prot) {
 }
 extern ABI int invoke_cheat_fixture(const Registers *input, void *code,
                                 unsigned char *ymm_state, Registers *output);
+enum { HOOK_COUNT = sizeof(hooks)/sizeof(hooks[0]) };
 static const size_t image_size = 0x554f000;
 static unsigned char *fixture(void) {
     unsigned char *image = runtime_low_map(image_size,PROT_READ|PROT_WRITE|PROT_EXEC);
@@ -78,6 +79,55 @@ static void run(const Registers *input, void *code, Registers *out, unsigned cha
 #ifdef TEST_WINDOWS_OBJECT
 #include "coff_cheat_runtime.h"
 #endif
+static void original_game_paths(const char *path) {
+    /* Private optional input is read at test time only, never embedded in a binary.
+     * Execute the complete setters, including the original stores and branches. */
+    unsigned char *image=fixture();
+    FILE *file=fopen(path,"rb");assert(file);
+    const struct {size_t begin,end;} ranges[]={{0x1a56ae0,0x1a56b5d},{0x1a57190,0x1a5720f},
+        {0x18fc6ab,0x18fc6f8},{0x18fc73b,0x18fc789}};
+    for (unsigned i=0;i<4;++i) {
+        assert(!fseek(file,(long)ranges[i].begin,SEEK_SET));
+        assert(fread(image+ranges[i].begin,1,ranges[i].end-ranges[i].begin,file)==ranges[i].end-ranges[i].begin);
+        if (i>=2) image[ranges[i].end]=0xc3;
+    }
+    fclose(file);
+    unsigned char actor[64]={0},enemy[64]={0},stats[0x400]={0},world[0x68]={0},data[0x100]={0};
+    put_pointer(image,WORLD_CHR_MAN,world);put_pointer(world,0x60,actor);
+    put_pointer(image,0x553e880,world);put_pointer(stats,8,actor);
+    assert(runtime_cheats_install(image,image_size,"01.09")==BB_CHEAT_ALL);
+    typedef void (ABI *Stamina)(void*,int);
+    Stamina set=(Stamina)(image+0x1a56ae0),add=(Stamina)(image+0x1a57190);
+    selected=(BbCheatOptions){4,4,4,1.5f,1,1,1};
+    for (int on=0;on<=1;++on) for(int npc=0;npc<=1;++npc) {
+        atomic_store(&mask,on ? BB_CHEAT_ALL : 0);
+        put_pointer(stats,8,npc ? enemy : actor);
+        put_int(stats,0x134,100);put_int(stats,0x138,160);
+        set(stats,70);assert(get_int(stats,0x134)==(on && !npc ? 100 : 70));
+        put_int(stats,0x134,100);add(stats,-30);assert(get_int(stats,0x134)==(on && !npc ? 100 : 70));
+        add(stats,20);assert(get_int(stats,0x134)==(on && !npc ? 120 : 90));
+        assert(get_int(stats,0x138)==160 && stats[0x200]==0);
+    }
+    Registers input={0},out;unsigned char state[512];
+    for (unsigned factor=1;factor<=16;factor*=2) for(unsigned hook=15;hook<=16;++hook) {
+        selected.echoes=factor;atomic_store(&mask,BB_CHEAT_ALL);
+        for(int npc=0;npc<=1;++npc) {
+            input.rbx=(uintptr_t)(npc ? enemy : actor);input.rax=input.r14=100;
+            input.rdx=input.rcx=(uintptr_t)data;put_int(data,0x94,1000);put_int(data,0x98,2000);
+            run(&input,image+hooks[hook].offset,&out,state);
+            assert(get_int(data,0x94)==1000+100*(npc ? 1 : factor));
+            assert(get_int(data,0x98)==2000+100*(npc ? 1 : factor));
+            input.rax=input.r14=(uint32_t)-20;put_int(data,0x94,1000);put_int(data,0x98,2000);
+            run(&input,image+hooks[hook].offset,&out,state);assert(get_int(data,0x94)==980 && get_int(data,0x98)==2000);
+        }
+    }
+    puts("PASS: original 1.09 stamina setters preserve player stamina while attacks consume NPC stamina; regeneration/max stat unchanged. Both original reward paths multiply actual balances and lifetime Echoes x2/x4/x8/x16; costs unchanged. Damage x4/reduction x4/no-consume enabled together.");
+#ifdef _WIN32
+    VirtualFree(image,0,MEM_RELEASE);
+#else
+    munmap(image,image_size);
+#endif
+}
 int main(int argc, char **argv) {
 #ifdef TEST_WINDOWS_OBJECT
     assert(argc>2);load_windows_runtime(argv[2]);
@@ -99,7 +149,7 @@ int main(int argc, char **argv) {
         assert(0x18c2d11+displacement==WORLD_CHR_MAN);
         assert(!fseek(file,0x18c2d3d,SEEK_SET) && fread(bytes,1,7,file)==7);
         assert(!memcmp(bytes,player_compare,7));
-        fclose(file); puts("PASS: ten hook signatures and the actual WorldChrMan/mainPlayer lookup match the supplied 1.09 image.");
+        fclose(file); puts("PASS: eighteen hook signatures and the actual WorldChrMan/mainPlayer lookup match the supplied 1.09 image.");
     }
     unsigned char *image=fixture();
 #ifdef TEST_WINDOWS_OBJECT
@@ -117,9 +167,9 @@ int main(int argc, char **argv) {
     put_pointer(table,0x20,victim); put_pointer(frame,0xe8,actor); /* rbp-0x318 */
     put_int(hit,0x22c,100); put_int(data,0x94,100);
     const float speed=1.25f; memcpy(component+0x374,&speed,4);
-    Registers input[10], baseline[10], result;
-    unsigned char baseline_ymm[10][512], state[512];
-    for (unsigned i=0; i<10; ++i) {
+    Registers input[HOOK_COUNT], baseline[HOOK_COUNT], result;
+    unsigned char baseline_ymm[HOOK_COUNT][512], state[512];
+    for (unsigned i=0; i<HOOK_COUNT; ++i) {
         uint64_t *registers=(uint64_t *)&input[i];
         for (unsigned n=0; n<15; ++n) registers[n]=0x11001100u+n;
         input[i].flags=0x247;
@@ -134,6 +184,12 @@ int main(int argc, char **argv) {
         case 7: input[i].rdx=(uintptr_t)component; input[i].rbx=(uintptr_t)actor; break;
         case 8: input[i].rax=(uintptr_t)component; input[i].rbx=(uintptr_t)actor; break;
         case 9: input[i].r14=2; input[i].rbx=(uintptr_t)actor; break;
+        case 10: input[i].r15=(uintptr_t)component; break;
+        case 11: case 12: input[i].r14=(uintptr_t)component; break;
+        case 13: case 14: input[i].rbx=(uintptr_t)component; break;
+        case 15: input[i].rbx=(uintptr_t)actor;input[i].rdx=(uintptr_t)data;input[i].rax=100;break;
+        case 16: input[i].rbx=(uintptr_t)actor;input[i].rcx=(uintptr_t)data;input[i].r14=100;break;
+        case 17: input[i].rax=(uintptr_t)component;break;
         }
         run(&input[i],image+hooks[i].offset,&baseline[i],baseline_ymm[i]);
     }
@@ -142,19 +198,20 @@ int main(int argc, char **argv) {
     assert(runtime_cheats_install(image,image_size,"01.09")==BB_CHEAT_ALL && support==BB_CHEAT_ALL);
     /* Off is identical to executing the untouched game instruction, including
      * flags, every GPR, every YMM lane and the game's red zone. */
-    for (unsigned i=0; i<10; ++i) {
+    for (unsigned i=0; i<HOOK_COUNT; ++i) {
         atomic_store(&mask,0);
         run(&input[i],image+hooks[i].offset,&result,state);
         assert(!memcmp(&result,&baseline[i],sizeof(result)));
         assert(!memcmp(state,baseline_ymm[i],512));
     }
     /* Real host callbacks must preserve everything they do not intentionally edit. */
-    for (unsigned i=0; i<10; ++i) {
+    for (unsigned i=0; i<HOOK_COUNT; ++i) {
         atomic_store(&mask,hooks[i].group);
         selected=(BbCheatOptions){1,1,1,1.0f,1,1};
         run(&input[i],image+hooks[i].offset,&result,state);
         Registers expected=baseline[i];
-        if (i>=4 && i<=6) test_nonzero(&expected,0x80);
+        if ((hooks[i].group & BB_CHEAT_STAMINA) != 0) test_nonzero(&expected,0x80);
+        if (i==17) test_nonzero(&expected,8);
         if (i==7) expected.rdx|=0x200;
         if (i==8) test_nonzero(&expected,2);
         if (i==9) { expected.r14=0; expected.rcx=0; expected.flags=(expected.flags&~UINT64_C(0x8d5))|0x44; }
@@ -203,12 +260,28 @@ int main(int argc, char **argv) {
     }
     /* Player guards leave NPC stamina, movement and consumables unchanged. */
     put_pointer(component,8,enemy); input[7].rbx=(uintptr_t)enemy; input[8].rbx=(uintptr_t)enemy; input[9].rbx=(uintptr_t)enemy;
-    for (unsigned i=3; i<10; ++i) {
+    for (unsigned i=3; i<HOOK_COUNT; ++i) {
         run(&input[i],image+hooks[i].offset,&result,state);
-        assert(!memcmp(&result,&baseline[i],sizeof(result)) || i>=7); /* Actor register changed in those inputs. */
-        if (i>=7) { Registers expected=baseline[i]; expected.rbx=(uintptr_t)enemy; assert(!memcmp(&result,&expected,sizeof(result))); }
+        assert(!memcmp(&result,&baseline[i],sizeof(result)) || (i>=7 && i<=9) || i==15 || i==16); /* Actor register changed in those inputs. */
+        if (i>=7 && i<=9) { Registers expected=baseline[i]; expected.rbx=(uintptr_t)enemy; assert(!memcmp(&result,&expected,sizeof(result))); }
         assert(!memcmp(state,baseline_ymm[i],512));
     }
+    for (unsigned i=15;i<=16;++i) {
+        input[i].rbx=(uintptr_t)enemy;
+        run(&input[i],image+hooks[i].offset,&result,state);
+        Registers expected=baseline[i];expected.rbx=(uintptr_t)enemy;
+        assert(!memcmp(&result,&expected,sizeof(result)));
+        input[i].rbx=(uintptr_t)actor;
+    }
+    put_pointer(component,8,actor);
+    for (unsigned factor=2;factor<=16;factor*=2) {
+        selected.echoes=factor;put_int(data,0x94,100);
+        run(&input[15],image+hooks[15].offset,&result,state);assert(result.rax==100*factor);
+        run(&input[16],image+hooks[16].offset,&result,state);assert(result.r14==100*factor);
+    }
+    input[15].rax=input[16].r14=(uint32_t)-5;
+    run(&input[15],image+hooks[15].offset,&result,state);assert((int)result.rax==-5);
+    run(&input[16],image+hooks[16].offset,&result,state);assert((int)result.r14==-5);
     /* The real WorldChrMan slot can be empty during startup/save loading. No
      * game virtual function is called, and all player-only handlers stay Off. */
     put_pointer(image,WORLD_CHR_MAN,NULL);
@@ -220,7 +293,7 @@ int main(int argc, char **argv) {
     input[7].rbx=input[8].rbx=input[9].rbx=(uintptr_t)actor;
     for (int absent=0;absent<2;++absent) {
         if (absent) {put_pointer(image,WORLD_CHR_MAN,world);put_pointer(world,0x60,NULL);}
-        for (unsigned i=0;i<10;++i) {
+        for (unsigned i=0;i<HOOK_COUNT;++i) {
             if (i==2) continue; // Positive persistent-data awards have no actor lookup.
             Registers expected;unsigned char expected_state[512];
             atomic_store(&mask,0);run(&input[i],image+hooks[i].offset,&expected,expected_state);
@@ -238,11 +311,12 @@ int main(int argc, char **argv) {
     assert(local_player((uintptr_t)actor));
     unsigned char *conflict=fixture(); conflict[hooks[8].offset]^=1;
     assert(runtime_cheats_install(conflict,image_size,"01.09")== (BB_CHEAT_ALL&~BB_CHEAT_CONSUMABLES));
-    for (unsigned i=7; i<10; ++i) assert(conflict[hooks[i].offset]!=0xe9); /* Whole group disabled, never partial. */
+    for (unsigned i=7; i<=9; ++i) assert(conflict[hooks[i].offset]!=0xe9); /* Whole group disabled, never partial. */
 #ifdef _WIN32
     VirtualFree(image,0,MEM_RELEASE); VirtualFree(conflict,0,MEM_RELEASE);
 #else
     munmap(image,image_size); munmap(conflict,image_size);
 #endif
     puts("PASS: guarded 1.09 hook installation; real trampoline execution; all damage, reduction, Echoes and movement multipliers; player-only stamina/item/ammunition paths; Off, NPCs, healing, environment and costs preserved; overflow limits; GPR/YMM/flags/red-zone preservation; patch conflicts disable the entire feature.");
+    if (argc>1) original_game_paths(argv[1]);
 }

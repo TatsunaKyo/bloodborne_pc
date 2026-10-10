@@ -16,6 +16,8 @@ static HOST_WIN void host_support(uint32_t value) {bbgpu_cheat_support(value);}
 static HOST_WIN const void* host_mask(void) {return bbgpu_cheat_mask_address();}
 static HOST_WIN void* host_map(size_t size,int prot) {return runtime_low_map(size,prot);}
 static HOST_WIN void* host_memcpy(void* a,const void* b,size_t n) {return memcpy(a,b,n);}
+static HOST_WIN int host_memcmp(const void* a,const void* b,size_t n) {return memcmp(a,b,n);}
+static HOST_WIN void* host_memset(void* a,int value,size_t n) {return memset(a,value,n);}
 static HOST_WIN int host_strcmp(const char* a,const char* b) {return strcmp(a,b);}
 static HOST_WIN int host_puts(const char* text) {return puts(text);}
 /* The runtime's diagnostic printf calls have one integer argument. */
@@ -30,7 +32,7 @@ static uintptr_t host_import(const char* name) {
         {"bbgpu_cheat_support",(uintptr_t)host_support},
         {"bbgpu_cheat_mask_address",(uintptr_t)host_mask},
         {"runtime_low_map",(uintptr_t)host_map},
-        {"memcpy",(uintptr_t)host_memcpy},{"strcmp",(uintptr_t)host_strcmp},
+        {"memcpy",(uintptr_t)host_memcpy},{"memcmp",(uintptr_t)host_memcmp},{"memset",(uintptr_t)host_memset},{"strcmp",(uintptr_t)host_strcmp},
         {"puts",(uintptr_t)host_puts},{"__mingw_printf",(uintptr_t)host_printf}};
     for(size_t i=0;i<sizeof(imports)/sizeof(imports[0]);++i)
         if(!strcmp(name,imports[i].name))return imports[i].value;

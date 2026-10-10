@@ -36,6 +36,7 @@ menu=source[source.index('// Marks the settings dirty'):source.index('// The gam
 fps=source[source.index('void FpsCounter()'):source.index('} // namespace\n\nvoid SavePendingSettings')]
 # Instrument only the scratch copy to record the real controls' positions and IDs.
 menu=menu.replace('ImGui::BeginCombo(', 'TrackedCombo(').replace('ImGui::Selectable(', 'TrackedSelectable(').replace('ImGui::Checkbox(', 'TrackedCheckbox(').replace('ImGui::SliderFloat(', 'TrackedSlider(').replace('ImGui::SliderInt(', 'TrackedSliderInt(')
+menu=menu.replace('ImGui::DragInt(', 'TrackedDragInt(').replace('ImGui::InputInt(', 'TrackedInputInt(')
 prefix=r'''#include <algorithm>
 #include <atomic>
 #include <cassert>
@@ -49,6 +50,7 @@ prefix=r'''#include <algorithm>
 #include <vector>
 #include <map>
 #include "bbport_settings.h"
+#include "bbcheats.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 
@@ -111,6 +113,16 @@ bool TrackedSliderInt(const char* label,int* value,int lo,int hi,const char* for
     bool result=ImGui::SliderInt(label,value,lo,hi,format);
     const char* key=std::strstr(label,"###");
     if (key) {controls[key+3]=GImGui->LastItemData.Rect;control_ids[key+3]=GImGui->LastItemData.ID;}
+    return result;
+}
+bool TrackedDragInt(const char* label,int* value,float speed,int lo,int hi,const char* format,ImGuiSliderFlags flags) {
+    const bool result=ImGui::DragInt(label,value,speed,lo,hi,format,flags);
+    controls[std::strstr(label,"###")+3]=GImGui->LastItemData.Rect;
+    return result;
+}
+bool TrackedInputInt(const char* label,int* value,int step,int fast,ImGuiInputTextFlags flags) {
+    const bool result=ImGui::InputInt(label,value,step,fast,flags);
+    controls[std::strstr(label,"###")+3]=GImGui->LastItemData.Rect;
     return result;
 }
 '''
@@ -249,12 +261,24 @@ void TestNvidiaControls() {
         assert(s.nvidia_generated_frames==i);SetOpen(true);
     }
     TestBoolean("limit_generated_fps",s.limit_generated_fps);
-    s.limit_generated_fps=true;s.generated_fps_limit=30;
+    TestBoolean("show_frame_generation",s.show_frame_generation);
+    TestBoolean("show_latency",s.show_latency);
+    s.limit_generated_fps=true;s.generated_fps_limit=130;
     Reveal("generated_fps_limit");auto rect=controls.at("generated_fps_limit");
-    const float width=ImGui::FindWindowByName("###bbport_settings")->DC.ItemWidth;
-    Click({rect.Min.x+width*0.80f,rect.GetCenter().y});
+    // Clicking anywhere in the drag field must keep the value, rather than jump.
+    Click({rect.Min.x+rect.GetWidth()*0.80f,rect.GetCenter().y});
+    assert(s.generated_fps_limit==130);
+    Reveal("generated_fps_entry");rect=controls.at("generated_fps_entry");
+    const auto drag_rect=controls.at("generated_fps_limit");
+    assert(rect.Min.x>=drag_rect.Max.x && rect.Max.x<=ImGui::FindWindowByName("###bbport_settings")->WorkRect.Max.x+1);
+    Click({rect.Min.x+15,rect.GetCenter().y});
+    auto& io=ImGui::GetIO();
+    io.AddKeyEvent(ImGuiMod_Ctrl,true);io.AddKeyEvent(ImGuiKey_A,true);Frame();
+    io.AddKeyEvent(ImGuiKey_A,false);io.AddKeyEvent(ImGuiMod_Ctrl,false);Frame();
+    io.AddInputCharactersUTF8("137");Frame();Frame();
+    io.AddKeyEvent(ImGuiKey_Enter,true);Frame();io.AddKeyEvent(ImGuiKey_Enter,false);Frame();
     const int selected=s.generated_fps_limit;
-    assert(selected>600 && selected<=1000);
+    assert(selected==137);
     SetOpen(false);s.generated_fps_limit=30;BbSettings::Load();assert(s.generated_fps_limit==selected);SetOpen(true);
     s.limit_generated_fps=false;s.frame_generation=BbSettings::FrameGenerationOff;s.reflex=0;
 }
@@ -283,7 +307,7 @@ int main(int argc,char** argv) {
     std::filesystem::remove(menu_path);
     auto& s=BbSettings::Get();
     assert(s.menu_language==BbSettings::MenuEnglish);
-    s.cheat_supported=63u;
+    s.cheat_supported=BB_CHEAT_ALL;
     // Existing files, valid codes, and unknown values must load deterministically.
     for (const char* config : {"upscaler=dlss\npreset=2\noutput_res=2560x1440\n",
                               "menu_language=en\n", "menu_language=ru\n",
@@ -468,6 +492,19 @@ int main(int argc,char** argv) {
     base_scale=1.0f;
     io.DisplaySize={1920,1080};
     s.show_resolution=false;
+    s.upscaler=BbSettings::UpscalerDlss;s.frame_generation=BbSettings::FrameGenerationNvidia;
+    s.frame_generation_active=2;s.nvidia_output_fps=130;s.nvidia_real_fps=65;s.pc_latency_ms=22.3f;
+    s.show_frame_generation=s.show_latency=s.show_resolution=true;
+    osd=OsdFrame();OsdFrame();OsdFrame();
+    assert(osd.find("130fps")!=std::string::npos && osd.find("FG:NV2x")!=std::string::npos && osd.find("PC:22.3ms")!=std::string::npos);
+    assert(std::count(osd.begin(),osd.end(),'\n')==original_rows);
+    if(ImGui::FindWindowByName("##fps")->Size.x>521) std::fprintf(stderr,"Expanded OSD width %.1f, font %.1f, text: %s\n",ImGui::FindWindowByName("##fps")->Size.x,ImGui::GetFontSize(),osd.c_str());
+    assert(ImGui::FindWindowByName("##fps")->Size.x<=521);
+    s.nvidia_output_fps=150;s.frame_generation_active=1;
+    osd=OsdFrame();assert(osd.find("150fps")==std::string::npos); // Requested FG is never reported as active.
+    s.pc_latency_ms=-1;osd=OsdFrame();assert(osd.find("PC:N/A")!=std::string::npos);
+    s.show_frame_generation=s.show_latency=s.show_resolution=false;
+    s.frame_generation=BbSettings::FrameGenerationOff;s.frame_generation_active=0;
     SetOpen(true);
     // Exercise the menu's conditional layouts across all upscalers and resolutions.
     for (int language : {BbSettings::MenuEnglish,BbSettings::MenuRussian}) {
@@ -514,6 +551,9 @@ int main(int argc,char** argv) {
         TestBoolean("reactive",s.reactive);
         TestBoolean("object_motion",s.object_motion);
         TestBoolean("cheat_infinite_stamina",s.cheat_infinite_stamina);
+        s.cheat_supported=BB_CHEAT_FALL;
+        TestBoolean("cheat_no_fall_damage",s.cheat_no_fall_damage);
+        s.cheat_supported=BB_CHEAT_ALL;
         TestBoolean("cheat_no_consume",s.cheat_no_consume);
         TestMultiplier("cheat_damage",s.cheat_damage);
         TestMultiplier("cheat_incoming",s.cheat_incoming);
@@ -541,7 +581,7 @@ int main(int argc,char** argv) {
 main=main.replace('    IMGUI_CHECKVERSION();', id_checks+'\n    IMGUI_CHECKVERSION();')
 (scratch / 'overlay_smoke.cpp').write_text(prefix+text_and_open+menu+fps+main)
 
-command=shlex.split(args.compiler)+['-std=c++20','-O1','-pthread','-Igpu/shim','-Igpu/third_party/imgui',str(scratch/'overlay_smoke.cpp'),'gpu/shim/bbport_settings.cpp']+[str(p.relative_to(root)) for p in (root/'gpu/third_party/imgui').glob('imgui*.cpp') if p.name!='imgui_demo.cpp']+['-o',str(scratch/'overlay-test')]
+command=shlex.split(args.compiler)+['-std=c++20','-O1','-pthread','-Igpu','-Igpu/shim','-Igpu/third_party/imgui',str(scratch/'overlay_smoke.cpp'),'gpu/shim/bbport_settings.cpp']+[str(p.relative_to(root)) for p in (root/'gpu/third_party/imgui').glob('imgui*.cpp') if p.name!='imgui_demo.cpp']+['-o',str(scratch/'overlay-test')]
 subprocess.run(command,cwd=root,check=True)
 subprocess.run([str(scratch/'overlay-test'),str(scratch/'config.ini')],cwd=root,check=True)
 temporary.cleanup()

@@ -12,7 +12,7 @@
 namespace BbSettings {
 
 enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerFsr4 = 2, UpscalerFsr411 = 3,
-                      UpscalerTaa = 4, UpscalerDlss = 5, UpscalerCount };
+                      UpscalerTaa = 4, UpscalerDlss = 5, UpscalerXess = 6, UpscalerCount };
 /// FSR 4 v07 or FSR 4.1.1: the same inputs, settings and placement in the frame.
 inline bool IsFsr4(int upscaler) {
     return upscaler == UpscalerFsr4 || upscaler == UpscalerFsr411;
@@ -67,6 +67,9 @@ inline constexpr int OutputDefault = 1; ///< 1920x1080, the game's own size
 
 struct Values {
     std::atomic<int> frame_generation{FrameGenerationOff}, frame_generation_active{0};
+    // Negotiated multiplier for the cap, independent of delayed SDK statistics.
+    std::atomic<int> frame_generation_cap_multiplier{0};
+    std::atomic<float> nvidia_real_fps{-1.0f}, nvidia_output_fps{-1.0f};
     std::atomic<bool> limit_generated_fps{false};
     std::atomic<int> generated_fps_limit{144};
     std::atomic<int> reflex{0}, nvidia_generated_frames{1}, nvidia_max_generated{0};
@@ -74,6 +77,7 @@ struct Values {
     std::atomic<const char*> frame_generation_problem{nullptr};
     std::atomic<int> cheat_damage{0}, cheat_incoming{0}, cheat_echoes{0}, cheat_movement{0};
     std::atomic<bool> cheat_infinite_stamina{false}, cheat_no_consume{false};
+    std::atomic<bool> cheat_no_fall_damage{false};
     std::atomic<uint32_t> cheat_supported{0}, cheat_active_mask{0};
     std::atomic<int> upscaler{UpscalerFsr3};
     std::atomic<int> preset{NativeAA};
@@ -93,6 +97,9 @@ struct Values {
     std::atomic<bool> show_fps{false};
     std::atomic<bool> show_dlss_preset{false};
     std::atomic<bool> show_resolution{false};
+    std::atomic<bool> show_frame_generation{false}, show_latency{false};
+    /// Reflex driver measurement: simulation start to GPU render completion, not frame time.
+    std::atomic<float> pc_latency_ms{-1.0f};
     std::atomic<int> background_mode{BackgroundRun};
     std::atomic<bool> window_focused{true};
     /// The port's overlay language, kept separately in bbport.menu.ini beside bbport.ini.
@@ -118,6 +125,8 @@ struct Values {
     /// DLSS (bbport_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
     std::atomic<bool> dlss_supported{false};
     std::atomic<const char*> dlss_problem{nullptr};
+    std::atomic<bool> xess_supported{false};
+    std::atomic<const char*> xess_problem{nullptr};
 
     /// Startup settings for the explicit BB_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;

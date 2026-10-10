@@ -23,7 +23,8 @@ unsigned EffectiveFrameLimit(unsigned foreground_limit) {
     if (s.window_focused || s.background_mode == BackgroundRun) {
         // The ordinary limit counts real game flips. Only an explicitly enabled
         // display cap may reduce that rate to account for generated frames.
-        const unsigned multiplier=unsigned(std::max(1,s.frame_generation_active.load()));
+        const unsigned multiplier=unsigned(std::max(1,s.frame_generation==FrameGenerationNvidia ?
+            s.frame_generation_cap_multiplier.load() : s.frame_generation_active.load()));
         if (s.limit_generated_fps && multiplier>1) {
             const unsigned real_cap=unsigned(std::clamp(s.generated_fps_limit.load(),30,1000))/multiplier;
             return foreground_limit ? std::min(foreground_limit,real_cap) : real_cap;
@@ -120,7 +121,8 @@ void UpdateCheatMask() {
         (v.cheat_echoes ? uint32_t(BB_CHEAT_ECHOES) : 0u) |
         (v.cheat_movement ? uint32_t(BB_CHEAT_MOVEMENT) : 0u) |
         (v.cheat_infinite_stamina ? uint32_t(BB_CHEAT_STAMINA) : 0u) |
-        (v.cheat_no_consume ? uint32_t(BB_CHEAT_CONSUMABLES) : 0u);
+        (v.cheat_no_consume ? uint32_t(BB_CHEAT_CONSUMABLES) : 0u) |
+        (v.cheat_no_fall_damage ? uint32_t(BB_CHEAT_FALL) : 0u);
     v.cheat_active_mask.store(mask & v.cheat_supported.load(), std::memory_order_release);
 }
 
@@ -134,6 +136,8 @@ void Load() {
     v.show_fps = false;
     v.show_dlss_preset = false;
     v.show_resolution = false;
+    v.show_frame_generation = false;
+    v.show_latency = false;
     v.background_mode = BackgroundRun;
     v.frame_generation = FrameGenerationOff;
     v.limit_generated_fps = false;
@@ -141,6 +145,7 @@ void Load() {
     v.reflex=0;v.nvidia_generated_frames=1;
     v.cheat_damage = v.cheat_incoming = v.cheat_echoes = v.cheat_movement = 0;
     v.cheat_infinite_stamina = v.cheat_no_consume = false;
+    v.cheat_no_fall_damage=false;
     for (int e = 0; e < EffectCount; ++e) {
         v.effects[e] = Effects[e].default_on;
     }
@@ -180,6 +185,10 @@ void Load() {
                 v.show_fps = value == "1";
             } else if (key == "show_dlss_preset") {
                 v.show_dlss_preset = value == "1";
+            } else if (key == "show_frame_generation") {
+                v.show_frame_generation = value == "1";
+            } else if (key == "show_latency") {
+                v.show_latency = value == "1";
             } else if (key == "show_resolution") {
                 v.show_resolution = value == "1";
             } else if (key == "background_mode") {
@@ -207,6 +216,8 @@ void Load() {
                 v.cheat_movement = index;
             } else if (key == "cheat_infinite_stamina") {
                 v.cheat_infinite_stamina = value == "1";
+            } else if (key == "cheat_no_fall_damage") {
+                v.cheat_no_fall_damage=value=="1";
             } else if (key == "cheat_no_consume") {
                 v.cheat_no_consume = value == "1";
             }
@@ -305,6 +316,7 @@ void Save() {
     const std::string menu_path = MenuPath();
     const std::string temporary = menu_path + ".tmp";
     if (FILE* file = std::fopen(temporary.c_str(), "w")) {
+        std::fprintf(file,"cheat_no_fall_damage=%d\n",int(v.cheat_no_fall_damage.load()));
         std::fprintf(file, "menu_language=%s\n", v.menu_language == MenuRussian ? "ru" : "en");
         const char* modes[] = {"launcher", "windowed", "borderless", "fullscreen"};
         std::fprintf(file, "window_mode=%s\nborderless_vsync=%d\n",
@@ -321,6 +333,8 @@ void Save() {
         std::fprintf(file,"reflex=%s\nnvidia_generated_frames=%d\n",v.reflex==2 ? "boost" : v.reflex==1 ? "on" : "off",v.nvidia_generated_frames.load());
         std::fprintf(file,"limit_generated_fps=%d\ngenerated_fps_limit=%d\n",
                      int(v.limit_generated_fps.load()),v.generated_fps_limit.load());
+        std::fprintf(file,"show_frame_generation=%d\nshow_latency=%d\n",
+                     int(v.show_frame_generation.load()),int(v.show_latency.load()));
         std::fprintf(file, "cheat_damage=%s\ncheat_incoming=%s\ncheat_echoes=%s\ncheat_movement=%s\n"
                           "cheat_infinite_stamina=%d\ncheat_no_consume=%d\n",
                      CheatMultiplierKeys[std::clamp(v.cheat_damage.load(), 0, 4)],
@@ -416,7 +430,7 @@ const char* PresetName(int preset) {
 }
 
 const char* UpscalerName(int upscaler) {
-    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "fsr411", "taa", "dlss"};
+    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "fsr411", "taa", "dlss", "xess"};
     return names[std::clamp(upscaler, 0, UpscalerCount - 1)];
 }
 
@@ -436,7 +450,7 @@ extern "C" void bbgpu_cheat_options(BbCheatOptions* options) {
                 multipliers[std::clamp(v.cheat_incoming.load(), 0, 4)],
                 multipliers[std::clamp(v.cheat_echoes.load(), 0, 4)],
                 movement[std::clamp(v.cheat_movement.load(), 0, 5)],
-                int(v.cheat_infinite_stamina.load()), int(v.cheat_no_consume.load())};
+                int(v.cheat_infinite_stamina.load()), int(v.cheat_no_consume.load()),int(v.cheat_no_fall_damage.load())};
 }
 
 extern "C" void bbgpu_cheat_support(uint32_t mask) {

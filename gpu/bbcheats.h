@@ -9,12 +9,12 @@ extern "C" {
 enum {
     BB_CHEAT_DAMAGE = 1u, BB_CHEAT_INCOMING = 2u, BB_CHEAT_ECHOES = 4u,
     BB_CHEAT_MOVEMENT = 8u, BB_CHEAT_STAMINA = 16u, BB_CHEAT_CONSUMABLES = 32u,
-    BB_CHEAT_ALL = 63u
+    BB_CHEAT_FALL = 64u, BB_CHEAT_ALL = 127u
 };
 typedef struct {
     unsigned damage, incoming, echoes;
     float movement;
-    int stamina, consumables;
+    int stamina, consumables, no_fall_damage;
 } BbCheatOptions;
 /* Machine-code trampolines read one aligned, lock-free 32-bit atomic before saving
  * registers. Disabled cheats never call into the host or the game's player test. */

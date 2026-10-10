@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0) uniform texture2D scene;
+layout(set=0,binding=1,rgba16f) uniform writeonly image2D linear_scene;
+void main() {
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+    if (all(lessThan(p,imageSize(linear_scene))))
+        imageStore(linear_scene,p,texelFetch(scene,p,0));
+}

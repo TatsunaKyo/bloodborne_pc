@@ -13,6 +13,7 @@
 #endif
 #ifdef _WIN32
 #include <windows.h>
+#include <dbghelp.h>
 #else
 #include <sys/mman.h>
 #include <malloc.h>
@@ -112,8 +113,42 @@ static void describe_address(char *out, size_t size, uintptr_t address) {
     snprintf(out,size,"%p",(void *)address);
 }
 static int fatal_reported;
+static DWORD fatal_thread;
+typedef BOOL (WINAPI *WriteMiniDump)(HANDLE,DWORD,HANDLE,MINIDUMP_TYPE,
+    PMINIDUMP_EXCEPTION_INFORMATION,PMINIDUMP_USER_STREAM_INFORMATION,PMINIDUMP_CALLBACK_INFORMATION);
+static WriteMiniDump diagnostic_dump;
+static WCHAR diagnostic_dump_path[32768];
+static void initialize_diagnostics(void) {
+    const WCHAR *directory=_wgetenv(L"BB_DIAGNOSTICS_DIR");
+    if (!directory || !directory[0]) return;
+    const size_t count=wcslen(directory)+1;
+    if (count>32740) { fputs("Diagnostics: output path is too long\n",stderr); return; }
+    memcpy(diagnostic_dump_path,directory,count*sizeof(WCHAR));
+    swprintf(diagnostic_dump_path+count-1,28,L"\\crash-%lu.dmp",GetCurrentProcessId());
+    HMODULE library=LoadLibraryExW(L"dbghelp.dll",NULL,LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (library) diagnostic_dump=(WriteMiniDump)GetProcAddress(library,"MiniDumpWriteDump");
+    printf("Diagnostics: crash dumps %s in the launcher session folder\n",diagnostic_dump ? "enabled" : "unavailable");
+}
+static void write_crash_dump(EXCEPTION_POINTERS *info) {
+    if (!diagnostic_dump) return;
+    HANDLE file=CreateFileW(diagnostic_dump_path,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
+    if (file==INVALID_HANDLE_VALUE) {
+        fprintf(stderr,"Diagnostics: cannot create crash dump (Windows error %lu)\n",GetLastError());
+        return;
+    }
+    MINIDUMP_EXCEPTION_INFORMATION exception={GetCurrentThreadId(),info,FALSE};
+    const BOOL written=diagnostic_dump(GetCurrentProcess(),GetCurrentProcessId(),file,
+        (MINIDUMP_TYPE)(MiniDumpNormal|MiniDumpWithThreadInfo|MiniDumpWithUnloadedModules),&exception,NULL,NULL);
+    const DWORD error=written ? 0 : GetLastError();
+    FlushFileBuffers(file); CloseHandle(file);
+    fprintf(stderr,"Diagnostics: crash dump %s (Windows error %lu)\n",written ? "saved" : "failed",error);
+}
 static LONG fatal_exception(EXCEPTION_POINTERS *info) {
-    if (__atomic_exchange_n(&fatal_reported,1,__ATOMIC_ACQ_REL)) { Sleep(INFINITE); }
+    if (__atomic_exchange_n(&fatal_reported,1,__ATOMIC_ACQ_REL)) {
+        if (__atomic_load_n(&fatal_thread,__ATOMIC_ACQUIRE)==GetCurrentThreadId()) TerminateProcess(GetCurrentProcess(),3);
+        Sleep(INFINITE);
+    }
+    __atomic_store_n(&fatal_thread,GetCurrentThreadId(),__ATOMIC_RELEASE);
     const EXCEPTION_RECORD *record=info->ExceptionRecord;
     const CONTEXT *c=info->ContextRecord;
     char where[MAX_PATH+64];
@@ -126,6 +161,16 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
         fprintf(stderr,"Fault: exception 0x%08lx at %s (thread %lu)\n",record->ExceptionCode,where,GetCurrentThreadId());
     fprintf(stderr,"  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n",
             c->Rax,c->Rbx,c->Rcx,c->Rdx,c->Rsi,c->Rdi,c->Rbp,c->Rsp);
+    fprintf(stderr,"  r8=%016llx r9=%016llx r10=%016llx r11=%016llx\n  r12=%016llx r13=%016llx r14=%016llx r15=%016llx eflags=%08lx mxcsr=%08lx\n",
+            c->R8,c->R9,c->R10,c->R11,c->R12,c->R13,c->R14,c->R15,c->EFlags,c->MxCsr);
+    if (gpu_enabled) {
+        BbCheatOptions cheats; bbgpu_cheat_options(&cheats);
+        fprintf(stderr,"Cheats at fault: damage=%u incoming=%u echoes=%u movement=%.2f stamina=%d consumables=%d fall=%d\n",
+            cheats.damage,cheats.incoming,cheats.echoes,cheats.movement,
+            cheats.stamina,cheats.consumables,cheats.no_fall_damage);
+    }
+    fflush(NULL);
+    write_crash_dump(info);
     if (gpu_enabled) bbgpu_dump_guest_writes(info);
     /* rbp chain (guest and host code keep frame pointers). */
     uintptr_t rbp=(uintptr_t)c->Rbp;
@@ -380,6 +425,9 @@ void runtime_restart(void) {
 
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
+#ifdef _WIN32
+    initialize_diagnostics();
+#endif
 #ifndef _WIN32
     /* Keep host heap objects handed to the guest (thread handles, TLS) in the
        non-PIE brk heap, i.e. below 1 TiB: the guest packs pointers into 40 bits. */

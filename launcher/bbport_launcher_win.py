@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.7'
+VERSION = '1.6-tatsunakyo.8'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -171,17 +171,19 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'player_name': '', 'fullscreen': False, 'window_mode': '', 'hdr': False, 'present_mode': 'Mailbox',
                 'fps_mode': 'uncap', 'frame_cap': '', 'draw_pipe': '', 'readbacks': '',
                 'frames_ahead': '', 'frame_stats': False, 'gpu_profile': False,
-                'vk_validation': False, 'extra_env': '', 'close_on_play': False,
+                'vk_validation': False, 'developer_profile': False, 'extra_env': '', 'close_on_play': False,
                 'check_updates': True, 'online': False, 'online_server': 'srv.shadps4.net:31313',
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
                 'online_community': COMMUNITY_SERVER}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'show_fps': '1', 'show_dlss_preset': '0',
-                 'show_resolution': '0', 'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1',
+                 'show_resolution': '0', 'show_frame_generation': '0', 'show_latency': '0',
+                 'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
-                 'cheat_infinite_stamina': '0', 'cheat_no_consume': '0'}
+                 'cheat_infinite_stamina': '0', 'cheat_no_consume': '0', 'cheat_no_fall_damage': '0'}
 MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution',
-              'cheat_infinite_stamina', 'cheat_no_consume', 'limit_generated_fps'}
+              'show_frame_generation', 'show_latency',
+              'cheat_infinite_stamina', 'cheat_no_consume', 'cheat_no_fall_damage', 'limit_generated_fps'}
 CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
 MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
 FRAME_GENERATORS = [('off', ('Off', 'Выключено')), ('fsr', ('FSR Frame Generation (2x)', 'FSR Frame Generation (2x)')),
@@ -205,6 +207,7 @@ WINDOW_MODES = [('windowed', ('Windowed', 'Оконный')),
 MENU_LANGUAGES = [('en', ('English',)), ('ru', ('Русский',))]
 
 UPSCALERS = [('dlss', ('DLSS (NVIDIA GeForce RTX)',)),
+             ('xess', ('XeSS (Intel / compatible GPUs)', 'XeSS (Intel / совместимые GPU)')),
              ('fsr4', ('FSR 4 (best quality)', 'FSR 4 (лучшее качество)')),
              ('fsr411', ('FSR 4.1.1 (needs fsr4_411 assets)', 'FSR 4.1.1 (нужны ассеты fsr4_411)')),
              ('fsr3', ('FSR 3.1 (every GPU)', 'FSR 3.1 (любая видеокарта)')),
@@ -494,6 +497,85 @@ def game_environment(s):
     return env
 
 
+class DiagnosticSession:
+    """One opt-in session, kept after normal exits as well as crashes."""
+    def __init__(self, settings):
+        self.directory = None
+        self.log = None
+        self.started = time.monotonic()
+        self.metadata = {}
+        if not settings.get('developer_profile'):
+            return
+        root = Path(settings.get('user_dir') or DATA_DIR / 'user') / 'diagnostics'
+        root.mkdir(parents=True, exist_ok=True)
+        self.directory = Path(tempfile.mkdtemp(prefix=time.strftime('%Y%m%d-%H%M%S-'), dir=root))
+        # Deliberately omit identity, credentials, arbitrary environment values and paths.
+        keys = ('window_mode', 'fullscreen', 'hdr', 'present_mode', 'fps_mode', 'frame_cap',
+                'frames_ahead', 'draw_pipe', 'readbacks', 'vk_validation')
+        system = {'system': sys.platform, 'architecture_bits': ctypes.sizeof(ctypes.c_void_p)*8}
+        if hasattr(sys, 'getwindowsversion'):
+            system['windows_version'] = list(sys.getwindowsversion()[:3])
+        self.metadata = {'revision': VERSION, 'platform': system,
+                         'started': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                         'settings': {key: settings.get(key) for key in keys},
+                         'ini': load_ini()[0], 'menu_at_start': menu_values(settings),
+                         'status': 'running'}
+        self.write_metadata()
+        self.log = open(self.directory / 'session.log', 'w', encoding='utf-8', buffering=1)
+
+    def environment(self, env):
+        if self.directory:
+            env.update(BB_FRAME_STATS='1', BB_GPU_PROFILE='1',
+                       BB_DIAGNOSTICS_DIR=str(self.directory.resolve()))
+        return env
+
+    def write_metadata(self):
+        if self.directory:
+            target = self.directory / 'session.json'
+            temporary = target.with_suffix('.tmp')
+            temporary.write_text(json.dumps(self.metadata, indent=2, ensure_ascii=False), encoding='utf-8')
+            temporary.replace(target)
+
+    def record(self, text):
+        if self.log:
+            self.log.write(f'[{time.monotonic()-self.started:10.3f}s] {text}')
+
+    def finish(self, code):
+        if self.directory:
+            self.metadata.update(status='exited', exit_code=code,
+                                 duration_seconds=round(time.monotonic()-self.started, 3),
+                                 menu_at_exit=load_menu())
+            self.record(f'Process exited with code {code}\n')
+            self.write_metadata()
+            self.log.close()
+
+
+def read_game_output(process, settings, diagnostic, emit):
+    """Shared reader for the windowed launcher and --play; no UI-thread work."""
+    log = None
+    try:
+        log_dir = Path(settings.get('user_dir') or DATA_DIR / 'user')
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log = open(log_dir / 'last_run.log', 'w', encoding='utf-8', buffering=1)
+    except OSError:
+        pass
+    try:
+        for raw in iter(process.stdout.readline, b''):
+            text = raw.decode('utf-8', errors='replace').replace('\r\n', '\n')
+            emit(text)
+            if log:
+                log.write(text)
+            diagnostic.record(text)
+        code = process.wait()
+        if log:
+            log.write(f'\nProcess exited with code {code}\n')
+        diagnostic.finish(code)
+        return code
+    finally:
+        if log:
+            log.close()
+
+
 # ---------------------------------------------------------------------------------------------
 # The window.
 
@@ -505,6 +587,11 @@ class Launcher:
     def __init__(self, root, tk, ttk, filedialog, messagebox):
         self.tk, self.ttk, self.filedialog, self.messagebox = tk, ttk, filedialog, messagebox
         self.root = root
+        self.ui_closed = False
+        def closing(event):
+            if event.widget is root:
+                self.ui_closed = True
+        root.bind('<Destroy>', closing, add='+')
         self.app = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
         self.ini, self.ini_lines = load_ini()
         self.menu = menu_values(self.app)
@@ -671,14 +758,102 @@ class Launcher:
         availability()
         return box
 
-    def frame_generation_choice(self, parent):
-        box = self.choice(parent, 'frame_generation', 'menu', FRAME_GENERATORS, width=38)
+    def frame_generation_choice(self, parent, width=38):
+        box = self.choice(parent, 'frame_generation', 'menu', FRAME_GENERATORS, width=width)
         upscaler = self.var('upscaler', 'ini')
         def availability(*_args):
             box.configure(state='readonly' if upscaler.get() != 'off' else 'disabled')
         upscaler.trace_add('write', availability)
         availability()
         return box
+
+    def fps_cap_control(self, parent, key, store, minimum, maximum, enabled_key=None,
+                        options=None):
+        """Exact entry and relative dragging: moving one pixel changes one FPS."""
+        tk, ttk = self.tk, self.ttk
+        holder = ttk.Frame(parent)
+        value = self.var(key, store)
+        draft = tk.StringVar()
+        position = tk.DoubleVar()
+        labels = {v: _(*text) for v, text in options or []}
+        if options:
+            entry = ttk.Combobox(holder, textvariable=draft, width=19,
+                                 values=list(labels.values()), state='normal')
+        else:
+            entry = ttk.Spinbox(holder, textvariable=draft, from_=minimum, to=maximum,
+                               increment=1, width=7)
+        entry.pack(side='right', padx=(10, 0))
+        slider = ttk.Scale(holder, from_=minimum, to=maximum, variable=position,
+                           length=self.px(290))
+        slider.pack(side='left', fill='x', expand=True)
+        anchor = [0, minimum]
+
+        def number():
+            try:
+                return max(minimum, min(maximum, int(value.get())))
+            except (ValueError, tk.TclError):
+                return min(maximum, 120)
+
+        def commit(_event=None):
+            text = draft.get().strip()
+            reverse = {label: v for v, label in labels.items()}
+            if text in reverse:
+                value.set(reverse[text])
+            else:
+                try:
+                    candidate = int(text)
+                    # Preserve the unlocked-mode Auto/No limit choices and the
+                    # existing explicit caps above 120; their warning stays visible.
+                    ceiling = 1000 if options else maximum
+                    floor = 0 if options else minimum
+                    value.set(str(max(floor, min(ceiling, candidate))))
+                except ValueError:
+                    pass
+            show()
+            return 'break'
+
+        def show(*_args):
+            draft.set(labels.get(value.get(), value.get()))
+            position.set(number())
+            enabled = enabled_key is None or self.var(enabled_key, 'menu').get()
+            slider.configure(state='normal' if enabled else 'disabled')
+            entry.configure(state='normal' if enabled else 'disabled')
+
+        def press(event):
+            anchor[:] = [event.x, number()]
+            return 'break'
+
+        def drag(event):
+            if enabled_key is None or self.var(enabled_key, 'menu').get():
+                step = 0.25 if event.state & 1 else 1.0
+                candidate = round(anchor[1] + (event.x - anchor[0]) * step)
+                value.set(str(max(minimum, min(maximum, candidate))))
+            return 'break'
+
+        def step(amount):
+            if enabled_key is None or self.var(enabled_key, 'menu').get():
+                value.set(str(max(minimum, min(maximum, number() + amount))))
+            return 'break'
+
+        entry.bind('<Return>', commit)
+        entry.bind('<FocusOut>', commit)
+        if options:
+            entry.bind('<<ComboboxSelected>>', commit)
+        else:
+            entry.configure(command=commit)
+        slider.bind('<ButtonPress-1>', press)
+        slider.bind('<B1-Motion>', drag)
+        slider.bind('<ButtonRelease-1>', lambda _event: 'break')
+        slider.bind('<Left>', lambda _event: step(-1))
+        slider.bind('<Right>', lambda _event: step(1))
+        value.trace_add('write', show)
+        if enabled_key:
+            self.var(enabled_key, 'menu').trace_add('write', show)
+        show()
+        if not hasattr(self, 'fps_cap_committers'):
+            self.fps_cap_committers = []
+        self.fps_cap_committers.append(commit)
+        return holder
 
     def row(self, parent, title, widget, hint=None):
         ttk = self.ttk
@@ -854,7 +1029,32 @@ class Launcher:
         self.row(quick, _('Frame rate', 'Частота кадров'), self.choice(quick, 'fps_mode', 'app', FPS_MODES, 26))
         self.row(quick, _('Upscaler', 'Апскейлер'), self.choice(quick, 'upscaler', 'ini', UPSCALERS, 26))
         self.row(quick, _('Preset', 'Пресет'), self.choice(quick, 'preset', 'ini', PRESETS, 26))
-        self.row(quick, _('DLSS preset', 'Пресет DLSS'), self.dlss_preset_choice(quick, 26))
+        self.quick_dlss_row = ttk.Frame(quick)
+        self.quick_dlss_row.grid(row=self.next_row(quick), column=0, columnspan=2, sticky='w')
+        self.row(self.quick_dlss_row, _('DLSS preset', 'Пресет DLSS'),
+                 self.dlss_preset_choice(self.quick_dlss_row, 26))
+        def show_dlss_row(*_args):
+            if self.var('upscaler', 'ini').get() == 'dlss':
+                self.quick_dlss_row.grid()
+            else:
+                self.quick_dlss_row.grid_remove()
+        self.var('upscaler', 'ini').trace_add('write', show_dlss_row)
+        show_dlss_row()
+        self.row(quick, _('Frame Generation', 'Генерация кадров'),
+                 self.frame_generation_choice(quick, 26))
+        self.quick_fg_multiplier_row = ttk.Frame(quick)
+        self.quick_fg_multiplier_row.grid(row=self.next_row(quick), column=0, columnspan=2, sticky='w')
+        quick_multiplier=self.choice(self.quick_fg_multiplier_row, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS, 26)
+        self.row(self.quick_fg_multiplier_row, _('NVIDIA FG multiplier', 'Множитель NVIDIA FG'),quick_multiplier)
+        def show_fg_multiplier(*_args):
+            if self.var('frame_generation', 'menu').get() == 'nvidia':
+                quick_multiplier.configure(state='readonly')
+                self.quick_fg_multiplier_row.grid()
+            else:
+                quick_multiplier.configure(state='disabled')
+                self.quick_fg_multiplier_row.grid_remove()
+        self.var('frame_generation', 'menu').trace_add('write', show_fg_multiplier)
+        show_fg_multiplier()
         self.row(quick, _('Output', 'Разрешение'), self.choice(quick, 'output_res', 'ini', OUTPUTS, 26))
         self.row(quick, _('Window mode', 'Режим окна'), self.choice(quick, 'window_mode', 'menu', WINDOW_MODES, 26))
         ttk.Checkbutton(quick, text=_('Show performance overlay', 'Показывать статистику'),
@@ -972,20 +1172,8 @@ class Launcher:
                    'Работает независимо от DLSS FG на совместимых GPU NVIDIA. NVIDIA FG включает Reflex автоматически; Boost необязателен.'))
         self.check(f, 'limit_generated_fps', 'menu',
                    _('Limit total FPS with Frame Generation', 'Лимит общих FPS с генерацией кадров'))
-        holder = ttk.Frame(f)
-        cap = self.var('generated_fps_limit', 'menu')
-        slider = ttk.Scale(holder, from_=30, to=1000,
-                           command=lambda value: cap.set(str(round(float(value)))))
-        slider.set(int(cap.get()))
-        slider.pack(side='left', fill='x', expand=True)
-        readout = ttk.Label(holder, width=9)
-        readout.pack(side='left', padx=10)
-        def show_cap(*_args):
-            readout.configure(text=f'{cap.get()} FPS')
-            slider.configure(state='normal' if self.var('limit_generated_fps', 'menu').get() else 'disabled')
-        cap.trace_add('write', show_cap)
-        self.var('limit_generated_fps', 'menu').trace_add('write', show_cap)
-        show_cap()
+        holder = self.fps_cap_control(f, 'generated_fps_limit', 'menu', 30, 1000,
+                                      enabled_key='limit_generated_fps')
         self.row(f, _('Total FPS cap', 'Общий лимит FPS'), holder,
                  _('Optional. Includes generated frames and can reduce the real frame rate. Generated frames do not advance game logic or physics.',
                    'Необязательный лимит включает промежуточные кадры и может снизить реальные FPS. Генерация не меняет физику и логику игры.'))
@@ -1029,6 +1217,14 @@ class Launcher:
                    _('Show input/output resolution in overlay', 'Показывать разрешение входа/выхода'),
                    _('Current render and output sizes on the same OSD line.',
                      'Текущее разрешение рендера и вывода в той же строке статистики.'))
+        self.check(f, 'show_frame_generation', 'menu',
+                   _('Show Frame Generation in overlay', 'Показывать генерацию кадров в статистике'),
+                   _('Show whether FG is active and its current multiplier on the same line.',
+                     'Состояние генерации кадров и текущий множитель в той же строке.'))
+        self.check(f, 'show_latency', 'menu',
+                   _('Show PC latency in overlay', 'Показывать задержку ПК в статистике'),
+                   _('Measured by NVIDIA Reflex, from simulation start to GPU completion. N/A means the driver has no valid sample. This excludes monitor and input-device latency.',
+                     'Измеряется NVIDIA Reflex: от начала симуляции до завершения GPU. N/A означает отсутствие данных. Задержка монитора и устройства ввода не учитывается.'))
         self.section(f, _('Frame rate', 'Частота кадров'), top=4)
         self.row(f, _('When in background', 'В фоне'),
                  self.choice(f, 'background_mode', 'menu', BACKGROUND_MODES),
@@ -1042,7 +1238,7 @@ class Launcher:
                    'Патчи сообщества для версии 1.09. «Без ограничения» — игра использует реальное время кадра. '
                    'Другие версии всегда работают в 30 FPS.'))
         self.row(f, _('Frame cap (unlocked mode)', 'Ограничение FPS (режим без ограничения)'),
-                 self.choice(f, 'frame_cap', 'app', FRAME_CAPS),
+                 self.fps_cap_control(f, 'frame_cap', 'app', 30, 120, options=FRAME_CAPS),
                  _("Above about 120 FPS the game's movement timing breaks (running and rolling get slower, "
                    'physics and animations can glitch): higher caps are at your own risk.',
                    'Выше ~120 FPS ломается тайминг движения игры (бег и перекаты замедляются, возможны '
@@ -1134,6 +1330,9 @@ class Launcher:
         self.row(f, _('Movement speed', 'Скорость движения'),
                  self.choice(f, 'cheat_movement', 'menu', MOVEMENT_MULTIPLIERS))
         self.check(f, 'cheat_infinite_stamina', 'menu', _('Infinite stamina', 'Бесконечная выносливость'))
+        self.check(f, 'cheat_no_fall_damage', 'menu', _('No fall damage', 'Без урона от падения'),
+                   _('Prevents normal fall damage for your character. Scripted deaths and death volumes still apply.',
+                     'Отменяет обычный урон от падения для игрока. Скриптовые смерти и зоны смерти остаются.'))
         self.check(f, 'cheat_no_consume', 'menu',
                    _('Consumables are not reduced on use', 'Расходники не тратятся при использовании'),
                    _('Includes ammunition. You still need to own the item; selling, dropping and buying behave normally.',
@@ -1260,6 +1459,10 @@ class Launcher:
                  _('How exactly data the GPU writes is copied back for the game.',
                    'Насколько точно данные, записанные GPU, возвращаются игре.'))
         self.section(f, _('Diagnostics', 'Для разработчика'))
+        self.check(f, 'developer_profile', 'app', _('Developer profiling and crash diagnostics', 'Профилирование и диагностика сбоев'))
+        ttk.Label(f, text=_('Off by default. Keeps one folder per run in the saves folder / diagnostics, with timings, settings, the exit code and a crash dump when available. Profiling can affect performance.',
+                           'По умолчанию выключено. Сохраняет журнал, тайминги, настройки, код завершения и дамп сбоя в папке сохранений / diagnostics. Профилирование может снизить скорость.'),
+                  style='Muted.TLabel', wraplength=int(590*self.dpi)).grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(0,8))
         self.check(f, 'frame_stats', 'app', _('Frame statistics in the log (every 5 s)', 'Статистика кадров в журнале (раз в 5 с)'))
         self.check(f, 'gpu_profile', 'app', _('GPU time per pass in the log', 'Профиль GPU в журнале'))
         self.check(f, 'vk_validation', 'app', _('Vulkan validation layers (needs the Vulkan SDK; much slower)',
@@ -1456,6 +1659,8 @@ class Launcher:
 
     def collect(self):
         """Writes launcher, renderer, overlay, mod and patch settings."""
+        for commit in getattr(self, 'fps_cap_committers', []):
+            commit()
         self.refresh_menu_settings()
         menu_changes = {}
         for key, var in self.vars.items():
@@ -1520,16 +1725,24 @@ class Launcher:
             self.show('game')
             return
         self.set_log('')
+        settings = dict(self.app)
+        diagnostic = None
         try:
-            self.process = subprocess.Popen(run_command(), cwd=PORT_DIR, env=game_environment(self.app),
+            diagnostic = DiagnosticSession(settings)
+            self.process = subprocess.Popen(run_command(), cwd=PORT_DIR, env=diagnostic.environment(game_environment(settings)),
                                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
         except OSError as error:
+            if diagnostic:
+                diagnostic.record(f'Could not start: {error}\n')
+                diagnostic.finish(-1)
             self.append(_('Could not start: {}', 'Не удалось запустить: {}').format(error) + '\n')
             self.process = None
             return
         self.job = GameJob(self.process)
-        threading.Thread(target=self.read_output, args=(self.process,), daemon=True).start()
+        # Continue draining the pipe when Close launcher hides the UI. Losing
+        # the reader would truncate profiling and can break the child's stdout.
+        threading.Thread(target=self.read_output, args=(self.process, settings, diagnostic), daemon=False).start()
         self.play_button.configure(state='disabled')
         self.stop_button.configure(state='normal')
         self.status.configure(text=_('Preparing the game; it opens in its own window…',
@@ -1537,23 +1750,14 @@ class Launcher:
         if self.app.get('close_on_play'):
             self.root.after(5000, self.root.destroy)  # the game keeps running
 
-    def read_output(self, process):
+    def read_output(self, process, settings, diagnostic):
         """Helper thread: the game's output to the Log page and to <saves folder>/last_run.log."""
-        log = None
-        try:
-            log_dir = Path(self.app.get('user_dir') or DATA_DIR / 'user')
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log = open(log_dir / 'last_run.log', 'w', encoding='utf-8', buffering=1)
-        except OSError:
-            pass
-        for raw in iter(process.stdout.readline, b''):
-            text = raw.decode('utf-8', errors='replace')
-            self.output.put(text)
-            if log:
-                log.write(text.replace('\r\n', '\n'))
-        if log:
-            log.close()
-        self.output.put((process.wait(),))
+        def emit(text):
+            if not self.ui_closed:
+                self.output.put(text)
+        code=read_game_output(process, settings, diagnostic, emit)
+        if not self.ui_closed:
+            self.output.put((code,))
 
     def drain_output(self):
         while not self.ui_calls.empty():
@@ -1811,20 +2015,21 @@ def play_without_window(settings):
     """--play: the game with the saved settings (shortcuts, Steam). Output goes to the console
     when there is one and to <saves folder>/last_run.log."""
     attach_stdio()
-    log_dir = Path(settings.get('user_dir') or DATA_DIR / 'user')
-    log_dir.mkdir(parents=True, exist_ok=True)
-    with open(log_dir / 'last_run.log', 'w', encoding='utf-8', buffering=1) as log:
-        process = subprocess.Popen(run_command(), cwd=PORT_DIR, env=game_environment(settings),
+    diagnostic = DiagnosticSession(settings)
+    try:
+        process = subprocess.Popen(run_command(), cwd=PORT_DIR, env=diagnostic.environment(game_environment(settings)),
                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
-        for raw in iter(process.stdout.readline, b''):
-            text = raw.decode('utf-8', errors='replace')
-            log.write(text)
-            try:
-                sys.stdout.write(text)
-            except (OSError, ValueError):
-                pass
-        return process.wait()
+    except OSError as error:
+        diagnostic.record(f'Could not start: {error}\n')
+        diagnostic.finish(-1)
+        raise
+    def emit(text):
+        try:
+            sys.stdout.write(text)
+        except (OSError, ValueError):
+            pass
+    return read_game_output(process, settings, diagnostic, emit)
 
 
 def version_tuple(text):

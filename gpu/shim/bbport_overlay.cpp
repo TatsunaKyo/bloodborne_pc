@@ -12,6 +12,7 @@
 
 #include <SDL3/SDL.h>
 #include "bbport_settings.h"
+#include "../bbcheats.h"
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -161,6 +162,14 @@ void Hint(const char* text) {
     }
 }
 
+float DisplayFps() {
+    const auto& s=BbSettings::Get();
+    const float confirmed=s.nvidia_output_fps;
+    if (s.frame_generation==BbSettings::FrameGenerationNvidia &&
+        s.frame_generation_active>1 && confirmed>0.0f) return confirmed;
+    return frame_ms_avg>0.0f ? 1000.0f/frame_ms_avg : 0.0f;
+}
+
 void Menu() {
     auto& s = BbSettings::Get();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -177,7 +186,9 @@ void Menu() {
         return;
     }
     ImGui::Text(Text("%.0f FPS  (%.1f ms)", "%.0f FPS  (%.1f мс)"),
-                frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f, frame_ms_avg);
+                DisplayFps(), DisplayFps()>0.0f ? 1000.0f/DisplayFps() : 0.0f);
+    if (s.frame_generation==BbSettings::FrameGenerationNvidia && s.frame_generation_active>1 && s.nvidia_real_fps>0.0f)
+        ImGui::Text(Text("Real frames: %.0f FPS", "Реальные кадры: %.0f FPS"),s.nvidia_real_fps.load());
 
     static const char* languages[] = {"English", "Русский"};
     int language = s.menu_language;
@@ -206,6 +217,12 @@ void Menu() {
                   "Показывать разрешение входа/выхода###show_resolution"), s.show_resolution);
     Hint(Text("Add the current render and output sizes on the same OSD line.",
               "Текущее разрешение рендера и вывода в той же строке статистики."));
+    Checkbox(Text("Show Frame Generation in overlay###show_frame_generation",
+                  "Показывать генерацию кадров в статистике###show_frame_generation"),s.show_frame_generation);
+    Checkbox(Text("Show PC latency in overlay###show_latency",
+                  "Показывать задержку ПК в статистике###show_latency"),s.show_latency);
+    Hint(Text("Reflex measures simulation start to GPU completion. N/A means there is no valid driver sample. Monitor and input-device latency are not included.",
+              "Reflex измеряет время от начала симуляции до завершения GPU. N/A: нет данных драйвера. Задержка монитора и устройства ввода не учитывается."));
     const char* background_modes[] = {
         Text("Keep running###background_run", "Продолжать работу###background_run"),
         Text("Pause game and rendering###background_pause", "Приостановить игру и рендер###background_pause"),
@@ -262,15 +279,15 @@ void Menu() {
         "FSR 3.1", "FSR 4 (INT8)", "FSR 4.1.1 (INT8)",
         Text("TAA (native anti-aliasing)###upscaler_taa",
              "TAA (нативное сглаживание)###upscaler_taa"),
-        "DLSS (NVIDIA RTX)",
+        "DLSS (NVIDIA RTX)", "XeSS (Intel / compatible GPUs)",
     };
-    static const char* later[] = {"XeSS"};
     int upscaler = s.upscaler;
     if (ImGui::BeginCombo(Text("Upscaler###upscaler", "Апскейлер###upscaler"), upscalers[upscaler])) {
         for (int i = 0; i < BbSettings::UpscalerCount; ++i) {
             const bool supported = i == BbSettings::UpscalerFsr4 ? s.fsr4_supported.load()
                 : i == BbSettings::UpscalerFsr411 ? s.fsr411_supported.load()
-                : i == BbSettings::UpscalerDlss   ? s.dlss_supported.load() : true;
+                : i == BbSettings::UpscalerDlss   ? s.dlss_supported.load()
+                : i == BbSettings::UpscalerXess   ? s.xess_supported.load() : true;
             ImGui::BeginDisabled(!supported);
             if (ImGui::Selectable(upscalers[i], i == upscaler)) {
                 Store(s.upscaler, i, true);
@@ -282,18 +299,12 @@ void Menu() {
                                          "— не поддерживается видеокартой"));
             }
         }
-        for (const char* name : later) {
-            ImGui::BeginDisabled();
-            ImGui::Selectable(name, false);
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", Text("— in development", "— в работе"));
-        }
         ImGui::EndCombo();
     }
     if (const char* problem = s.dlss_problem.load(); problem && upscaler == BbSettings::UpscalerDlss) {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "DLSS: %s", problem);
     }
+    if (const char* problem=s.xess_problem.load()) ImGui::TextWrapped("XeSS: %s",problem);
     if (const char* problem = s.fsr4_problem.load()) {
         ImGui::PushTextWrapPos();
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), Text("FSR 4 unavailable: %s",
@@ -375,9 +386,20 @@ void Menu() {
     Checkbox(Text("Limit total FPS with Frame Generation###limit_generated_fps",
                   "Лимит общих FPS с генерацией кадров###limit_generated_fps"),s.limit_generated_fps);
     ImGui::BeginDisabled(!s.limit_generated_fps);
-    int generated_limit=s.generated_fps_limit;
-    if (ImGui::SliderInt(Text("Total FPS cap###generated_fps_limit","Общий лимит FPS###generated_fps_limit"),
-                         &generated_limit,30,1000,"%d FPS")) Store(s.generated_fps_limit,generated_limit,true);
+    static int generated_limit=144;
+    static bool editing_generated_limit=false;
+    if (!editing_generated_limit) generated_limit=s.generated_fps_limit;
+    ImGui::TextUnformatted(Text("Total FPS cap","Общий лимит FPS"));
+    ImGui::SetNextItemWidth(std::max(80.0f,ImGui::GetContentRegionAvail().x-156.0f*base_scale));
+    if (ImGui::DragInt("###generated_fps_limit",
+                      &generated_limit,1.0f,30,1000,"%d FPS",ImGuiSliderFlags_AlwaysClamp))
+        Store(s.generated_fps_limit,generated_limit,true);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(148.0f * base_scale);
+    if (ImGui::InputInt("###generated_fps_entry",&generated_limit,1,10,ImGuiInputTextFlags_EnterReturnsTrue) ||
+        ImGui::IsItemDeactivatedAfterEdit())
+        Store(s.generated_fps_limit,std::clamp(generated_limit,30,1000),true);
+    editing_generated_limit=ImGui::IsItemActive();
     ImGui::EndDisabled();
     Hint(Text("Optional. This cap includes generated frames and can reduce the real frame rate. Generated frames do not advance game logic or physics.",
               "Этот необязательный лимит включает промежуточные кадры и может снизить реальные FPS. Генерация не меняет физику и логику игры."));
@@ -601,13 +623,16 @@ void Menu() {
     ImGui::BeginDisabled(!(s.cheat_supported.load() & 16u));
     Checkbox(Text("Infinite stamina###cheat_infinite_stamina", "Бесконечная выносливость###cheat_infinite_stamina"), s.cheat_infinite_stamina);
     ImGui::EndDisabled();
+    ImGui::BeginDisabled(!(s.cheat_supported.load()&BB_CHEAT_FALL));
+    Checkbox(Text("No fall damage###cheat_no_fall_damage","Без урона от падения###cheat_no_fall_damage"),s.cheat_no_fall_damage);
+    ImGui::EndDisabled();
     ImGui::BeginDisabled(!(s.cheat_supported.load() & 32u));
     Checkbox(Text("Consumables are not reduced on use###cheat_no_consume",
                   "Расходники не тратятся при использовании###cheat_no_consume"), s.cheat_no_consume);
     ImGui::EndDisabled();
     Hint(Text("Includes ammunition. You still need to own the item; selling, dropping and buying keep their normal behavior.",
               "Включая боеприпасы. Предмет должен быть в инвентаре; продажа, выбрасывание и покупка работают как обычно."));
-    if (s.cheat_supported.load() != 63u)
+    if (s.cheat_supported.load() != BB_CHEAT_ALL)
         ImGui::TextWrapped("%s", Text("Some live cheats are unavailable for this executable or conflict with a patch. See last_run.log.",
                                      "Часть читов недоступна для этого исполняемого файла или конфликтует с патчем. См. last_run.log."));
     for (int e=0;e<BbSettings::EffectCount;++e) {
@@ -730,6 +755,7 @@ void FpsCounter() {
                 : s.upscaler == BbSettings::UpscalerFsr411 ? "FSR 4.1.1"
                 : s.upscaler == BbSettings::UpscalerTaa ? "TAA"
                 : s.upscaler == BbSettings::UpscalerDlss ? "DLSS"
+                : s.upscaler == BbSettings::UpscalerXess ? "XeSS"
                                                          : "";
     char dlss_label[48];
     if (s.upscaler == BbSettings::UpscalerDlss && s.show_dlss_preset) {
@@ -745,21 +771,54 @@ void FpsCounter() {
         }
         upscaler = dlss_label;
     }
-    char line[192];
-    const float fps = frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f;
+    char line[384];
+    const float fps = DisplayFps();
+    const float displayed_ms=fps>0.0f ? 1000.0f/fps : 0.0f;
     if (s.show_resolution) {
-        std::snprintf(line, sizeof(line), "%.0ffps %.1fms %s  %dx%d>%dx%d", fps, frame_ms_avg, upscaler,
+        std::snprintf(line, sizeof(line), "%.0ffps %.1fms %s  %dx%d>%dx%d", fps, displayed_ms, upscaler,
                       s.active_render_width.load(), s.active_render_height.load(),
                       s.active_output_width.load(), s.active_output_height.load());
-        // Keep one row and the original height. Fit extra details within a modest width,
-        // retaining at least 85% of the normal font size even at a small viewport.
-        const float limit = std::min(420.0f * base_scale, viewport->WorkSize.x - pad * 2.0f);
-        const float natural = ImGui::CalcTextSize(line).x;
-        ImGui::SetWindowFontScale(std::clamp((limit - ImGui::GetStyle().WindowPadding.x * 2.0f) /
-                                              std::max(natural, 1.0f), 0.85f, 1.0f));
     } else {
-        std::snprintf(line, sizeof(line), Text("%.0f FPS  %.1f ms  %s", "%.0f FPS  %.1f мс  %s"),
-                      fps, frame_ms_avg, upscaler);
+        if (s.show_frame_generation || s.show_latency)
+            std::snprintf(line,sizeof(line),"%.0ffps %.1fms %s",fps,displayed_ms,upscaler);
+        else std::snprintf(line, sizeof(line), Text("%.0f FPS  %.1f ms  %s", "%.0f FPS  %.1f мс  %s"),
+                           fps, displayed_ms, upscaler);
+    }
+    const auto append=[&](const char* detail) {
+        const size_t length=std::strlen(line);
+        std::snprintf(line+length,sizeof(line)-length," %s",detail);
+    };
+    if (s.show_frame_generation) {
+        char detail[48];
+        const int active=s.frame_generation_active;
+        if (s.frame_generation==BbSettings::FrameGenerationOff) append("FG:off");
+        else {
+            const char* mode=s.frame_generation==BbSettings::FrameGenerationNvidia ? "NV" : "FSR";
+            if (active>1) std::snprintf(detail,sizeof(detail),"FG:%s%dx",mode,active);
+            else std::snprintf(detail,sizeof(detail),"FG:%s wait",mode);
+            append(detail);
+        }
+    }
+    if (s.show_latency) {
+        char detail[48];
+        const float latency=s.pc_latency_ms;
+        if (latency>=0.0f) std::snprintf(detail,sizeof(detail),"PC:%.1fms",latency);
+        else std::snprintf(detail,sizeof(detail),"PC:N/A");
+        append(detail);
+    }
+    if (s.show_resolution || s.show_frame_generation || s.show_latency) {
+        // Extra fields stay on one row. Preserve the usual font unless a fit is needed.
+        const float width=s.show_frame_generation || s.show_latency ? 520.0f : 420.0f;
+        const float limit=std::min(width*base_scale,viewport->WorkSize.x-pad*2.0f);
+        const float natural=ImGui::CalcTextSize(line).x;
+        // Extra fields may need slightly more room than resolution alone.
+        const float floor=s.show_frame_generation || s.show_latency ? 0.80f : 0.85f;
+        const float ratio=std::clamp((limit-ImGui::GetStyle().WindowPadding.x*2.0f-2.0f) /
+                                     std::max(natural,1.0f),floor,1.0f);
+        // ImGui rounds font sizes to pixels; a fractional fit can round back
+        // up and overflow the requested width. Choose a whole pixel size first.
+        const float font=ImGui::GetFontSize();
+        ImGui::SetWindowFontScale(std::max(std::ceil(font*floor),std::floor(font*ratio))/font);
     }
     ImGui::TextUnformatted(line);
     ImGui::SetWindowFontScale(1.0f);

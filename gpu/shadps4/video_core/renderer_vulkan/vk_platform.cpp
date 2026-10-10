@@ -24,6 +24,7 @@
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_dlss.h"
+#include "video_core/renderer_vulkan/vk_xess.h"
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -294,6 +295,7 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
     if (Dlss* dlss = Dlss::Get()) {
         dlss->AppendInstanceExtensions(extensions);
     }
+    if (Xess* xess=Xess::Get()) xess->AppendInstanceExtensions(extensions,available_version);
 
     const vk::ApplicationInfo application_info = {
         .pApplicationName = "shadPS4",

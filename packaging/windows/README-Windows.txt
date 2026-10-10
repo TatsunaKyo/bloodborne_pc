@@ -1,7 +1,7 @@
 Bloodborne (bbport) for Windows - TatsunaKyo revision
 ==================================================
 
-Revision 7, based on Supermedo's Windows v1.6 port.
+Revision 8, based on Supermedo's Windows v1.6 port.
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
 No game files are included. You need your own decrypted dump of Bloodborne CUSA03173
@@ -78,13 +78,15 @@ Cheats
   control the targeted enemy) and gameplay tweaks (no Rally, camera further away, no camera
   auto-rotation, run with less stick tilt, ragdoll physics). They are game patches for 1.09,
   applied when the game starts.
-- The same Cheats page includes player damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina and consumables kept after use. These can also change during play from the in-game menu. Revision 7 fixes their player lookup and loading guard. They default to off and require verified game version 1.09 hooks. See docs\cheats.md.
-- Experimental FSR Frame Generation (2x) supports SDR and HDR10. NVIDIA DLSS FG/MFG and independent Reflex are available through Streamline 2.14.1, with the supported multiplier checked at runtime. The normal FPS cap counts real frames; an optional total cap has its own slider. These choices are in Graphics and the in-game menu. NVIDIA gameplay/HDR on a physical RTX remains untested on the build host. The game HUD may show interpolation artifacts. AMD ML FG and FG model presets A/B are not included; see docs\frame-generation.md.
+- The same Cheats page includes player damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina, consumables kept after use and No Fall Damage. These can also change during play from the in-game menu. Revision 8 covers the missing stamina and ordinary Echoes paths. They default to off and require verified game version 1.09 hooks. See docs\cheats.md.
+- Experimental FSR Frame Generation (2x) supports SDR and HDR10. NVIDIA DLSS FG/MFG and independent Reflex are available through Streamline 2.14.1, with the supported multiplier checked at runtime. The normal FPS cap counts real frames; an optional total cap has its own drag control and numeric entry. FG is available on Play, Graphics and the in-game menu. NVIDIA gameplay/HDR on a physical RTX remains untested on the build host. The game HUD may show interpolation artifacts. AMD ML FG and FG model presets A/B are not included; see docs\frame-generation.md.
 
 Problems
 - Black screen at start: Advanced -> "Clear shader cache", then start again (the first minutes
   stutter while the cache is rebuilt).
-- Send user\last_run.log with any bug report.
+- Send user\last_run.log with any bug report. For the shooting crash, enable General -> Diagnostics -> Developer profiling and crash diagnostics before playing. It is off by default and retains separate session folders under the saves folder\diagnostics, including logs, timings, settings, exit code and a crash dump when available. The shooting crash is not yet declared fixed.
+- XeSS Super Resolution 3.0.2 is included for supported Intel and other GPUs, with fallback to FSR 3.1 on failure. XeSS FG and NVIDIA Dynamic MFG currently need D3D12 and are not available in this Vulkan port.
+- Optional overlay fields show confirmed FG/provider/multiplier and Reflex PC latency. PC latency excludes the display and input device; N/A means no completed driver report is available.
 
 Upscaling
 - DLSS: NVIDIA GeForce RTX 20 series or newer with a current driver (Graphics -> Upscaler ->

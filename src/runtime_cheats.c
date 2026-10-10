@@ -89,6 +89,18 @@ static ABI void echoes_data(Registers *r, unsigned char *fpu) {
     BbCheatOptions options; bbgpu_cheat_options(&options);
     r->rdi = award((int)(uint32_t)r->rdi, balance, options.echoes);
 }
+static ABI void echoes_reward_scaled(Registers *r,unsigned char *fpu) {
+    (void)fpu;
+    if (!local_player(r->rbx)) return;
+    BbCheatOptions options;bbgpu_cheat_options(&options);
+    r->rax=award((int)(uint32_t)r->rax,(int)(uint32_t)r->rsi,options.echoes);
+}
+static ABI void echoes_reward(Registers *r,unsigned char *fpu) {
+    (void)fpu;
+    if (!local_player(r->rbx)) return;
+    BbCheatOptions options;bbgpu_cheat_options(&options);
+    r->r14=award((int)(uint32_t)r->r14,(int)(uint32_t)r->rdx,options.echoes);
+}
 static ABI void movement(Registers *r, unsigned char *fpu) {
     if (!component_is_player(r->r13)) return;
     BbCheatOptions options; bbgpu_cheat_options(&options);
@@ -114,6 +126,15 @@ static ABI void stamina_guard(Registers *r, unsigned char *fpu) {
 static ABI void stamina_guard_overmax(Registers *r, unsigned char *fpu) {
     (void)fpu;
     if (component_is_player(r->rbx)) test_nonzero(r, 0x80);
+}
+static ABI void stamina_action(Registers *r, unsigned char *fpu) {
+    (void)fpu;
+    if (component_is_player(r->r15)) test_nonzero(r, 0x80);
+}
+static ABI void no_fall_damage(Registers *r,unsigned char *fpu) {
+    (void)fpu;
+    // The FallModule's own no-fall-damage guard; no HP setter is altered.
+    if (component_is_player(r->rax)) test_nonzero(r,8);
 }
 static ABI void item_use(Registers *r, unsigned char *fpu) {
     (void)fpu;
@@ -146,6 +167,17 @@ static const Hook hooks[] = {
     {0x18f9814, {0x0f,0xb7,0x92,0,0x02,0,0}, 7,0, BB_CHEAT_CONSUMABLES, item_use},
     {0x18f9f31, {0xf6,0x80,0x01,0x02,0,0,0x02}, 7,0, BB_CHEAT_CONSUMABLES, ammunition_use},
     {0x18fa57d, {0x41,0xf7,0xde,0x31,0xc9}, 5,1, BB_CHEAT_CONSUMABLES, equipped_ammunition_use},
+    /* The additive helper above is not the only consumption path. Attacks and
+     * animation events inline the same no-consumption branch; the absolute
+     * setter and persistent-state synchronization must honor it as well. */
+    {0x1a297e6, {0x41,0xf6,0x87,0,0x02,0,0,0x80}, 8,0, BB_CHEAT_STAMINA, stamina_action},
+    {0x1a29b1d, {0x41,0xf6,0x86,0,0x02,0,0,0x80}, 8,0, BB_CHEAT_STAMINA, stamina_general},
+    {0x1a56af5, {0x41,0xf6,0x86,0,0x02,0,0,0x80}, 8,0, BB_CHEAT_STAMINA, stamina_general},
+    {0x1a5682c, {0xf6,0x83,0,0x02,0,0,0x80}, 7,0, BB_CHEAT_STAMINA, stamina_guard_overmax},
+    {0x1a56e44, {0xf6,0x83,0,0x02,0,0,0x80}, 7,0, BB_CHEAT_STAMINA, stamina_guard_overmax},
+    {0x18fc6ab, {0x8b,0xb2,0x94,0,0,0}, 6,0, BB_CHEAT_ECHOES, echoes_reward_scaled},
+    {0x18fc73b, {0x8b,0x91,0x94,0,0,0}, 6,0, BB_CHEAT_ECHOES, echoes_reward},
+    {0x1a35b75, {0xf6,0x80,0,0x02,0,0,0x08}, 7,0, BB_CHEAT_FALL, no_fall_damage},
 };
 
 typedef struct { unsigned char *start, *next; } Emitter;

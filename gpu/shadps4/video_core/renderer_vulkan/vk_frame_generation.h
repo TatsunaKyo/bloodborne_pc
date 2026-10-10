@@ -51,10 +51,10 @@ public:
     struct Snapshot {
         FrameGenerationSource source;
         u32 width{}, height{};
-        bool hdr{}, nvidia_input_only{};
+        bool hdr{}, sdr_unorm{}, nvidia_input_only{};
         Image color, depth, motion, generated, encoded;
         vk::UniqueImageView color_view, depth_view, motion_view, generated_view, encoded_view;
-        vk::Image PresentImage() const { return hdr ? vk::Image(encoded) : vk::Image(generated); }
+        vk::Image PresentImage() const { return hdr || sdr_unorm ? vk::Image(encoded) : vk::Image(generated); }
     };
     FrameGeneration(vk::PhysicalDevice physical, vk::Device device,
                     VmaAllocator allocator, Submissions submissions);

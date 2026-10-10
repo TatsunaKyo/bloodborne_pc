@@ -29,19 +29,23 @@ int main() {
     Env("BB_RENDER_RES", nullptr);
     auto& cheat = Get();
     assert(cheat.cheat_damage==0 && cheat.cheat_movement==0 && !cheat.cheat_infinite_stamina);
+    assert(!cheat.cheat_no_fall_damage && !cheat.show_frame_generation && !cheat.show_latency);
     bbgpu_cheat_support(BB_CHEAT_ALL);
     for (int i=0;i<5;++i) {
         cheat.cheat_damage=i; cheat.cheat_incoming=i; cheat.cheat_echoes=i;
         for (int m=0;m<6;++m) {
             cheat.cheat_movement=m; cheat.cheat_infinite_stamina=i%2; cheat.cheat_no_consume=m%2;
+            cheat.cheat_no_fall_damage=(i+m)%2;
             Save();
             { std::ofstream rewritten(config); rewritten << "upscaler=fsr3\npreset=0\n"; }
             Load();
             assert(cheat.cheat_damage==i && cheat.cheat_incoming==i && cheat.cheat_echoes==i);
             assert(cheat.cheat_movement==m && cheat.cheat_infinite_stamina==bool(i%2) && cheat.cheat_no_consume==bool(m%2));
+            assert(cheat.cheat_no_fall_damage==bool((i+m)%2));
             BbCheatOptions options; bbgpu_cheat_options(&options);
             assert(options.damage==unsigned(std::atoi(CheatMultiplierKeys[i])) && options.incoming==options.damage && options.echoes==options.damage);
             assert(options.movement==float(std::atof(MovementMultiplierKeys[m])));
+            assert(options.no_fall_damage==int((i+m)%2));
         }
     }
     bbgpu_cheat_support(0); assert(cheat.cheat_active_mask==0);
@@ -82,6 +86,7 @@ int main() {
     }
     settings.background_mode=BackgroundRun;
     settings.window_focused=true;
+    settings.frame_generation=FrameGenerationFsr;
     for (int multiplier : {0,1,2,3,4,5,6}) {
         settings.frame_generation_active=multiplier;
         settings.limit_generated_fps=false;
