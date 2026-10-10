@@ -1,6 +1,6 @@
 Bloodborne for Windows — TatsunaKyo revision
 
-This is my Revision 11, based on Supermedo's Windows v1.6 port. I wanted an English in-game menu, easier window management and more control over upscaling, FG and the overlay. The full feature guide is in README.md; release notes and the development roadmap are in docs.
+This is my Revision 12, based on Supermedo's Windows v1.6 port. I wanted an English in-game menu, easier window management and more control over upscaling, FG and the overlay. The full feature guide is in README.md; release notes and the development roadmap are in docs.
 
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
@@ -34,6 +34,8 @@ Upscaling and presets
 Graphics → Upscaler and the in-game menu offer DLSS, FSR 3.1, FSR 4, XeSS Super Resolution 3.0.2 and TAA/native AA. DLSS needs a supported GeForce RTX GPU and driver. FSR 4 needs fsr4_shaders assets and the required device features; the assets are included, or available through Graphics → Download FSR 4 assets. XeSS uses Intel's Vulkan API; I added it as another option for supported Intel and other GPUs. Failed or unsupported providers report the reason and fall back to FSR 3.1.
 
 I exposed DLSS render presets separately from the quality/render-scale setting: Default, E/F (CNN / legacy), J/K (Transformer 1st gen), M/L (Transformer 2nd gen). On Play, the preset row appears only with DLSS selected. Graphics keeps it visible but disabled with another upscaler. The saved preset is retained, and changing it in-game recreates DLSS without restarting the game.
+
+In Revision 12 I gave XeSS its own quality menu, visible only when XeSS is selected on Play, Graphics and in-game. Its seven modes are Native AA (×1.0), Ultra Quality Plus (×1.3), Ultra Quality (×1.5), Quality (×1.7), Balanced (×2.0), Performance (×2.3) and Ultra Performance (×3.0). Each ratio divides the output dimensions to get the input size. The README table compares them with the DLSS/FSR choices. Your XeSS quality is saved separately, and older settings migrate without changing the input resolution. Live mode applies changes on the next frame; startup-patched sessions save them for a restart.
 
 Frame Generation, Reflex and FPS caps
 

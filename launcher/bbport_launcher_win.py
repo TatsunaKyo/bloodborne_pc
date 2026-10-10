@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.11'
+VERSION = '1.6-tatsunakyo.12'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -176,7 +176,7 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
                 'online_community': COMMUNITY_SERVER}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
-                 'dlss_preset': 'default', 'show_fps': '1', 'show_dlss_preset': '0',
+                 'dlss_preset': 'default', 'xess_preset': '2', 'show_fps': '1', 'show_dlss_preset': '0',
                  'show_resolution': '0', 'show_frame_generation': '0', 'show_latency': '0',
                  'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
@@ -215,6 +215,11 @@ UPSCALERS = [('dlss', ('DLSS (NVIDIA GeForce RTX)',)),
              ('off', ('Off', 'Выключен'))]
 PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Quality (×1.5)',)), ('2', ('Balanced (×1.7)',)),
            ('3', ('Performance (×2)',)), ('4', ('Ultra Performance (×3)',))]
+XESS_PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Ultra Quality Plus (×1.3)',)),
+                ('2', ('Ultra Quality (×1.5)',)), ('3', ('Quality (×1.7)',)),
+                ('4', ('Balanced (×2)',)), ('5', ('Performance (×2.3)',)),
+                ('6', ('Ultra Performance (×3)',))]
+LEGACY_XESS_PRESETS = ('0', '2', '3', '4', '6')
 OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 1080',)),
            ('2560x1440', ('2560 × 1440',)), ('3840x2160', ('3840 × 2160 (4K)',))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
@@ -281,7 +286,15 @@ def menu_path():
 def load_menu():
     values = dict(MENU_DEFAULTS)
     # Preserve installations that kept their FPS counter preference in bbport.ini.
-    values['show_fps'] = load_ini()[0].get('show_fps', '1')
+    ini, _lines = load_ini()
+    values['show_fps'] = ini.get('show_fps', '1')
+    try:
+        legacy = max(0, min(4, int(ini.get('preset', '0'))))
+    except ValueError:
+        legacy = 0
+    values['xess_preset'] = ini.get('xess_preset', LEGACY_XESS_PRESETS[legacy])
+    if values['xess_preset'] not in dict(XESS_PRESETS):
+        values['xess_preset'] = LEGACY_XESS_PRESETS[legacy]
     try:
         lines = menu_path().read_text(encoding='utf-8').splitlines()
     except OSError:
@@ -290,6 +303,8 @@ def load_menu():
         if '=' in line and not line.lstrip().startswith('#'):
             key, value = (part.strip() for part in line.split('=', 1))
             if key in values:
+                if key == 'xess_preset' and value not in dict(XESS_PRESETS):
+                    continue
                 values[key] = value
     if values['menu_language'] not in ('en', 'ru'):
         values['menu_language'] = 'en'
@@ -863,9 +878,14 @@ class Launcher:
         widget.grid(row=r, column=1, sticky='w', pady=(5, 0))
         widget.row_label = label
         if hint:
-            ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(560), justify='left').grid(
-                row=r + 1, column=1, sticky='w', pady=(2, 2))
+            widget.row_hint = ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(560), justify='left')
+            widget.row_hint.grid(row=r + 1, column=1, sticky='w', pady=(2, 2))
         return widget
+
+    def show_row(self, widget, visible):
+        for part in (widget.row_label, widget, getattr(widget, 'row_hint', None)):
+            if part is not None:
+                part.grid() if visible else part.grid_remove()
 
     def check(self, parent, key, store, title, hint=None):
         ttk = self.ttk
@@ -1036,15 +1056,17 @@ class Launcher:
             row=0, column=0, columnspan=2, sticky='w', pady=(0, 2))
         self.row(quick, _('Frame rate', 'Частота кадров'), self.choice(quick, 'fps_mode', 'app', FPS_MODES, 26))
         self.row(quick, _('Upscaler', 'Апскейлер'), self.choice(quick, 'upscaler', 'ini', UPSCALERS, 26))
-        self.row(quick, _('Preset', 'Пресет'), self.choice(quick, 'preset', 'ini', PRESETS, 26))
+        self.quick_preset_row = self.row(quick, _('Preset', 'Пресет'),
+                                         self.choice(quick, 'preset', 'ini', PRESETS, 26))
+        self.quick_xess_row = self.row(quick, _('XeSS quality', 'Качество XeSS'),
+                                       self.choice(quick, 'xess_preset', 'menu', XESS_PRESETS, 26))
         self.quick_dlss_row = self.dlss_preset_choice(quick, 26)
         self.row(quick, _('DLSS preset', 'Пресет DLSS'), self.quick_dlss_row)
-        def show_dlss_row(*_args):
-            for widget in (self.quick_dlss_row.row_label, self.quick_dlss_row):
-                if self.var('upscaler', 'ini').get() == 'dlss':
-                    widget.grid()
-                else:
-                    widget.grid_remove()
+        def show_upscaler_rows(*_args):
+            provider = self.var('upscaler', 'ini').get()
+            self.show_row(self.quick_preset_row, provider != 'xess')
+            self.show_row(self.quick_xess_row, provider == 'xess')
+            self.show_row(self.quick_dlss_row, provider == 'dlss')
         self.row(quick, _('Frame Generation', 'Генерация кадров'),
                  self.frame_generation_choice(quick, 26))
         quick_multiplier = self.choice(quick, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS, 26)
@@ -1076,9 +1098,9 @@ class Launcher:
             row=self.next_row(quick), column=1, sticky='w', pady=(10, 0))
         # Reserve every grid row before hiding optional controls. Hidden rows have
         # zero height, but must never be reused by Output or another setting.
-        self.var('upscaler', 'ini').trace_add('write', show_dlss_row)
+        self.var('upscaler', 'ini').trace_add('write', show_upscaler_rows)
         self.var('frame_generation', 'menu').trace_add('write', show_fg_multiplier)
-        show_dlss_row()
+        show_upscaler_rows()
         show_fg_multiplier()
         def fit_play(_event=None):
             # Leave space for the quick settings at narrow widths and high DPI.
@@ -1149,9 +1171,13 @@ class Launcher:
                    'a GPU with INT8 dot products; otherwise the game falls back to FSR 3.1 by itself.',
                    'Временной апскейлинг с векторами движения игры. FSR 4 нужны ассеты (ниже) и GPU с INT8; '
                    'иначе игра сама переключится на FSR 3.1.'))
-        self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
+        self.graphics_preset_row = self.row(f, _('Quality preset', 'Пресет'), self.choice(f, 'preset', 'ini', PRESETS),
                  _('Render scale per axis: Quality renders at 1/1.5 of the output size.',
                    'Масштаб рендера по каждой оси: Quality рисует в 1/1.5 размера вывода.'))
+        self.graphics_xess_row = self.row(f, _('XeSS quality', 'Качество XeSS'),
+                 self.choice(f, 'xess_preset', 'menu', XESS_PRESETS),
+                 _('XeSS has its own ratios: Ultra Quality Plus ×1.3, Ultra Quality ×1.5, Quality ×1.7, Balanced ×2 and Performance ×2.3. Your DLSS/FSR quality is saved separately.',
+                   'XeSS использует свои масштабы: Ultra Quality Plus ×1.3, Ultra Quality ×1.5, Quality ×1.7, Balanced ×2 и Performance ×2.3. Качество DLSS/FSR сохраняется отдельно.'))
         self.row(f, _('DLSS render preset', 'Пресет модели DLSS'), self.dlss_preset_choice(f),
                  _('Model hint, separate from render scale. '
                    'In-game changes apply on the next frame. '
@@ -1223,6 +1249,13 @@ class Launcher:
         self.check(f, 'show_fps', 'menu', _('Show performance overlay', 'Показывать статистику'))
         self.check(f, 'show_dlss_preset', 'menu',
                    _('Show DLSS preset in overlay', 'Показывать пресет DLSS в статистике'))
+        def show_quality_rows(*_args):
+            xess = self.var('upscaler', 'ini').get() == 'xess'
+            self.show_row(self.graphics_preset_row, not xess)
+            self.show_row(self.graphics_xess_row, xess)
+        # Assign all grid rows before hiding either quality control or its help text.
+        self.var('upscaler', 'ini').trace_add('write', show_quality_rows)
+        show_quality_rows()
 
     def build_display(self):
         ttk = self.ttk

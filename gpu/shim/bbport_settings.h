@@ -18,6 +18,9 @@ inline bool IsFsr4(int upscaler) {
     return upscaler == UpscalerFsr4 || upscaler == UpscalerFsr411;
 }
 enum Preset : int { NativeAA = 0, Quality, Balanced, Performance, UltraPerformance, PresetCount };
+enum XessPreset : int { XessNativeAA = 0, XessUltraQualityPlus, XessUltraQuality,
+                        XessQuality, XessBalanced, XessPerformance, XessUltraPerformance,
+                        XessPresetCount };
 enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugViewCount };
 enum MenuLanguage : int { MenuEnglish = 0, MenuRussian, MenuLanguageCount };
 enum WindowMode : int { WindowFromLauncher = -1, Windowed = 0, Borderless, Fullscreen };
@@ -82,6 +85,8 @@ struct Values {
     std::atomic<int> upscaler{UpscalerFsr3};
     std::atomic<int> preset{NativeAA};
     std::atomic<int> dlss_preset{0};
+    // Missing older preferences are migrated by render scale, without changing the image size.
+    std::atomic<int> xess_preset{-1};
     // Preset requested by the current successfully created NGX feature, -1 before creation.
     // Driver/profile overrides may still determine the actual NVIDIA model.
     std::atomic<int> dlss_active_preset{-1};
@@ -130,6 +135,7 @@ struct Values {
 
     /// Startup settings for the explicit BB_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
+    int startup_xess_preset = XessNativeAA;
     int startup_upscaler = UpscalerFsr3;
     bool startup_object_motion = true;
     bool startup_effects[EffectCount]{};
@@ -156,6 +162,7 @@ void ConfigureDlssSupport(bool available, const char* problem);
 /// Startup-patched scene dimensions cannot change until run.sh prepares a new image.
 bool FixedRenderSession();
 int RenderPreset();
+float RenderScale();
 bool ResolutionNeedsRestart();
 /// Writes the file (menu changes).
 void Save();
@@ -163,6 +170,9 @@ void Save();
 /// Render resolution divisor of a preset (1.0 native, 1.5 quality, ...).
 float PresetScale(int preset);
 const char* PresetName(int preset);
+int LegacyXessPreset(int preset);
+float XessPresetScale(int preset);
+const char* XessPresetName(int preset);
 int ParseDlssPreset(std::string_view value);
 const char* DlssPresetKey(int preset);
 const char* DlssPresetName(int preset);

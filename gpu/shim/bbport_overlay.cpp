@@ -429,22 +429,30 @@ void Menu() {
     }
     ImGui::BeginDisabled(!upscaler_on);
     ImGui::BeginDisabled(taa);
-    int preset = taa ? BbSettings::NativeAA : s.preset.load();
+    const bool xess = s.upscaler == BbSettings::UpscalerXess;
+    int preset = xess ? s.xess_preset.load() : taa ? BbSettings::NativeAA : s.preset.load();
+    if (xess && preset < 0) preset = BbSettings::LegacyXessPreset(s.preset);
     char preset_label[64];
-    std::snprintf(preset_label, sizeof(preset_label), "%s (x%.1f)", BbSettings::PresetName(preset),
-                  BbSettings::PresetScale(preset));
-    if (ImGui::BeginCombo(Text("Quality preset###preset", "Пресет качества###preset"), preset_label)) {
-        for (int i = 0; i < BbSettings::PresetCount; ++i) {
+    std::snprintf(preset_label, sizeof(preset_label), "%s (x%.1f)",
+                  xess ? BbSettings::XessPresetName(preset) : BbSettings::PresetName(preset),
+                  xess ? BbSettings::XessPresetScale(preset) : BbSettings::PresetScale(preset));
+    const char* quality_title = xess ? Text("XeSS quality###xess_preset", "Качество XeSS###xess_preset")
+                                    : Text("Quality preset###preset", "Пресет качества###preset");
+    if (ImGui::BeginCombo(quality_title, preset_label)) {
+        for (int i = 0; i < (xess ? BbSettings::XessPresetCount : BbSettings::PresetCount); ++i) {
             char label[96];
-            const float scale = BbSettings::PresetScale(i);
+            const float scale = xess ? BbSettings::XessPresetScale(i) : BbSettings::PresetScale(i);
             const int output = s.output_res;
-            std::snprintf(label, sizeof(label), Text("%s (x%.1f, render %dx%d)###preset_%d",
-                                                   "%s (x%.1f, рендер %dx%d)###preset_%d"),
-                          BbSettings::PresetName(i), scale,
+            const char* item_format = xess ? Text("%s (x%.1f, render %dx%d)###xess_preset_%d",
+                                                 "%s (x%.1f, рендер %dx%d)###xess_preset_%d")
+                                          : Text("%s (x%.1f, render %dx%d)###preset_%d",
+                                                 "%s (x%.1f, рендер %dx%d)###preset_%d");
+            std::snprintf(label, sizeof(label), item_format,
+                          xess ? BbSettings::XessPresetName(i) : BbSettings::PresetName(i), scale,
                           int(std::lround(BbSettings::OutputWidths[output] / scale / 2) * 2),
                           int(std::lround(BbSettings::OutputHeights[output] / scale / 2) * 2), i);
             if (ImGui::Selectable(label, i == preset)) {
-                Store(s.preset, i, true);
+                Store(xess ? s.xess_preset : s.preset, i, true);
             }
         }
         ImGui::EndCombo();
@@ -463,7 +471,9 @@ void Menu() {
     ImGui::Text(Text("Active output resolution: %d x %d", "Активное разрешение вывода: %d x %d"),
                 s.active_output_width.load(), s.active_output_height.load());
     if (BbSettings::FixedRenderSession()) {
-        ImGui::Text(Text("Startup preset: %s", "Пресет при запуске: %s"), BbSettings::PresetName(s.startup_preset));
+        ImGui::Text(Text("Startup preset: %s", "Пресет при запуске: %s"),
+                    s.startup_upscaler == BbSettings::UpscalerXess ?
+                    BbSettings::XessPresetName(s.startup_xess_preset) : BbSettings::PresetName(s.startup_preset));
         if (const char* automatic = std::getenv("BB_AUTO_RENDER_RES");
             automatic && automatic[0] == '1') {
             Hint(Text("At output resolutions other than 1080p, the entire game renders at the "

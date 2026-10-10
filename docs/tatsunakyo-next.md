@@ -113,6 +113,8 @@ Shader cache recovery should build on the existing cache rather than introduce a
 
 - **NVIDIA Dynamic MFG:** Streamline 2.14.1 documents D3D12-only support. Its Auto mode retains a fixed multiplier with conditional disablement; it is not Dynamic MFG. Recheck vendor support before planning an additional backend.
 - **Intel XeSS FG:** the public FG integration requires D3D12. XeSS Super Resolution already works through the current Vulkan adapter.
+- **Intel XeSS Low Latency (XeLL):** Intel's public integration requires D3D12 and a flip-model DXGI swapchain. It cannot be connected directly to the current Vulkan presentation path. Standalone XeLL supports Intel Arc; Intel also requires XeSS FG for its use on non-Intel hardware. I will revisit it with any future D3D12 work rather than add a switch that does nothing.
+- **AMD Anti-Lag 2:** AMD provides a Windows Vulkan integration with Adrenalin 24.9.1 or newer. This is a viable follow-up without replacing the renderer and is independent of FSR upscaling. I need to integrate its CPU frame/input timing markers, check GPU/driver support and coordinate its pacing with FG and the existing limiter. Reflex and Anti-Lag must be selected for the appropriate device; they must not compete over the same frame timing.
 - **AMD ML FG:** analytical FSR 3.1.6 FG remains the shipped implementation. Review an actual supported ML API and its hardware/backend requirements before offering another mode.
 - **NVIDIA FG presets A/B:** investigate public driver profile settings independently of SR presets. `DLSSGOptions` has no A/B model field. Preserve existing profiles and prove that selection changes the FG model before exposing a control.
 
@@ -132,6 +134,8 @@ Adding D3D12 or a cross-API presentation bridge is a separate architectural proj
 
 Revision 11 starts with the overdue-deadline correction and reuse of the existing Windows timer, with regression checks and a Windows rebuild. Targeted malformed-cache rejection and the firing crash are the next items. I am deferring queue-parallelism changes, live save snapshots and the new cheat wave until their dependencies are resolved. HUDless composition has a useful reference, but I need to handle its HDR and resource lifetimes as a separate feature.
 
+Revision 12 adds the requested independent XeSS quality menu after the Revision 11 pacing build has been delivered. It keeps the seven modern XeSS ratios consistent across startup patches, live scene sizing and SDK initialization, with checks for popup selection, preference migration and SDR/HDR flags. I am keeping the broader stability work above open.
+
 ## Implementation references
 
 These are the references I used to plan the work, with their original authors credited. I will adapt and check any code I use against this port's own runtime and rendering pipeline.
@@ -142,5 +146,6 @@ These are the references I used to plan the work, with their original authors cr
 - [Bloodborne save editor](https://github.com/Noxde/Bloodborne-save-editor) and [er-save-watcher](https://github.com/tvhdev/er-save-watcher): save-layout and checkpoint ideas. Start with whole-file preservation and runtime-specific save boundaries rather than transplanting an emulator path or continuous restore loop.
 - [Streamline 2.14.1 DLSS-G guide](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideDLSS_G.md), [manual Vulkan hooks](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideManualHooking.md), [NVAPI settings](https://github.com/NVIDIA/nvapi/blob/main/NvApiDriverSettings.h), [Intel XeSS](https://github.com/intel/xess) and [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan): provider contracts and backend limits.
 - [Windows high-resolution timers](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createwaitabletimerexw) and [Vulkan display timing](https://docs.vulkan.org/refpages/latest/refpages/source/VK_GOOGLE_display_timing.html): timing facilities, with platform/extension constraints.
+- [Intel XeLL integration guide](https://github.com/intel/xess/blob/main/doc/xell_developer_guide_english.md), [Intel's XeSS hardware/backend matrix](https://www.intel.com/content/www/us/en/developer/topic-technology/gamedev/xess.html) and [AMD Anti-Lag 2 integration guide](https://gpuopen.com/learn/integrating-amd-radeon-anti-lag-2-sdk-in-your-game/): low-latency APIs and current backend requirements.
 
 Maintained by TatsunaKyo. Original port, community patch and vendor credits remain intact. Any reused code must retain its license and attribution.

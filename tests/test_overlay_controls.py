@@ -234,6 +234,30 @@ void TestFrameGeneration() {
         }
     }
 }
+void TestXessQuality() {
+    auto& s=BbSettings::Get();
+    s.upscaler=BbSettings::UpscalerXess;s.preset=BbSettings::Balanced;s.xess_preset=0;
+    s.output_res=1;
+    for (int i=1;i<=BbSettings::XessPresetCount;++i) {
+        const int selected=i%BbSettings::XessPresetCount;
+        controls.clear();Reveal("xess_preset");
+        assert(!controls.contains("preset") && !controls.contains("dlss_preset"));
+        selectables.clear();Click(controls.at("xess_preset").GetCenter());Frame();Frame();
+        char label[96];
+        const float scale=BbSettings::XessPresetScale(selected);
+        std::snprintf(label,sizeof(label),Text("%s (x%.1f, render %dx%d)###xess_preset_%d",
+                                             "%s (x%.1f, рендер %dx%d)###xess_preset_%d"),
+            BbSettings::XessPresetName(selected),scale,
+            int(std::lround(1920/scale/2)*2),int(std::lround(1080/scale/2)*2),selected);
+        assert(selectables.contains(label));Click(selectables.at(label).GetCenter());
+        assert(s.xess_preset==selected && s.preset==BbSettings::Balanced);
+        SetOpen(false);s.xess_preset=-1;BbSettings::Load();
+        assert(s.xess_preset==selected && s.preset==BbSettings::Balanced);SetOpen(true);
+    }
+    s.upscaler=BbSettings::UpscalerDlss;
+    controls.clear();Reveal("preset");
+    assert(!controls.contains("xess_preset") && controls.contains("dlss_preset"));
+}
 void TestNvidiaControls() {
     auto& s=BbSettings::Get();
     s.reflex_supported=true;s.nvidia_fg_supported=true;s.nvidia_max_generated=5;
@@ -545,6 +569,7 @@ int main(int argc,char** argv) {
         s.fsr4_supported=true; s.fsr411_supported=true;
         TestFrameGeneration();
         TestNvidiaControls();
+        TestXessQuality();
         s.upscaler=BbSettings::UpscalerFsr3;
         TestBoolean("sharpen",s.sharpen);
         TestBoolean("jitter",s.jitter);
@@ -574,7 +599,7 @@ int main(int argc,char** argv) {
 
     assert(restart_calls==0);
     ImGui::DestroyContext();
-    std::puts("PASS: actual ImGui controls toggle basic/compact DLSS OSD; all seven active presets and pending changes stay on one row with the original window height; letters only in the OSD, full dropdown descriptions retained; shared settings survive saves; both languages/all upscalers tested; no restart from OSD choices.");
+    std::puts("PASS: actual ImGui controls select and save all seven XeSS quality modes independently of DLSS/FSR; conditional quality controls; basic/compact DLSS OSD; all seven active DLSS model hints and pending changes stay on one row with the original window height; shared settings survive saves; both languages/all upscalers tested; no restart from OSD choices.");
 }
 '''
 # Check all constant widget label pairs against the actual Dear ImGui hash implementation.

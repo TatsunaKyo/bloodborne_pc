@@ -30,7 +30,7 @@ I wanted more control over image quality and more choices for people playing on 
 | DLSS 3.7, 4 & 4.5 | Quality/render scale plus a separate model preset; requires a RTX GPU. |
 | FSR 3.1 | The existing reconstruction path, also used as a fallback if another provider fails. |
 | FSR 4 | Available with its shader assets and the required device features. |
-| XeSS Super Resolution 3.0.2 | The added Intel Vulkan integration, for supported Intel and other GPUs. |
+| XeSS Super Resolution 3.0.2 | The added Intel Vulkan integration, with seven dedicated quality modes for supported Intel and other GPUs. |
 | TAA / native AA | Temporal AA at the scene's native resolution. |
 
 For DLSS, I exposed the following presets exactly as separate choices:
@@ -46,6 +46,22 @@ For DLSS, I exposed the following presets exactly as separate choices:
 | L | L (Transformer 2nd gen) |
 
 The letter selects the model hint; **Quality / Balanced / Performance / Ultra Performance** still controls the input resolution. I put the selector in **Play**, **Graphics** and the in-game menu so you can try another preset without restarting the game. Play shows it only with DLSS selected; Graphics disables it with another upscaler. Your saved choice stays available when you return to DLSS.
+
+In [Revision 12](docs/releases/windows-v1.6-tatsunakyo.12.md), I gave **XeSS its own quality dropdown** on Play, in Graphics and in the in-game menu. It appears when you select XeSS and includes Ultra Quality Plus and Ultra Quality. I keep your XeSS choice separate from DLSS/FSR quality, so switching upscalers does not overwrite it.
+
+The ratios below divide each output dimension to get the input size. These are the options used by this fork; XeSS uses Intel's modern quality ratios, so the same label can render fewer pixels than the DLSS/FSR option. The renderer rounds the resulting dimensions to even pixels for the game's half-resolution effects.
+
+| Quality option | DLSS / FSR ratio | XeSS ratio | XeSS input at 1920 × 1080 output |
+|---|---|---|---|
+| Native AA | ×1.0 | ×1.0 | 1920 × 1080 |
+| Ultra Quality Plus | — | ×1.3 | 1476 × 830 |
+| Ultra Quality | — | ×1.5 | 1280 × 720 |
+| Quality | ×1.5 | ×1.7 | 1130 × 636 |
+| Balanced | ×1.7 | ×2.0 | 960 × 540 |
+| Performance | ×2.0 | ×2.3 | 834 × 470 |
+| Ultra Performance | ×3.0 | ×3.0 | 640 × 360 |
+
+I preserve the input resolution when migrating an older XeSS setting: the old shared Quality option becomes XeSS Ultra Quality, for example. Live resolution mode applies a new choice on the next frame and resets temporal history. If you use the startup resolution patch, the new choice is saved for the next launch; the in-game menu shows that a restart is needed. Intel's [XeSS integration guide](https://github.com/intel/xess/blob/main/doc/xess_sr_developer_guide_english.md) explains the modern and legacy mappings.
 
 I do not currently own an Intel GPU, so I would especially appreciate XeSS results from people who can try it on Intel hardware. The package includes the vendor runtimes and their licenses, and the renderer logs a reason if a provider fails and falls back to FSR 3.1.
 

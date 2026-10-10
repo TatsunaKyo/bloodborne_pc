@@ -131,12 +131,13 @@ void Xess::Shutdown() {ReleaseFeature();impl->ready=false;impl->device=nullptr;}
 bool Xess::Available() const {return impl->ready;}
 const char* Xess::Problem() const {return impl->problems.empty() ? nullptr:impl->problems.back().c_str();}
 xess_quality_settings_t Xess::QualityForScale(float scale) {
-    // Preserve the port's render sizes. Modern XeSS accepts lower-than-default
-    // ratios for each mode (1.5 Ultra Quality, 1.7 Quality, 2 Balanced, 3 UP).
+    // Match the modern XeSS quality modes after even-pixel rounding of the input size.
     return scale>=2.9f ? XESS_QUALITY_SETTING_ULTRA_PERFORMANCE :
+           scale>=2.15f ? XESS_QUALITY_SETTING_PERFORMANCE :
            scale>=1.95f ? XESS_QUALITY_SETTING_BALANCED :
            scale>=1.65f ? XESS_QUALITY_SETTING_QUALITY :
-           scale>1.01f ? XESS_QUALITY_SETTING_ULTRA_QUALITY : XESS_QUALITY_SETTING_AA;
+           scale>=1.45f ? XESS_QUALITY_SETTING_ULTRA_QUALITY :
+           scale>=1.15f ? XESS_QUALITY_SETTING_ULTRA_QUALITY_PLUS : XESS_QUALITY_SETTING_AA;
 }
 bool Xess::HasFeature(const FeatureDesc& desc) const {return impl->context && impl->feature==desc;}
 bool Xess::CreateFeature(const FeatureDesc& desc) {

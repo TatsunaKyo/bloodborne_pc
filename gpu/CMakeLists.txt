@@ -315,6 +315,18 @@ add_executable(overlay-settings-test EXCLUDE_FROM_ALL ../tests/test_overlay_sett
 target_include_directories(overlay-settings-test PRIVATE shim)
 target_compile_options(overlay-settings-test PRIVATE -UNDEBUG)
 
+add_executable(xess-presets-test EXCLUDE_FROM_ALL ../tests/test_xess_presets.cpp
+    shim/bbport_settings.cpp)
+target_include_directories(xess-presets-test PRIVATE shim shadps4)
+target_compile_options(xess-presets-test PRIVATE -UNDEBUG)
+
+add_executable(xess-test EXCLUDE_FROM_ALL ../tests/test_xess.cpp
+    shadps4/video_core/renderer_vulkan/vk_xess.cpp shim/bbport_settings.cpp)
+target_include_directories(xess-test PRIVATE shim shadps4 ${Vulkan_INCLUDE_DIRS})
+target_compile_definitions(xess-test PRIVATE BB_XESS_TESTING)
+target_compile_options(xess-test PRIVATE -UNDEBUG)
+target_link_libraries(xess-test PRIVATE Vulkan::Vulkan)
+
 add_executable(frame-generation-test EXCLUDE_FROM_ALL ../tests/test_frame_generation.cpp
     shadps4/video_core/renderer_vulkan/vk_frame_generation.cpp
     shim/bbport_settings.cpp shim/bbport_background.cpp)

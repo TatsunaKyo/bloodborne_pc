@@ -2,11 +2,13 @@
 // Test the production adapter against an injected SDK contract, without a fake DLL.
 #include "video_core/renderer_vulkan/vk_xess.h"
 #include "bbport_settings.h"
+#include "video_core/renderer_vulkan/scene_resolution.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 using Vulkan::Xess;
+namespace SceneResolution = Vulkan::SceneResolution;
 namespace {
 const char* instance_name="VK_KHR_get_physical_device_properties2";
 const char* device_name="VK_KHR_push_descriptor";
@@ -88,6 +90,26 @@ int main() {
             xess.ReleaseFeature();assert(!xess.HasFeature(desc));
         }
         assert(created==destroyed && barriers==4 && executes==2);
+        constexpr xess_quality_settings_t modes[] = {
+            XESS_QUALITY_SETTING_AA, XESS_QUALITY_SETTING_ULTRA_QUALITY_PLUS,
+            XESS_QUALITY_SETTING_ULTRA_QUALITY, XESS_QUALITY_SETTING_QUALITY,
+            XESS_QUALITY_SETTING_BALANCED, XESS_QUALITY_SETTING_PERFORMANCE,
+            XESS_QUALITY_SETTING_ULTRA_PERFORMANCE};
+        for (bool hdr : {false,true}) {
+            for (int output=0; output<BbSettings::OutputCount; ++output) {
+                for (int selected=0; selected<BbSettings::XessPresetCount; ++selected) {
+                    const uint32_t width=BbSettings::OutputWidths[output], height=BbSettings::OutputHeights[output];
+                    const auto input=SceneResolution::ForScale(BbSettings::XessPresetScale(selected),{width,height});
+                    const Xess::FeatureDesc desc{input.width,input.height,width,height,hdr};
+                    assert(xess.CreateFeature(desc) && xess.HasFeature(desc));
+                    assert(init_params.qualitySetting==modes[selected]);
+                    assert(init_params.outputResolution.x==width && init_params.outputResolution.y==height);
+                    assert(init_params.initFlags==(hdr ? XESS_INIT_FLAG_ENABLE_AUTOEXPOSURE : XESS_INIT_FLAG_LDR_INPUT_COLOR));
+                    xess.ReleaseFeature();
+                }
+            }
+        }
+        assert(created==destroyed);
         assert(xess.CreateFeature({64,64,128,128,false}));
         fail_execute=true;Xess::Frame frame{};
         frame.depth.aspect=vk::ImageAspectFlagBits::eDepth;frame.color.aspect=frame.motion.aspect=vk::ImageAspectFlagBits::eColor;
@@ -96,5 +118,5 @@ int main() {
     }
     assert(created==destroyed);
     absent=true;Xess unsupported(api);Prepare(unsupported);assert(!unsupported.Available() && unsupported.Problem());
-    std::puts("PASS: XeSS extension/features negotiation, unsupported-device fallback, SDR/HDR flags, pixel motion scale, jitter/reset, FP16 input, depth aspect, barriers restored on SDK failure, context recreation and destruction.");
+    std::puts("PASS: seven XeSS quality modes at all four output sizes in SDR/HDR, extension/features negotiation, unsupported-device fallback, pixel motion scale, jitter/reset, FP16 input, depth aspect, barriers restored on SDK failure, context recreation and destruction.");
 }

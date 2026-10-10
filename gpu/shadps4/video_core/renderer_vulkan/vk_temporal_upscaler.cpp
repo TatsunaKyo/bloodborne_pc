@@ -300,7 +300,9 @@ bool TemporalUpscaler::OnFrameStart() {
     // The guest's startup resolution patch remains in effect until restart. Keep the FSR
     // model at the applied preset while the menu saves the requested one for run.sh.
     const int preset = BbSettings::RenderPreset();
-    if (applied_preset != preset || settings.upscaler == BbSettings::UpscalerOff) failed = false;
+    const float render_scale = BbSettings::RenderScale();
+    if (applied_preset != preset || applied_scale != render_scale ||
+        settings.upscaler == BbSettings::UpscalerOff) failed = false;
     const bool active = Active();
     const bool jitter_on = active && settings.jitter && !BbToggle::Disabled(1u << 25);
     const int upscaler = settings.upscaler.load();
@@ -314,7 +316,8 @@ bool TemporalUpscaler::OnFrameStart() {
         fsr4_failed = false;
     }
     const bool changed = output_changed || applied_preset != preset || active != last_active ||
-                         jitter_on != last_jitter || applied_upscaler != upscaler;
+                         jitter_on != last_jitter || applied_upscaler != upscaler ||
+                         applied_scale != render_scale;
     if (applied_upscaler != upscaler) {
         // A failed provider keeps a fatal flag internally; a user retry gets a fresh context.
         scheduler.Finish();
@@ -325,8 +328,10 @@ bool TemporalUpscaler::OnFrameStart() {
     // Dynamic scene resolution scaling (live preset switching) works on all GPUs.
     // On GPUs without D32S8 blit support, UI depth is cleared instead of copied from scene.
     if (!scaled_session) {
-        scene_targets.SetSize(SceneResolution::ForPreset(active ? preset : 0,
-                                                        {target_width, target_height}));
+        const SceneResolution::Size output_size{target_width, target_height};
+        scene_targets.SetSize(upscaler == BbSettings::UpscalerXess
+            ? SceneResolution::ForScale(active ? render_scale : 1.0, output_size)
+            : SceneResolution::ForPreset(active ? preset : 0, output_size));
         render_width = scene_targets.Size().width;
         render_height = scene_targets.Size().height;
     }
@@ -335,6 +340,7 @@ bool TemporalUpscaler::OnFrameStart() {
     if (changed || !dispatched_last_frame) reset = true;
     if (changed) jitter_index = 0;
     applied_preset = preset;
+    applied_scale = render_scale;
     applied_output = output;
     applied_upscaler = upscaler;
     last_active = active;

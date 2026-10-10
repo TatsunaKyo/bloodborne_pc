@@ -1,7 +1,9 @@
 from paths import ROOT
 import struct
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -9,7 +11,7 @@ from patches import (EBOOT_BASE, OUTPUT_SIZE, RESOLUTION_TEMPLATE, SCENE_HEIGHT,
                      SCENE_WIDTH, UI_HEIGHT, UI_WIDTH, compile_patches,
                      render_size, resolution_writes, scaled_sizes, effect_patches,
                      validate_patch_requirements, external_patches, external_selection,
-                     compile_external)
+                     compile_external, read_settings, preset_scale)
 
 XML = ROOT / 'patches/Bloodborne.xml'
 SEGMENTS = [(0, 0x6000000)]
@@ -26,6 +28,50 @@ def immediate(writes, address):
 
 
 class NativeUiTests(unittest.TestCase):
+    def test_xess_uses_all_seven_modern_ratios_and_keeps_ui_native(self):
+        inputs = ((1920, 1080), (1476, 830), (1280, 720), (1130, 636),
+                  (960, 540), (834, 470), (640, 360))
+        with patch.dict(os.environ, {}, clear=True):
+            for selected, expected in enumerate(inputs):
+                settings = {'upscaler': 'xess', 'preset': '4', 'xess_preset': str(selected)}
+                self.assertEqual(render_size(settings), None if selected == 0 else expected)
+                writes = resolution_writes(XML, expected, '01.09', SEGMENTS)
+                self.assertEqual(immediate(writes, SCENE_WIDTH)[1], expected[0])
+                self.assertEqual(immediate(writes, UI_WIDTH)[1], 1920)
+                self.assertEqual(immediate(writes, UI_HEIGHT)[1], 1080)
+                for output in ('1280x720', '2560x1440', '3840x2160'):
+                    out = tuple(map(int, output.split('x')))
+                    scale = (1, 1.3, 1.5, 1.7, 2, 2.3, 3)[selected]
+                    render = tuple(max(2, round(v / scale / 2) * 2) for v in out)
+                    if render == OUTPUT_SIZE:
+                        render = (1916, 1078)
+                    self.assertEqual(scaled_sizes({**settings, 'output_res': output}), (render, out))
+
+    def test_xess_preferences_migrate_and_startup_reads_only_its_menu_key(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            config = Path(directory) / 'my settings.ini'
+            companion = config.with_suffix('.menu.ini')
+            for preset, scale in enumerate((1, 1.5, 1.7, 2, 3)):
+                config.write_text(f'upscaler=xess\npreset={preset}\n')
+                companion.write_text('show_fps=0\ncheat_damage=16\nxess_preset=invalid\n')
+                loaded = read_settings(config)
+                self.assertEqual(preset_scale(loaded), scale)
+                self.assertNotIn('cheat_damage', loaded)
+                self.assertNotIn('show_fps', loaded)
+            for choice, scale in enumerate((1, 1.3, 1.5, 1.7, 2, 2.3, 3)):
+                companion.write_text(f'xess_preset={choice}\n')
+                self.assertEqual(preset_scale(read_settings(config)), scale)
+            config.write_text('upscaler=xess\npreset=1\nxess_preset=1\n')
+            companion.write_text('xess_preset=bad\n')
+            self.assertEqual(preset_scale(read_settings(config)), 1.3)
+            with patch.dict(os.environ, {'BB_XESS_PRESET': '5'}):
+                self.assertEqual(preset_scale(read_settings(config)), 2.3)
+            with patch.dict(os.environ, {'BB_XESS_PRESET': 'bad'}):
+                self.assertEqual(preset_scale(read_settings(config)), 1.3)
+            for provider in ('dlss', 'fsr3', 'fsr4'):
+                self.assertEqual(preset_scale({'upscaler': provider, 'preset': '1', 'xess_preset': '5'}), 1.5)
+            self.assertEqual(preset_scale({'upscaler': 'taa', 'preset': '4', 'xess_preset': '5'}), 1)
+
     def test_presets_keep_ui_native(self):
         for preset, expected in [(1, (1280, 720)), (2, (1130, 636)),
                                  (3, (960, 540)), (4, (640, 360))]:

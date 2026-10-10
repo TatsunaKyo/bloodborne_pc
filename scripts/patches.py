@@ -19,6 +19,8 @@ FPS_PRESETS={'30':[],'60':['60 FPS++'],'90':['90 FPS++'],'uncap':['Uncap FPS++']
 # then renders at 1920x1080 / ratio and the port's temporal upscaler restores the output size.
 OUTPUT_SIZE=(1920,1080)
 PRESET_SCALES=[1.0,1.5,1.7,2.0,3.0]
+XESS_PRESET_SCALES=[1.0,1.3,1.5,1.7,2.0,2.3,3.0]
+LEGACY_XESS_PRESETS=[0,2,3,4,6]
 # The community patch changes two independent consumers: the game render/window setup
 # and the UI movie viewport. Keep the latter at native size so glyph rasterisation and
 # vector tessellation do not inherit the scene's FSR resolution.
@@ -103,7 +105,30 @@ def read_settings(path):
         for line in path.read_text().splitlines():
             key,sep,value=line.partition('=')
             if sep and not line.startswith('#'): settings[key.strip()]=value.strip()
+    # XeSS quality is shared with the launcher and in-game menu. Other menu options
+    # keep their existing runtime handling instead of becoming startup patches.
+    companion=path.with_suffix('.menu.ini')
+    if companion.exists():
+        for line in companion.read_text().splitlines():
+            key,sep,value=line.partition('=')
+            if sep and key.strip()=='xess_preset' and value.strip() in tuple(map(str,range(7))):
+                settings['xess_preset']=value.strip()
     return settings
+
+
+def preset_scale(settings):
+    if settings.get('upscaler','fsr3') in ('off','taa'): return 1.0
+    try:
+        preset=max(0,min(4,int(settings.get('preset','0') or 0)))
+    except ValueError:
+        preset=0
+    if settings.get('upscaler')=='xess':
+        selected=settings.get('xess_preset',str(LEGACY_XESS_PRESETS[preset]))
+        override=os.environ.get('BB_XESS_PRESET','')
+        if override in tuple(map(str,range(7))): selected=override
+        if selected not in tuple(map(str,range(7))): selected=str(LEGACY_XESS_PRESETS[preset])
+        return XESS_PRESET_SCALES[int(selected)]
+    return PRESET_SCALES[preset]
 
 
 def render_size(settings,override=''):
@@ -112,8 +137,7 @@ def render_size(settings,override=''):
         w,h=(int(v) for v in override.lower().split('x'))
         return (w,h)
     if settings.get('upscaler','fsr3')=='off': return None
-    preset=int(settings.get('preset','0') or 0)
-    scale=PRESET_SCALES[max(0,min(preset,len(PRESET_SCALES)-1))]
+    scale=preset_scale(settings)
     if scale==1.0: return None
     # Even sizes (the game has half-resolution buffers).
     return tuple(max(2,round(v/scale/2)*2) for v in OUTPUT_SIZE)
@@ -137,8 +161,7 @@ def scaled_sizes(settings):
     if out==OUTPUT_SIZE or settings.get('upscaler')=='taa': return None
     scale=1.0
     if settings.get('upscaler','fsr3')!='off':
-        preset=int(settings.get('preset','0') or 0)
-        scale=PRESET_SCALES[max(0,min(preset,len(PRESET_SCALES)-1))]
+        scale=preset_scale(settings)
     render=tuple(max(2,round(v/scale/2)*2) for v in out)
     # A scene of exactly 1920x1080 (4K Performance) is indistinguishable from the game's UI
     # coordinate space, which the port's UI composition recognizes by that size.

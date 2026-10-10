@@ -64,6 +64,9 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         }
     } else if (key == "preset") {
         v.preset = std::clamp(i, 0, PresetCount - 1);
+    } else if (key == "xess_preset") {
+        if (value.size() == 1 && value[0] >= '0' && value[0] < '0' + XessPresetCount)
+            v.xess_preset = value[0] - '0';
     } else if (key == "sharpen") {
         v.sharpen = i != 0;
     } else if (key == "sharpness") {
@@ -146,6 +149,7 @@ void Load() {
     v.cheat_damage = v.cheat_incoming = v.cheat_echoes = v.cheat_movement = 0;
     v.cheat_infinite_stamina = v.cheat_no_consume = false;
     v.cheat_no_fall_damage=false;
+    v.xess_preset = -1;
     for (int e = 0; e < EffectCount; ++e) {
         v.effects[e] = Effects[e].default_on;
     }
@@ -181,6 +185,8 @@ void Load() {
                 v.borderless_vsync = value == "1";
             } else if (key == "dlss_preset") {
                 v.dlss_preset = ParseDlssPreset(value);
+            } else if (key == "xess_preset") {
+                Set(v, key, value);
             } else if (key == "show_fps") {
                 v.show_fps = value == "1";
             } else if (key == "show_dlss_preset") {
@@ -245,13 +251,16 @@ void Load() {
         {"BB_REACTIVE", "reactive"},              {"BB_REACTIVE_SCALE", "reactive_scale"},
         {"BB_REACTIVE_THRESHOLD", "reactive_threshold"}, {"BB_REACTIVE_MAX", "reactive_max"},
         {"BB_UPSCALE_PRESET", "preset"},            {"BB_OBJECT_MOTION", "object_motion"},
+        {"BB_XESS_PRESET", "xess_preset"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env)) {
             Set(v, key, value);
         }
     }
+    if (v.xess_preset < 0) v.xess_preset = LegacyXessPreset(v.preset);
     v.startup_preset = v.preset;
+    v.startup_xess_preset = v.xess_preset;
     v.startup_upscaler = v.upscaler;
     v.startup_object_motion = v.object_motion;
     for (int e = 0; e < EffectCount; ++e) {
@@ -301,11 +310,26 @@ int RenderPreset() {
         v.upscaler == UpscalerTaa ? NativeAA : v.preset.load();
 }
 
+float RenderScale() {
+    const auto& v = Get();
+    const bool fixed = FixedRenderSession();
+    const int provider = fixed ? v.startup_upscaler : v.upscaler.load();
+    if (provider == UpscalerTaa) return 1.0f;
+    if (provider == UpscalerXess) {
+        const int preset = fixed ? v.startup_xess_preset : v.xess_preset.load();
+        return XessPresetScale(preset < 0 ? LegacyXessPreset(v.preset) : preset);
+    }
+    return PresetScale(RenderPreset());
+}
+
 bool ResolutionNeedsRestart() {
     const auto& v = Get();
     // TAA needs the live path (native guest targets): run.sh selects it on restart.
     return FixedRenderSession() &&
-        (v.preset != v.startup_preset || v.output_res != v.startup_output_res ||
+        ((v.upscaler == UpscalerXess ? v.xess_preset != v.startup_xess_preset
+                                    : v.preset != v.startup_preset) ||
+         (v.upscaler == UpscalerXess) != (v.startup_upscaler == UpscalerXess) ||
+         v.output_res != v.startup_output_res ||
          (v.upscaler == UpscalerOff) != (v.startup_upscaler == UpscalerOff) ||
          (v.upscaler == UpscalerTaa) != (v.startup_upscaler == UpscalerTaa));
 }
@@ -325,6 +349,8 @@ void Save() {
         std::fprintf(file, "dlss_preset=%s\nshow_fps=%d\nshow_dlss_preset=%d\n",
                      DlssPresetKey(v.dlss_preset), int(v.show_fps.load()),
                      int(v.show_dlss_preset.load()));
+        std::fprintf(file, "xess_preset=%d\n", v.xess_preset < 0 ?
+                     LegacyXessPreset(v.preset) : v.xess_preset.load());
         const char* background_modes[] = {"run", "pause", "30", "60"};
         std::fprintf(file, "show_resolution=%d\nbackground_mode=%s\n",
                      int(v.show_resolution.load()),
@@ -427,6 +453,24 @@ const char* PresetName(int preset) {
     static constexpr const char* names[PresetCount] = {"Native AA", "Quality", "Balanced",
                                                        "Performance", "Ultra Performance"};
     return names[std::clamp(preset, 0, PresetCount - 1)];
+}
+
+int LegacyXessPreset(int preset) {
+    static constexpr int modes[PresetCount] = {
+        XessNativeAA, XessUltraQuality, XessQuality, XessBalanced, XessUltraPerformance};
+    return modes[std::clamp(preset, 0, PresetCount - 1)];
+}
+
+float XessPresetScale(int preset) {
+    static constexpr float scales[XessPresetCount] = {1.0f, 1.3f, 1.5f, 1.7f, 2.0f, 2.3f, 3.0f};
+    return scales[std::clamp(preset, 0, XessPresetCount - 1)];
+}
+
+const char* XessPresetName(int preset) {
+    static constexpr const char* names[XessPresetCount] = {
+        "Native AA", "Ultra Quality Plus", "Ultra Quality", "Quality", "Balanced",
+        "Performance", "Ultra Performance"};
+    return names[std::clamp(preset, 0, XessPresetCount - 1)];
 }
 
 const char* UpscalerName(int upscaler) {
