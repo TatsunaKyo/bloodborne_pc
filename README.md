@@ -75,6 +75,8 @@ In Revision 10, I added a shared history reset for teleports, abrupt camera/FOV 
 
 I've also worked on reducing unnecessary CPU and driver overhead: repeated camera checks, unchanged mip-bias calculations, image-view creation and redundant image barriers. I spread mesh verification across frames to avoid checking the whole scene in one periodic burst. I've done this optimization work, but I can't guarantee an FPS increase on different configurations yet. Testing from other users is very welcome; please include your hardware and settings so I can compare the results. The technical details are in [Quality and performance](docs/quality-and-performance.md).
 
+In the separate [Revision 11 build](docs/releases/windows-v1.6-tatsunakyo.11.md), I changed the limiter so a late frame starts a fresh interval instead of letting queued frames rush through afterwards. I also reused the Windows high-resolution timer for the renderer's waits and the FSR FG gap. I want to improve the uneven pacing reported during play, especially with FG; comparing the same scene and settings with Revision 10 will help me check how much this first change improves it.
+
 ### Borderless fullscreen and background behavior
 
 I added several, different options for window management when compared to the already great, original work. You can choose **Windowed**, **Borderless fullscreen** or **Fullscreen (driver default)** from the Play, Display & FPS tabs or the in-game menu. Borderless uses the current monitor's desktop resolution and refresh rate, without a display mode switch when you Alt-Tab, which was my main complaint from the original branch.

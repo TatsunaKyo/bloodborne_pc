@@ -1,6 +1,6 @@
 Bloodborne for Windows — TatsunaKyo revision
 
-This is my Revision 10, based on Supermedo's Windows v1.6 port. I wanted an English in-game menu, easier window management and more control over upscaling, FG and the overlay. The full feature guide is in README.md; release notes and the development roadmap are in docs.
+This is my Revision 11, based on Supermedo's Windows v1.6 port. I wanted an English in-game menu, easier window management and more control over upscaling, FG and the overlay. The full feature guide is in README.md; release notes and the development roadmap are in docs.
 
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
@@ -97,3 +97,5 @@ Renderer: shadPS4, https://github.com/shadps4-emu/shadPS4
 Online: shadp2p by Wozzardman (https://github.com/Wozzardman/shadp2p), shadNet by the shadPS4 team and The Hunter's Dream by droogie (https://thehuntersdream.com).
 
 The full project and community-patch credits are in README.md. Original copyrights and licenses remain intact; third-party runtime licenses are included with the package.
+
+Revision 11: I changed the real-frame limiter so a late frame does not trigger a burst of queued frames. The VideoOut and FSR FG waits now use the existing Windows high-resolution timer. The real-frame and generated-output caps remain separate. I want to improve the uneven pacing reported with FG; please compare the same scene and settings with Revision 10.

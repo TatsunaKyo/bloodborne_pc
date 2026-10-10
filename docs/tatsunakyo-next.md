@@ -33,15 +33,15 @@ The seven added runtime cheats remain player damage, incoming-damage reduction, 
 
 ## P0: frame pacing and latency
 
-The first scheduling issue I found is in `VideoOutDriver::PresentThread`, in `gpu/shadps4/core/libraries/videoout/driver.cpp`. After a delayed flip, the current deadline advances with `max(next_flip + period, now - period)`. That can leave it in the past and let queued requests through in a short burst.
+The first scheduling issue I found is in `VideoOutDriver::PresentThread`, in `gpu/shadps4/core/libraries/videoout/driver.cpp`. In Revision 10, after a delayed flip, the deadline advances with `max(next_flip + period, now - period)`. That can leave it in the past and let queued requests through in a short burst.
 
 A model of that exact recurrence at 90 FPS, after a 50 ms stall and with 1 ms of present-call work per request, gives submission times of **50, 51, 52 and 61.111 ms**. The first two gaps are 1 ms, while the nominal period is 11.111 ms. That helped me identify a catch-up case worth fixing in the scheduler. I still need to check the result on the Windows gameplay setup, since there may be other causes of uneven delivery as well.
 
-For the next pacing patch, I want to handle a missed interval without draining old deadlines in a burst, while preserving normal steady cadence. I need to check that policy with queued requests, changing caps, long stalls, uncapped mode, background transitions and shutdown. The guest's vblank notifications and game timing must stay separate from generated presents.
+I have put the first correction in a separate Revision 11 build. The next deadline is one full interval after the later of the previous deadline and the actual submission. The same queued-frame fixture now gives **50, 61.111, 72.222 and 83.333 ms**. Tests cover queued requests, changing caps, long stalls, uncapped mode, pause/refocus and stopping while paused. I kept the guest's vblank notifications and simulation timing separate from generated presents. I still want gameplay comparisons before closing the wider pacing issue.
 
 Other concrete checks:
 
-- **FSR FG:** `Presenter::Present` waits for interpolation submission completion and then uses `std::this_thread::sleep_for` for the half-frame gap. The Windows runtime already has `compat_sleep_ns`, using a high-resolution waitable timer. Reusing it is a small candidate change. An absolute deadline policy must also account for time already spent in GPU/WSI work instead of accumulating relative delays.
+- **FSR FG:** I reused `compat_sleep_ns`, the runtime's high-resolution waitable timer, for the VideoOut waits and FSR FG half-frame gap in Revision 11. The interpolation completion wait and protection of the source resources remain in place. Reviewing the whole display timeline, including GPU and WSI work, is a separate follow-up.
 - **NVIDIA FG/MFG:** Streamline owns generated-frame pacing. Keep the game's real-frame cap and optional total-output cap distinct. Review where the game is delayed relative to `slReflexSleep`; do not insert another sleep between SDK-generated frames or pass a real-frame FPS value as an output cap.
 - **Queue overlap:** current NVIDIA options block the presenting client queue. The public guide allows experiments with `eBlockNoClientQueues`, but requires input-completion fence protection. Those fences already exist here and must remain correct through resize, disabling FG and resource reuse. This is an experiment, not a safe default switch based on GPU utilization alone.
 - **FG off:** review swapchain recreation when NVIDIA generation is disabled, as required by the SDK to avoid residual presentation overhead. A settings toggle and a complete SDK/swapchain transition are different operations.
@@ -130,7 +130,7 @@ Adding D3D12 or a cross-API presentation bridge is a separate architectural proj
 
 **Revision 10 stays closed.** I have added the complete inventory and restored omitted upstream issues to the testing page. The delivered launcher/components keep their existing checksums.
 
-For the next executable revision, I would start with the overdue-deadline correction, reuse of the existing Windows timer and targeted malformed-cache rejection. Each still needs its own regression checks and a Windows rebuild. I am deferring queue-parallelism changes, live save snapshots and the new cheat wave until their dependencies are resolved. HUDless composition has a useful reference, but I need to handle its HDR and resource lifetimes as a separate feature.
+Revision 11 starts with the overdue-deadline correction and reuse of the existing Windows timer, with regression checks and a Windows rebuild. Targeted malformed-cache rejection and the firing crash are the next items. I am deferring queue-parallelism changes, live save snapshots and the new cheat wave until their dependencies are resolved. HUDless composition has a useful reference, but I need to handle its HDR and resource lifetimes as a separate feature.
 
 ## Implementation references
 
