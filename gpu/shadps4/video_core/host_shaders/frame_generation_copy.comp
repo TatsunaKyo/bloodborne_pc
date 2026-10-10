@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0) uniform texture2D scene;
+layout(set=0,binding=1) uniform texture2D scene_depth;
+layout(set=0,binding=2,rg16f) uniform readonly image2D scene_motion;
+layout(set=0,binding=3,rgba16f) uniform writeonly image2D color_snapshot;
+layout(set=0,binding=4,r32f) uniform writeonly image2D depth_snapshot;
+layout(set=0,binding=5,rg16f) uniform writeonly image2D motion_snapshot;
+layout(push_constant) uniform Parameters { uvec2 source_size; uvec2 render_size; } parameters;
+void main() {
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+    // sRGB sampled views decode to linear scRGB; no second post-processing pass.
+    if (all(lessThan(p,imageSize(color_snapshot))))
+        imageStore(color_snapshot,p,vec4(texelFetch(scene,p,0).rgb,1.0));
+    if (all(lessThan(uvec2(p),parameters.render_size))) {
+        vec2 scale=vec2(parameters.render_size)/vec2(parameters.source_size);
+        ivec2 source_p=min(ivec2((vec2(p)+0.5)/scale),ivec2(parameters.source_size)-1);
+        imageStore(depth_snapshot,p,vec4(texelFetch(scene_depth,source_p,0).r));
+        vec4 motion=imageLoad(scene_motion,source_p);
+        motion.xy*=scale;
+        imageStore(motion_snapshot,p,motion);
+    }
+}

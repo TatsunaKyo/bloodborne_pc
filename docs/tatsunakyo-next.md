@@ -1,15 +1,15 @@
 # Next work for the TatsunaKyo revision
 
-The in-game menu stays in English and Russian. Additional menu translations are out of scope for now. Resolution readout and background behavior are in revision 3; the control/pause fixes are in revision 4 and live cheats are in revision 5. Frame Generation remains the implementation work below.
+The in-game menu stays in English and Russian. Additional menu translations are out of scope for now. Resolution readout and background behavior are in revision 3; the control/pause fixes are in revision 4, live cheats in revision 5 and experimental analytical FSR FG in revision 6. NVIDIA FG/MFG remains the implementation work below.
 
 ## Frame Generation
 
-- Classical **FSR Frame Generation**, for compatible AMD, NVIDIA and Intel GPUs.
+- Classical **FSR Frame Generation** is implemented in revision 6 for SDR and the temporal upscalers. Physical-GPU gameplay, presentation pacing and HUD quality still need testing; see [the FG guide](frame-generation.md).
 - **NVIDIA Frame Generation and Multi Frame Generation**, with available frame multipliers determined by the runtime and GPU.
 - A separate **FG preset A/B** choice, distinct from the E–L super-resolution presets. Put FG choices in both the launcher and the R3+L3 menu once connected to the renderer.
 - AMD ML Frame Generation can wait while it depends on a DirectX 12 provider.
 
-The current renderer uses Vulkan. Its FSR-Vulkan dependency contains analytical FSR 3.1.6 FI/OF APIs, but the game does not yet call them. The integration needs output-size scene color, R32 depth and motion vectors kept alive for each real frame, a separate interpolation target, history resets, and correctly paced generated/real presentation. The existing upscaler feeds cameras and motion, but its input images can be reused before asynchronous presentation completes.
+The Vulkan renderer now calls FSR-Vulkan's analytical FSR 3.1.6 FI/OF APIs. It copies output-size scene color, R32 depth and pixel motion vectors into owned per-frame images, records a separate interpolation target and retires resources after GPU completion. The headless integration test exercises the actual shader and generated output with synchronization validation. The first version includes the game HUD in interpolation; separating it and adding HDR remain follow-up work.
 
 For NVIDIA, the official Streamline 2.14.1 SDK supports Vulkan hooks and fixed MFG. It requires presentation/acquisition hooks, device requirements, extra queues, resource tags with actual layouts and lifetimes, frame constants, and Streamline Reflex markers using the same frame index. Availability and multiplier choices must come from runtime support checks. Disable FG in background FPS modes.
 

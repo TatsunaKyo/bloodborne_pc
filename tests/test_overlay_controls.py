@@ -192,6 +192,30 @@ void TestMultiplier(const char* key,std::atomic<int>& value,bool movement=false)
         assert(value==selected); SetOpen(true);
     }
 }
+void TestFrameGeneration() {
+    auto& s=BbSettings::Get();
+    for (int u=0;u<BbSettings::UpscalerCount;++u) {
+        s.upscaler=u; s.frame_generation=BbSettings::FrameGenerationOff;
+        Reveal("frame_generation");
+        selectables.clear(); Click(controls.at("frame_generation").GetCenter()); Frame(); Frame();
+        assert(selectables.contains("FSR Frame Generation (2x)"));
+        Click(selectables.at("FSR Frame Generation (2x)").GetCenter());
+        if (u==BbSettings::UpscalerOff) {
+            assert(s.frame_generation==BbSettings::FrameGenerationOff);
+            auto& io=ImGui::GetIO();
+            io.AddKeyEvent(ImGuiKey_Escape,true); Frame(); io.AddKeyEvent(ImGuiKey_Escape,false); Frame();
+        } else {
+            assert(s.frame_generation==BbSettings::FrameGenerationFsr);
+            SetOpen(false); s.frame_generation=BbSettings::FrameGenerationOff; BbSettings::Load();
+            assert(s.frame_generation==BbSettings::FrameGenerationFsr); SetOpen(true);
+            Reveal("frame_generation");
+            selectables.clear(); Click(controls.at("frame_generation").GetCenter()); Frame(); Frame();
+            const char* off=Text("Off###fg_off","Выключено###fg_off");
+            assert(selectables.contains(off)); Click(selectables.at(off).GetCenter());
+            assert(s.frame_generation==BbSettings::FrameGenerationOff);
+        }
+    }
+}
 void TestNavigation(ImGuiKey key) {
     auto& io=ImGui::GetIO();
     auto& s=BbSettings::Get();
@@ -440,6 +464,8 @@ int main(int argc,char** argv) {
     for (int language : {BbSettings::MenuEnglish,BbSettings::MenuRussian}) {
         s.menu_language=language; s.upscaler=BbSettings::UpscalerFsr3;
         s.fsr4_supported=true; s.fsr411_supported=true;
+        TestFrameGeneration();
+        s.upscaler=BbSettings::UpscalerFsr3;
         TestBoolean("sharpen",s.sharpen);
         TestBoolean("jitter",s.jitter);
         TestBoolean("reactive",s.reactive);

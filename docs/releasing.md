@@ -2,12 +2,12 @@
 
 The launcher checks releases in `TatsunaKyo/bloodborne_pc`. Use these names consistently:
 
-| Item | Revision 3 |
+| Item | Revision 6 |
 |---|---|
-| Launcher `VERSION` | `1.6-tatsunakyo.5` |
-| GitHub release tag | `windows-v1.6-tatsunakyo.5` |
-| Windows asset | `Bloodborne-Windows-v1.6-TatsunaKyo-Revision-5.zip` |
-| Release title | `Bloodborne for Windows v1.6 — TatsunaKyo revision 5` |
+| Launcher `VERSION` | `1.6-tatsunakyo.6` |
+| GitHub release tag | `windows-v1.6-tatsunakyo.6` |
+| Windows asset | `Bloodborne-Windows-v1.6-TatsunaKyo-Revision-6.zip` |
+| Release title | `Bloodborne for Windows v1.6 — TatsunaKyo revision 6` |
 
 Increment the revision number for subsequent releases. Increase the upstream version when rebasing onto a newer upstream release. The updater compares the numeric version and revision, rejects unrelated tags, and selects the exact Windows package name.
 
@@ -22,6 +22,8 @@ python tests/test_launcher_window_settings.py
 python tests/test_launcher_updates.py
 python tests/test_background.py
 python tests/test_overlay_controls.py
+ninja -C out/gpu frame-generation-test
+out/gpu/frame-generation-test
 g++ -std=c++20 -pthread -Igpu/shim tests/test_background_pause.cpp gpu/shim/bbport_background.cpp -o background-pause-test
 ./background-pause-test
 ```
@@ -30,17 +32,17 @@ On Windows, verify that `Bloodborne.exe` displays TatsunaKyo revision, the prese
 
 ## Release
 
-Create a release in this fork using the names above and target the verified revision commit. Paste [the revision 5 notes](releases/windows-v1.6-tatsunakyo.5.md), attach the full Windows ZIP and its SHA-256 file, then publish when testing is complete. GitHub provides source archives for the release tag. Do not replace an existing release tag with a different commit.
+Create a release in this fork using the names above and target the verified revision commit. Paste [the revision 6 notes](releases/windows-v1.6-tatsunakyo.6.md), attach the full Windows ZIP and its SHA-256 file, then publish when testing is complete. GitHub provides source archives for the release tag. Do not replace an existing release tag with a different commit.
 
 With the GitHub CLI, a release can first be prepared as a draft:
 
 ```bash
-gh release create windows-v1.6-tatsunakyo.5 \
-  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-5.zip \
-  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-5.zip.sha256 \
+gh release create windows-v1.6-tatsunakyo.6 \
+  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-6.zip \
+  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-6.zip.sha256 \
   --repo TatsunaKyo/bloodborne_pc --target tatsunakyo-revision --draft \
-  --title 'Bloodborne for Windows v1.6 — TatsunaKyo revision 5' \
-  --notes-file docs/releases/windows-v1.6-tatsunakyo.5.md
+  --title 'Bloodborne for Windows v1.6 — TatsunaKyo revision 6' \
+  --notes-file docs/releases/windows-v1.6-tatsunakyo.6.md
 ```
 
 Only published, non-prerelease releases are returned by the launcher's latest-release endpoint. Keep upstream credits and third-party licenses in both source and packages.

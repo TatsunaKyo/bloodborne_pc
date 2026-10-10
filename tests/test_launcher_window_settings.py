@@ -105,6 +105,9 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
         menu.write_text('menu_language=invalid\nwindow_mode=invalid\nborderless_vsync=bad\n'
                         'background_mode=invalid\nshow_resolution=bad\n')
         assert launcher.load_menu() == launcher.MENU_DEFAULTS
+        for value in ('off', 'fsr', 'invalid', 'dlss'):
+            menu.write_text(f'frame_generation={value}\n')
+            assert launcher.load_menu()['frame_generation'] == ('fsr' if value == 'fsr' else 'off')
 
         # Migrate the original FPS setting, then prefer the shared in-game setting.
         config.write_text('show_fps=0\n')
@@ -130,6 +133,23 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             assert obj.borderless_vsync_check.kwargs['state'] == 'normal'
             assert obj.presentation_choice.kwargs['state'] == 'disabled'
             assert obj.vars['menu_language'].get() == 'en'
+            fg = next(w for w in Widget.nodes if w.kwargs.get('values') ==
+                      [launcher._(*text) for _value, text in launcher.FRAME_GENERATORS])
+            assert obj.vars['frame_generation'].get() == 'off' and fg.kwargs['state'] == 'readonly'
+            fg.choose(1); obj.collect()
+            assert launcher.load_menu()['frame_generation'] == 'fsr'
+            obj.vars['upscaler'].set('off')
+            assert fg.kwargs['state'] == 'disabled' and obj.vars['frame_generation'].get() == 'fsr'
+            for upscaler in ('fsr3', 'taa', 'dlss'):
+                obj.vars['upscaler'].set(upscaler)
+                assert fg.kwargs['state'] == 'readonly'
+                obj.vars['hdr'].set(True)
+                assert fg.kwargs['state'] == 'disabled'
+                obj.vars['hdr'].set(False)
+                assert fg.kwargs['state'] == 'readonly'
+            obj.vars['upscaler'].set('fsr4')
+            fg.choose(0); obj.collect()
+            assert launcher.load_menu()['frame_generation'] == 'off'
             for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
                 options = launcher.MOVEMENT_MULTIPLIERS if key == 'cheat_movement' else launcher.CHEAT_MULTIPLIERS
                 choice = next(w for w in Widget.nodes if w.kwargs.get('values') == [launcher._(*text) for _value, text in options]

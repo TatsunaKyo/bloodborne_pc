@@ -12,6 +12,7 @@
 #include "video_core/renderer_vulkan/host_passes/pp_pass.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
+#include "video_core/renderer_vulkan/vk_frame_generation.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
 #include "video_core/texture_cache/texture_cache.h"
@@ -37,6 +38,7 @@ struct Frame {
     u64 ready_tick;
     bool is_hdr{false};
     u8 id{};
+    std::shared_ptr<FrameGeneration::Snapshot> frame_generation;
 
 };
 
@@ -136,6 +138,7 @@ private:
     std::condition_variable free_cv;
     std::condition_variable_any frame_cv;
     std::vector<VAddr> vo_buffers_addr;
+    std::unique_ptr<FrameGeneration> frame_generation;
 };
 
 } // namespace Vulkan

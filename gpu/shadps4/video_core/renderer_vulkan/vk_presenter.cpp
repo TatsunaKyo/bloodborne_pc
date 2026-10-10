@@ -25,6 +25,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <thread>
 #include <cmath>
 #include <csetjmp>
 #include <cstring>
@@ -136,6 +137,12 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
       swapchain{instance, window}, runtime{instance, draw_scheduler},
       rasterizer{std::make_unique<Rasterizer>(instance, draw_scheduler, runtime, liverpool)},
       texture_cache{rasterizer->GetTextureCache()} {
+    frame_generation=std::make_unique<FrameGeneration>(
+        instance.GetPhysicalDevice(),instance.GetDevice(),instance.GetAllocator(),
+        FrameGeneration::Submissions{
+            [this] { present_scheduler.WaitSubmitted(); },
+            [this](u64 tick) { present_scheduler.Wait(tick); },
+            [this](u64 tick) { return present_scheduler.IsFree(tick); }});
     const u32 num_images = swapchain.GetImageCount();
     const vk::Device device = instance.GetDevice();
 
@@ -166,6 +173,7 @@ Presenter::~Presenter() {
     draw_scheduler.Finish();
     present_scheduler.Finish();
     flip_scheduler.Finish();
+    frame_generation->Reset();
     Check(draw_scheduler.CommandBuffer().reset());
     Check(present_scheduler.CommandBuffer().reset());
     Check(flip_scheduler.CommandBuffer().reset());
@@ -448,6 +456,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     pp_settings.srgb_input =
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+    frame_generation->Capture(cmdbuf,rasterizer->GetUpscaler().FrameGenerationInputs(),
+                              frame->image_view,frame->width,frame->height,
+                              swapchain.GetSurfaceFormat().format,frame->frame_generation);
     if (frame_dump) {
         // The presented image as the swapchain blit reads it (General after the pass).
         const vk::MemoryBarrier2 done{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
@@ -576,11 +587,23 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             free_cv.notify_one();
         }
     };
+    const auto discard_unpresented = [&] {
+        frame_generation->Invalidate();
+        if (!is_reusing_frame) {
+            // No presentation will signal a new fence for this frame. Its draw
+            // submission must finish before the slot, including FG input copies,
+            // can be reused or destroyed after minimization/acquisition failure.
+            const vk::SemaphoreWaitInfo ready{.semaphoreCount=1,
+                .pSemaphores=&frame->ready_semaphore,.pValues=&frame->ready_tick};
+            Check(instance.GetDevice().waitSemaphores(ready,std::numeric_limits<u64>::max()));
+        }
+        free_frame();
+    };
 
     // bbport: a minimized window has no pixels on Windows (0x0); keep the swapchain and skip
     // presenting until the window is restored.
     if (window.GetWidth() == 0 || window.GetHeight() == 0) {
-        free_frame();
+        discard_unpresented();
         return;
     }
 
@@ -595,7 +618,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (!swapchain.AcquireNextImage()) {
             // User resizes the window too fast and GPU can't keep up. Skip this frame.
             LOG_WARNING(Render_Vulkan, "Skipping frame!");
-            free_frame();
+            discard_unpresented();
             return;
         }
     }
@@ -607,136 +630,171 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     ASSERT_MSG(reset_result == vk::Result::eSuccess,
                "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
 
-    // bbport: the game frame is blitted (letterboxed) straight into the swapchain image.
-    const vk::Image swapchain_image = swapchain.Image();
-    auto& scheduler = present_scheduler;
-    const auto cmdbuf = scheduler.CommandBuffer();
+    auto submit_image = [&](vk::Image source_image, bool final) {
+        // bbport: the game frame is blitted (letterboxed) straight into the swapchain image.
+        const vk::Image swapchain_image = swapchain.Image();
+        auto& scheduler = present_scheduler;
+        const auto cmdbuf = scheduler.CommandBuffer();
 
-    if (EmulatorSettings.IsVkHostMarkersEnabled()) {
-        cmdbuf.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT{
-            .pLabelName = "Present",
-        });
-    }
+        if (EmulatorSettings.IsVkHostMarkersEnabled()) {
+            cmdbuf.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT{
+                .pLabelName = "Present",
+            });
+        }
 
-    {
-        const vk::Extent2D extent = swapchain.GetExtent();
-        SetExpectedGameSize(s32(extent.width), s32(extent.height));
-        const vk::ImageSubresourceRange color_range{
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = VK_REMAINING_ARRAY_LAYERS,
-        };
-        const std::array pre_barriers{
-            vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eNone,
-                .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-                .oldLayout = vk::ImageLayout::eUndefined,
-                .newLayout = vk::ImageLayout::eTransferDstOptimal,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = swapchain_image,
-                .subresourceRange = color_range,
-            },
-            vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-                .dstAccessMask = vk::AccessFlagBits::eTransferRead,
-                .oldLayout = vk::ImageLayout::eGeneral,
-                .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = frame->image,
-                .subresourceRange = color_range,
-            },
-        };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                               vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
-                               {}, {}, pre_barriers);
-        const vk::ClearColorValue black{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-        cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal, black, color_range);
-        const vk::MemoryBarrier clear_done{
-            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-        };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
-                               vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
-        cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
-                         vk::ImageLayout::eTransferDstOptimal,
-                         MakeImageBlitFit(frame->width, frame->height, extent.width, extent.height),
-                         vk::Filter::eLinear);
-        // bbport: the settings menu / FPS counter over the frame, at display resolution.
-        const bool overlay = BbOverlay::Visible();
-        const std::array post_barriers{
-            vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                .dstAccessMask = overlay ? vk::AccessFlagBits::eColorAttachmentRead |
-                                               vk::AccessFlagBits::eColorAttachmentWrite
-                                         : vk::AccessFlagBits::eNone,
-                .oldLayout = vk::ImageLayout::eTransferDstOptimal,
-                .newLayout = overlay ? vk::ImageLayout::eColorAttachmentOptimal
-                                     : vk::ImageLayout::ePresentSrcKHR,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = swapchain_image,
-                .subresourceRange = color_range,
-            },
-            vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eTransferRead,
-                .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-                .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
-                .newLayout = vk::ImageLayout::eGeneral,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = frame->image,
-                .subresourceRange = color_range,
-            },
-        };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                               vk::PipelineStageFlagBits::eAllCommands,
-                               vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
-        if (overlay) {
-            BbOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
-            const vk::ImageMemoryBarrier to_present{
-                .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-                .dstAccessMask = vk::AccessFlagBits::eNone,
-                .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .newLayout = vk::ImageLayout::ePresentSrcKHR,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = swapchain_image,
-                .subresourceRange = color_range,
+        {
+            const vk::Extent2D extent = swapchain.GetExtent();
+            SetExpectedGameSize(s32(extent.width), s32(extent.height));
+            const vk::ImageSubresourceRange color_range{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS,
             };
-            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                                   vk::PipelineStageFlagBits::eBottomOfPipe,
-                                   vk::DependencyFlagBits::eByRegion, {}, {}, to_present);
+            const std::array pre_barriers{
+                vk::ImageMemoryBarrier{
+                    .srcAccessMask = vk::AccessFlagBits::eNone,
+                    .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+                    .oldLayout = vk::ImageLayout::eUndefined,
+                    .newLayout = vk::ImageLayout::eTransferDstOptimal,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image = swapchain_image,
+                    .subresourceRange = color_range,
+                },
+                vk::ImageMemoryBarrier{
+                    .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
+                    .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+                    .oldLayout = vk::ImageLayout::eGeneral,
+                    .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image = source_image,
+                    .subresourceRange = color_range,
+                },
+            };
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+                                   vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
+                                   {}, {}, pre_barriers);
+            const vk::ClearColorValue black{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
+            cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal, black, color_range);
+            const vk::MemoryBarrier clear_done{
+                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            };
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
+                                   vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
+            cmdbuf.blitImage(source_image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
+                             vk::ImageLayout::eTransferDstOptimal,
+                             MakeImageBlitFit(frame->width, frame->height, extent.width, extent.height),
+                             vk::Filter::eLinear);
+            // bbport: the settings menu / FPS counter over the frame, at display resolution.
+            const bool overlay = BbOverlay::Visible();
+            const std::array post_barriers{
+                vk::ImageMemoryBarrier{
+                    .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                    .dstAccessMask = overlay ? vk::AccessFlagBits::eColorAttachmentRead |
+                                                   vk::AccessFlagBits::eColorAttachmentWrite
+                                             : vk::AccessFlagBits::eNone,
+                    .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+                    .newLayout = overlay ? vk::ImageLayout::eColorAttachmentOptimal
+                                         : vk::ImageLayout::ePresentSrcKHR,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image = swapchain_image,
+                    .subresourceRange = color_range,
+                },
+                vk::ImageMemoryBarrier{
+                    .srcAccessMask = vk::AccessFlagBits::eTransferRead,
+                    .dstAccessMask = vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
+                    .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+                    .newLayout = vk::ImageLayout::eGeneral,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image = source_image,
+                    .subresourceRange = color_range,
+                },
+            };
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                   vk::PipelineStageFlagBits::eAllCommands,
+                                   vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
+            if (overlay) {
+                BbOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
+                const vk::ImageMemoryBarrier to_present{
+                    .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+                    .dstAccessMask = vk::AccessFlagBits::eNone,
+                    .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                    .newLayout = vk::ImageLayout::ePresentSrcKHR,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image = swapchain_image,
+                    .subresourceRange = color_range,
+                };
+                cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                                       vk::PipelineStageFlagBits::eBottomOfPipe,
+                                       vk::DependencyFlagBits::eByRegion, {}, {}, to_present);
+            }
+        }
+        if (EmulatorSettings.IsVkHostMarkersEnabled()) {
+            cmdbuf.endDebugUtilsLabelEXT();
+        }
+
+        // Flush vulkan commands.
+
+        SubmitInfo info{};
+        info.AddWait(swapchain.GetImageAcquiredSemaphore());
+        info.AddWait(frame->ready_semaphore, frame->ready_tick);
+        info.AddSignal(swapchain.GetPresentReadySemaphore());
+        if (final) info.AddSignal(frame->present_done);
+        scheduler.Flush(info);
+
+        // Present to swapchain.
+        {
+            std::scoped_lock submit_lock{Scheduler::submit_mutex};
+            if (!swapchain.Present() && window.GetWidth() != 0 && window.GetHeight() != 0) {
+                swapchain.Recreate(window.GetWidth(), window.GetHeight());
+            }
+        }
+    };
+    if (!is_game_frame || is_reusing_frame) frame_generation->Invalidate();
+    const bool generated = is_game_frame && !is_reusing_frame &&
+        frame_generation->Record(present_scheduler.CommandBuffer(),frame->frame_generation);
+    if (generated) {
+        const u64 generated_tick=present_scheduler.CurrentTick();
+        submit_image(vk::Image(frame->frame_generation->generated),false);
+        // QueuePresent can return before FI/OF finishes. Start the half-frame
+        // interval after its submission completes so slow GPU work cannot bunch
+        // the generated and real frames into the same presentation interval.
+        present_scheduler.Wait(generated_tick);
+        const auto half_period=std::chrono::duration<float,std::milli>(
+            std::clamp(frame->frame_generation->source.frame_ms*0.5f,1.0f,25.0f));
+        std::this_thread::sleep_for(half_period);
+        BbBackground::Wait();
+        const auto finish_without_real = [&] {
+            // FI/OF has already been submitted. Signal the frame's final fence
+            // even if the window loses its surface before the real presentation.
+            const u64 tick=present_scheduler.CurrentTick();
+            SubmitInfo done{}; done.AddSignal(frame->present_done);
+            present_scheduler.Flush(done); frame_generation->Submitted(tick);
+            frame_generation->Invalidate(); free_frame();
+        };
+        if (window.GetWidth()==0 || window.GetHeight()==0) {
+            finish_without_real(); return;
+        }
+        if (!swapchain.AcquireNextImage()) {
+            swapchain.Recreate(window.GetWidth(),window.GetHeight());
+            if (!swapchain.AcquireNextImage()) {
+                // Finish the real frame's ownership even when the second WSI
+                // acquisition fails. The first submission already contains FI/OF.
+                finish_without_real(); return;
+            }
         }
     }
-    if (EmulatorSettings.IsVkHostMarkersEnabled()) {
-        cmdbuf.endDebugUtilsLabelEXT();
-    }
-
-    // Flush vulkan commands.
-
-    SubmitInfo info{};
-    info.AddWait(swapchain.GetImageAcquiredSemaphore());
-    info.AddWait(frame->ready_semaphore, frame->ready_tick);
-    info.AddSignal(swapchain.GetPresentReadySemaphore());
-    info.AddSignal(frame->present_done);
-    scheduler.Flush(info);
-
-    // Present to swapchain.
-    {
-        std::scoped_lock submit_lock{Scheduler::submit_mutex};
-        if (!swapchain.Present() && window.GetWidth() != 0 && window.GetHeight() != 0) {
-            swapchain.Recreate(window.GetWidth(), window.GetHeight());
-        }
-    }
-
+    const u64 tick=present_scheduler.CurrentTick();
+    submit_image(frame->image,true);
+    frame_generation->Submitted(tick);
     free_frame();
-    if (!is_reusing_frame && is_game_frame) {
-        DebugState.IncFlipFrameNum();
-    }
 }
 
 Frame* Presenter::GetRenderFrame() {

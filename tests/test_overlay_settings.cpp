@@ -50,7 +50,18 @@ int main() {
     auto& settings = Get();
     Load();
     assert(settings.menu_language == MenuEnglish && settings.window_mode == WindowFromLauncher &&
-           !settings.show_dlss_preset && !settings.show_resolution && settings.background_mode == BackgroundRun);
+           !settings.show_dlss_preset && !settings.show_resolution && settings.background_mode == BackgroundRun &&
+           settings.frame_generation==FrameGenerationOff);
+    for (int fg : {FrameGenerationOff,FrameGenerationFsr}) {
+        settings.frame_generation=fg;
+        Save();
+        { std::ofstream file(config); file << "upscaler=dlss\npreset=2\n"; }
+        settings.frame_generation=FrameGenerationOff;
+        Load();
+        assert(settings.frame_generation==fg);
+    }
+    { std::ofstream file(menu); file << "frame_generation=unknown\n"; }
+    Load(); assert(settings.frame_generation==FrameGenerationOff);
     for (int mode : {BackgroundRun, BackgroundPause, Background30, Background60}) {
         for (bool show : {false, true}) {
             settings.background_mode = mode;

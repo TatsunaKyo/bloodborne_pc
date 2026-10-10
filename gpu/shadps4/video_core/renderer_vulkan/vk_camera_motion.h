@@ -61,6 +61,7 @@ public:
     /// Vertical field of view and near/far planes of the current camera.
     [[nodiscard]] float VerticalFov() const noexcept;
     [[nodiscard]] float Near() const noexcept;
+    [[nodiscard]] std::array<float,12> InverseView() const noexcept { return current.inv_view; }
     // Current projection, previous projection, and row Z of previous-view * inverse-view.
     [[nodiscard]] std::array<std::array<float, 4>, 3> TaaDepthParameters() const noexcept;
 

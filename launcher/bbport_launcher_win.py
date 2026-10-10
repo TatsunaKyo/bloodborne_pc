@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.5'
+VERSION = '1.6-tatsunakyo.6'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -177,13 +177,14 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'online_community': COMMUNITY_SERVER}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'show_fps': '1', 'show_dlss_preset': '0',
-                 'show_resolution': '0', 'background_mode': 'run',
+                 'show_resolution': '0', 'background_mode': 'run', 'frame_generation': 'off',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
                  'cheat_infinite_stamina': '0', 'cheat_no_consume': '0'}
 MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution',
               'cheat_infinite_stamina', 'cheat_no_consume'}
 CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
 MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
+FRAME_GENERATORS = [('off', ('Off', 'Выключено')), ('fsr', ('FSR Frame Generation (2x)', 'FSR Frame Generation (2x)'))]
 BACKGROUND_MODES = [('run', ('Keep running', 'Продолжать работу')),
                     ('pause', ('Pause game and rendering', 'Приостановить игру и рендер')),
                     ('30', ('Limit to 30 FPS', 'Лимит 30 FPS')),
@@ -290,6 +291,8 @@ def load_menu():
         values['window_mode'] = 'launcher'
     if values['background_mode'] not in dict(BACKGROUND_MODES):
         values['background_mode'] = 'run'
+    if values['frame_generation'] not in dict(FRAME_GENERATORS):
+        values['frame_generation'] = 'off'
     for key in MENU_FLAGS:
         values[key] = '1' if values[key] == '1' else '0'
     for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
@@ -657,6 +660,16 @@ class Launcher:
         availability()
         return box
 
+    def frame_generation_choice(self, parent):
+        box = self.choice(parent, 'frame_generation', 'menu', FRAME_GENERATORS, width=38)
+        upscaler, hdr = self.var('upscaler', 'ini'), self.var('hdr', 'app')
+        def availability(*_args):
+            box.configure(state='readonly' if upscaler.get() != 'off' and not hdr.get() else 'disabled')
+        upscaler.trace_add('write', availability)
+        hdr.trace_add('write', availability)
+        availability()
+        return box
+
     def row(self, parent, title, widget, hint=None):
         ttk = self.ttk
         r = self.next_row(parent)
@@ -930,6 +943,10 @@ class Launcher:
         self.check(f, 'object_motion', 'ini', _('Object motion vectors', 'Векторы движения объектов'),
                    _('Less ghosting on characters, cloth and weapons; costs about 10% FPS.',
                      'Меньше гостинга на персонажах и одежде; стоит около 10% FPS.'))
+        self.row(f, _('Frame Generation', 'Генерация кадров'),
+                 self.frame_generation_choice(f),
+                 _('FSR FG adds one interpolated frame between real frames. Requires a temporal upscaler and SDR; background FPS caps disable generation.',
+                   'FSR FG добавляет один промежуточный кадр. Требуется временной апскейлер и SDR; при лимите FPS в фоне генерация отключается.'))
         self.section(f, _('FSR 4 assets', 'Ассеты FSR 4'))
         self.fsr4_label = ttk.Label(f, text='', wraplength=self.px(640), justify='left')
         self.fsr4_label.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')

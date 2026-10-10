@@ -22,6 +22,7 @@
 #include "video_core/renderer_vulkan/vk_common.h"
 #include "video_core/renderer_vulkan/vk_dlss.h"
 #include "video_core/renderer_vulkan/vk_fsr4.h"
+#include "video_core/renderer_vulkan/vk_frame_generation.h"
 #include "video_core/texture_cache/image.h"
 
 struct FfxVkPortableUpscaleContext;
@@ -122,8 +123,10 @@ public:
         vk::ImageView view;
     };
     bool DisplayOverride(VAddr address, Display& display, vk::Format view_format);
+    const FrameGenerationSource& FrameGenerationInputs() const { return completed_fg_source; }
 
 private:
+    FrameGenerationSource fg_source{}, completed_fg_source{};
     /// bbport: views of guest images the upscaler reads, kept across frames: FSR 4 registers
     /// images by view in a registry of eight (a new view per frame filled it at Native AA).
     vk::ImageView CachedView(const VideoCore::Image& image, vk::Format format,

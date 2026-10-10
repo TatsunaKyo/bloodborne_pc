@@ -172,9 +172,8 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
                         : dlss->Problem();
         BbSettings::ConfigureDlssSupport(dlss && dlss->Available(), problem.c_str());
     }
-    // Available unless BB_UPSCALER=none; on/off and the parameters are the menu's settings.
-    const char* env = std::getenv("BB_UPSCALER");
-    enabled = !(env && std::strcmp(env, "none") == 0);
+    // Provider selection is live, including starting with None and enabling one later.
+    enabled = true;
     if (const char* hash = std::getenv("BB_UPSCALE_BEFORE_CS")) {
         trigger_hash = std::strtoull(hash, nullptr, 16);
     }
@@ -266,6 +265,8 @@ bool TemporalUpscaler::RasterScaling() const {
 }
 
 bool TemporalUpscaler::OnFrameStart() {
+    completed_fg_source=fg_source;
+    fg_source={};
     // bbport: BB_PRESET_FILE=<file> holding a preset number, read about once a second: switches
     // the preset like the menu does (scripted tests of live preset changes).
     static const char* preset_file = std::getenv("BB_PRESET_FILE");
@@ -1082,6 +1083,10 @@ void TemporalUpscaler::Run() {
         frame_ms = 16.6f;
     }
     last_frame = now;
+    if (BbSettings::Get().frame_generation == BbSettings::FrameGenerationFsr) {
+        fg_source={input_depth_view,vk::Image(motion_image),*motion_view,w,h,jitter,
+                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,true};
+    }
 
     bool dispatched = false;
     if (BbSettings::Get().upscaler == BbSettings::UpscalerTaa) {
@@ -1615,6 +1620,10 @@ void TemporalUpscaler::RunScaled() {
         frame_ms = 16.6f;
     }
     last_frame = now;
+    if (BbSettings::Get().frame_generation == BbSettings::FrameGenerationFsr) {
+        fg_source={depth_view,vk::Image(motion_image),*motion_view,w,h,jitter,
+                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,true};
+    }
 
     // bbport: FSR 4 writes its HDR-format output, copied into the output-size UI image.
     if (UseFsr4() || UseDlss() || BbSettings::Get().upscaler == BbSettings::UpscalerTaa) {

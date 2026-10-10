@@ -334,6 +334,23 @@ void Menu() {
                   "решает, когда отбросить прошлые кадры. Меняются сразу, без перезапуска."));
     }
     const bool upscaler_on = s.upscaler != BbSettings::UpscalerOff;
+    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)"};
+    const int fg=std::clamp(s.frame_generation.load(),0,1);
+    if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
+        for (int i=0;i<2;++i) {
+            ImGui::BeginDisabled(i!=0 && !upscaler_on);
+            if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
+            ImGui::EndDisabled();
+        }
+        ImGui::EndCombo();
+    }
+    Hint(Text("FSR FG adds one interpolated frame between real frames. This version requires a temporal upscaler and SDR. Background FPS caps disable generation.",
+              "FSR FG добавляет один промежуточный кадр. Требуется временной апскейлер и SDR. При лимите FPS в фоне генерация отключается."));
+    if (s.frame_generation==BbSettings::FrameGenerationFsr) {
+        if (const char* problem=s.frame_generation_problem.load()) ImGui::TextWrapped("%s",problem);
+        else ImGui::TextUnformatted(s.frame_generation_active==2 ? Text("FSR FG active: 2x","FSR FG активна: 2x") :
+                                  Text("FSR FG: waiting for valid scene frames (SDR)","FSR FG: ожидание кадров сцены (SDR)"));
+    }
     const bool taa = s.upscaler == BbSettings::UpscalerTaa;
     if (s.upscaler == BbSettings::UpscalerDlss) {
         const int selected = s.dlss_preset.load();

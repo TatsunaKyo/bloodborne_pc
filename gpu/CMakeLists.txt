@@ -114,6 +114,7 @@ add_host_shader(fsr.comp fsr_easu_comp SAMPLE_EASU=1)
 add_host_shader(fsr.comp fsr_rcas_comp SAMPLE_RCAS=1)
 add_host_shader(post_process.frag post_process_frag)
 add_host_shader(camera_motion.comp camera_motion_comp)
+add_host_shader(frame_generation_copy.comp frame_generation_copy_comp)
 add_host_shader(upscale_merge.comp upscale_merge_comp)
 add_host_shader(upscale_reactive.comp upscale_reactive_comp)
 add_host_shader(taa.comp taa_comp)
@@ -219,6 +220,7 @@ if (NOT WIN32)
     target_link_options(bbgpu PRIVATE -Wl,--allow-shlib-undefined)
 endif()
 target_link_libraries(bbgpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan)
+target_link_libraries(bbgpu PRIVATE ffx-vulkan::fsr3-vk-framegeneration-3.1.6)
 target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
     tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit)
 if (WIN32)
@@ -301,6 +303,18 @@ add_executable(overlay-settings-test EXCLUDE_FROM_ALL ../tests/test_overlay_sett
     shim/bbport_settings.cpp)
 target_include_directories(overlay-settings-test PRIVATE shim)
 target_compile_options(overlay-settings-test PRIVATE -UNDEBUG)
+
+add_executable(frame-generation-test EXCLUDE_FROM_ALL ../tests/test_frame_generation.cpp
+    shadps4/video_core/renderer_vulkan/vk_frame_generation.cpp
+    shim/bbport_settings.cpp shim/bbport_background.cpp)
+target_include_directories(frame-generation-test PRIVATE shim shadps4 ${SHADER_INCLUDE})
+target_compile_options(frame-generation-test PRIVATE -UNDEBUG)
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(frame-generation-test PRIVATE -Wno-nullability-completeness)
+endif()
+target_link_libraries(frame-generation-test PRIVATE GPUOpen::VulkanMemoryAllocator
+    ffx-vulkan::fsr3-vk-framegeneration-3.1.6 ${CMAKE_DL_LIBS})
+add_dependencies(frame-generation-test host_shaders)
 
 add_executable(fsr4-bench EXCLUDE_FROM_ALL tools/fsr4_bench.cpp
     shadps4/video_core/renderer_vulkan/fsr411/fsr411.cpp)

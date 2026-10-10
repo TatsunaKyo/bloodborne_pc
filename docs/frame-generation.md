@@ -1,0 +1,17 @@
+# FSR Frame Generation
+
+Revision 6 adds experimental analytical FSR 3.1.6 Frame Generation to the Vulkan renderer. Select **FSR Frame Generation (2x)** in the launcher's Graphics page or the in-game menu opened with Insert / L3+R3. It starts off. The choice is saved in `bbport.menu.ini` as `frame_generation=off|fsr`, independently of the upscaler and its presets.
+
+This build needs SDR and a temporal upscaler: DLSS, FSR 3.1, FSR 4 or TAA. FSR FG can therefore be used with DLSS super resolution; it is not restricted to FSR upscaling or to AMD GPUs. The GPU still needs the port's Vulkan features and enough memory for the interpolation resources. The launcher disables the selector with upscaling off or HDR enabled, and preserves the saved choice. The in-game menu reports whether the interpolation context has started; unsupported or failed inputs keep the real frame and show the problem there.
+
+The draw queue copies the completed game color, depth and motion into images owned by that frame. Color is decoded from sRGB to linear half-float before the real FSR optical-flow and frame-interpolation dispatches. The presentation queue shows the generated frame, then the real frame. It waits for the generated submission before starting the half-frame interval and keeps the input images until the final submission completes. Resizing, scene resets and background pauses restart history; the first valid frame seeds it without displaying an interpolated frame.
+
+Background Pause, 30 FPS and 60 FPS modes disable generation while unfocused. Keep running preserves it. The foreground FPS limit controls real game frames; generated frames add presentation updates without increasing the game's simulation rate. FG has its own GPU and pacing costs, so 2x describes one generated frame per accepted real frame, not a guaranteed doubling of the FPS you had with it switched off. The port's OSD counts presentation calls; the monitor may display fewer frames depending on refresh rate and presentation mode.
+
+The game's HUD is currently part of the interpolation input, so moving text and UI can show artifacts. The port's own performance overlay and settings menu are rendered after interpolation on each presentation. HDR, a separate game-HUD composition path, AMD ML Frame Generation and NVIDIA FG/MFG are not included in this revision.
+
+The integration test runs the actual capture shader and FI/OF dispatches on a headless Vulkan device with synchronization validation. It checks decoded color, depth and motion readbacks, generated pixels, reduced-size windows, history resets, frame ownership, resizing, background caps and re-enabling FG. Windows desktop presentation, game-HUD quality and performance on a physical GPU still need gameplay testing. No FPS or latency improvement has been measured on this build host.
+
+With the normal renderer dependencies installed, build the test with `ninja -C out/gpu frame-generation-test` and run `out/gpu/frame-generation-test`. It requires a Vulkan device and a current `VK_LAYER_KHRONOS_validation`; exit 77 means those prerequisites are unavailable. Lavapipe can exercise the GPU path without a desktop, but it does not benchmark a gaming GPU.
+
+Revision by TatsunaKyo. The analytical FI/OF implementation comes from the existing [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan) dependency and AMD FidelityFX source. Their credits and MIT licenses remain in the package; the port's GPL license also applies.

@@ -126,6 +126,7 @@ void Load() {
     v.show_dlss_preset = false;
     v.show_resolution = false;
     v.background_mode = BackgroundRun;
+    v.frame_generation = FrameGenerationOff;
     v.cheat_damage = v.cheat_incoming = v.cheat_echoes = v.cheat_movement = 0;
     v.cheat_infinite_stamina = v.cheat_no_consume = false;
     for (int e = 0; e < EffectCount; ++e) {
@@ -172,6 +173,8 @@ void Load() {
             } else if (key == "background_mode") {
                 v.background_mode = value == "pause" ? BackgroundPause
                     : value == "30" ? Background30 : value == "60" ? Background60 : BackgroundRun;
+            } else if (key == "frame_generation") {
+                v.frame_generation = value == "fsr" ? FrameGenerationFsr : FrameGenerationOff;
             } else if (key == "cheat_damage" || key == "cheat_incoming" || key == "cheat_echoes") {
                 int index = 0;
                 for (int i = 0; i < 5; ++i) if (value == CheatMultiplierKeys[i]) index = i;
@@ -294,6 +297,7 @@ void Save() {
         std::fprintf(file, "show_resolution=%d\nbackground_mode=%s\n",
                      int(v.show_resolution.load()),
                      background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
+        std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : "off");
         std::fprintf(file, "cheat_damage=%s\ncheat_incoming=%s\ncheat_echoes=%s\ncheat_movement=%s\n"
                           "cheat_infinite_stamina=%d\ncheat_no_consume=%d\n",
                      CheatMultiplierKeys[std::clamp(v.cheat_damage.load(), 0, 4)],

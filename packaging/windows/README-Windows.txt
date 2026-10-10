@@ -1,7 +1,7 @@
 Bloodborne (bbport) for Windows - TatsunaKyo revision
 ==================================================
 
-Revision 3, based on Supermedo's Windows v1.6 port.
+Revision 6, based on Supermedo's Windows v1.6 port.
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
 No game files are included. You need your own decrypted dump of Bloodborne CUSA03173
@@ -36,8 +36,7 @@ Starting
   presentation (possible tearing); V-sync on requests Mailbox, with FIFO as fallback.
 - Play / Graphics -> "DLSS render preset" ("DLSS preset" on Play): Default (driver),
   E/F (CNN / legacy), J/K (Transformer 1st gen), M/L (Transformer 2nd gen).
-  The launcher selector always opens; presets take effect when using DLSS. It is
-  separate from the quality/render-scale preset. The R3+L3 / Insert menu has the same
+  The launcher selector stays visible and is enabled only with DLSS selected. It preserves the saved preset when another upscaler is chosen and is separate from the quality/render-scale preset. The R3+L3 / Insert menu has the same
   choice; changing it recreates DLSS on the next frame, without a game restart.
 - "Show performance overlay" in Play, Graphics, Display & FPS and the in-game menu
   hides/shows the top-right OSD. The settings menu remains accessible when it is hidden.
@@ -80,7 +79,7 @@ Cheats
   auto-rotation, run with less stick tilt, ragdoll physics). They are game patches for 1.09,
   applied when the game starts.
 - Live cheats add player damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina and consumables kept after use. Choose them in the Cheats page or the in-game menu. They default to off and require verified game version 1.09 hooks. See docs\cheats.md.
-- Frame Generation is still being integrated and is not enabled in this build.
+- Experimental FSR Frame Generation (2x) is available in Graphics and the in-game menu. It starts off and requires SDR plus a temporal upscaler, including DLSS or TAA. Background pause and FPS caps disable generation while unfocused. The game HUD may show interpolation artifacts. NVIDIA FG/MFG and AMD ML FG are not included; see docs\frame-generation.md.
 
 Problems
 - Black screen at start: Advanced -> "Clear shader cache", then start again (the first minutes
