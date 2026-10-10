@@ -234,12 +234,11 @@ TemporalUpscaler::~TemporalUpscaler() {
 
 bool TemporalUpscaler::Active() const {
     // Toggle 1 << 24 switches it off at run time (A/B); history restarts after.
+    const int provider = BbSettings::Get().upscaler.load();
     return enabled && !failed &&
-           (BbSettings::Get().upscaler == BbSettings::UpscalerFsr3 ||
-            BbSettings::IsFsr4(BbSettings::Get().upscaler) ||
-            BbSettings::Get().upscaler == BbSettings::UpscalerTaa ||
-            BbSettings::Get().upscaler == BbSettings::UpscalerDlss ||
-            BbSettings::Get().upscaler == BbSettings::UpscalerXess) &&
+           (provider == BbSettings::UpscalerFsr3 || BbSettings::IsFsr4(provider) ||
+            provider == BbSettings::UpscalerTaa || provider == BbSettings::UpscalerDlss ||
+            provider == BbSettings::UpscalerXess) &&
            !BbToggle::Disabled(1u << 24);
 }
 
@@ -1005,6 +1004,7 @@ bool TemporalUpscaler::RecordReactive(vk::ImageView color_view) {
 }
 
 void TemporalUpscaler::Run() {
+    reset = reset || camera_motion.HistoryReset();
     if (auto* profiler = GpuProfiler::Get()) {
         const char* label = BbSettings::Get().upscaler == BbSettings::UpscalerTaa
             ? "upscaler Run (TAA)" : BbSettings::Get().upscaler == BbSettings::UpscalerDlss
@@ -1299,9 +1299,8 @@ std::array<u32, 2> TemporalUpscaler::SceneSize(u32 w, u32 h) const {
 
 float TemporalUpscaler::SceneMipBias() const {
     if (!Active() || BbSettings::Get().upscaler == BbSettings::UpscalerTaa) return 0.0f;
-    const float render = float(BbSettings::Get().active_render_width.load());
-    const float output = float(Scaled() ? target_width : 1920u);
-    return render > 0.0f && render < output ? std::log2(render / output) : 0.0f;
+    return mip_bias_cache.Get(BbSettings::Get().active_render_width.load(),
+                              Scaled() ? target_width : 1920u);
 }
 
 bool TemporalUpscaler::Scaled() const {
@@ -1546,6 +1545,7 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
 }
 
 void TemporalUpscaler::RunScaled() {
+    reset = reset || camera_motion.HistoryReset();
     if (auto* profiler = GpuProfiler::Get()) {
         const char* label = BbSettings::Get().upscaler == BbSettings::UpscalerTaa
             ? "upscaler RunScaled (TAA)" : BbSettings::Get().upscaler == BbSettings::UpscalerDlss
@@ -2036,6 +2036,8 @@ bool TemporalUpscaler::RecordXess(vk::CommandBuffer command,const Xess::Resource
     if (!xess->HasFeature(desc)) {
         scheduler.WaitSubmitted();xess->ReleaseFeature();
         ok=xess->CreateFeature(desc);reset=true;
+        fg_source.reset=true;
+        if (fg_source.valid) camera_motion.FrameGenerationCamera(fg_source);
     }
     const auto device=instance.GetDevice();
     if (ok && (xess_width!=w || xess_height!=h)) {
@@ -2111,6 +2113,8 @@ bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource
         dlss->ReleaseFeature();
         ok = dlss->CreateFeature(cmdbuf, desc);
         reset = true;
+        fg_source.reset = true;
+        if (fg_source.valid) camera_motion.FrameGenerationCamera(fg_source);
     }
     if (ok) {
         // The jitter and motion vectors FSR 3 gets: render pixels, current to previous.

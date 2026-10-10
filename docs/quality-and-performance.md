@@ -1,19 +1,32 @@
-# Quality and performance work
+# Temporal stability and renderer performance
 
-DLSS stability can improve when its inputs improve. Changing the model preset alone cannot fix incorrect motion, jitter, exposure or history. NVIDIA's [integration checklist](https://developer.nvidia.com/rtx/streamline/get-started) calls out those inputs and camera resets; the [DLSS programming guide](https://github.com/NVIDIA-RTX/Streamline/blob/main/docs/ProgrammingGuideDLSS.md) explains the requirements. The findings below come from reading this fork's code, not from a measured gameplay improvement.
+Revision 10 implements the camera-history and renderer work described below. The changes are by TatsunaKyo; the underlying bbport/shadPS4 renderer and vendor integrations retain their credits.
 
-The renderer already has a Halton jitter sequence whose length follows the render/output ratio, camera motion, object/skinned-mesh history, resolution-dependent scene mip bias and a separate sharpening pass. History resets when the provider, resolution, preset or jitter state changes, and after frames without an upscale dispatch. Adding those features again would not address the remaining artifacts.
+## Shared camera reset
 
-The first quality candidate is an explicit camera discontinuity signal. The current camera capture keeps the previous view, but does not classify teleportation, respawn or an abrupt camera switch. A reliable reset at those transitions could prevent stale image history. It must reach both reconstruction and FG, and avoid resetting during normal fast camera movement. Resetting every frame would destroy the temporal reconstruction we want to preserve.
+The captured main camera is now checked once per frame. A move of at least 10 world units, a rotation over 100 degrees in one frame or an abrupt projection change requests a history reset. Ordinary movement, gradual zoom and rotations across the ±π boundary keep history. Missing cameras, invalid matrices and render/provider changes invalidate it; the first valid camera seeds both views again.
 
-Next, inspect motion-vector coverage for weapons, particles, transparent surfaces and newly visible objects. Compare the color, depth and motion buffers for the same frame before choosing a fix. The camera pass and object history already cover ordinary opaque geometry; extending them blindly can add work or associate an unrelated draw with the wrong history. Separate HUDless and UI buffers are also a useful FG quality improvement, especially for interpolation around text and counters. That work has a rendering cost and needs gameplay captures.
+On that frame, reconstruction receives the same reset in native and scaled paths. Previous camera and jitter are seeded from the current sample, and old object vectors are ignored. Discarding previous object tables preserves this frame's GPU allocation cursor, so a late camera capture cannot overwrite positions already reserved by a draw. DLSS and XeSS feature recreation also forwards the reset to the already captured FG inputs. FSR, TAA, XeSS, DLSS and FG therefore agree on the transition.
 
-Texture mip bias and sharpening are separate tuning candidates for shimmering on fine detail. The current scene bias is log2(render/output). It already restores higher-resolution texture detail; making it more negative can amplify aliasing. Compare the existing value with a less aggressive bias and reduced post-upscale sharpening on the same moving shot. Check the placement of the reconstruction pass and exposure separately: scaled presets currently consume the tonemapped game frame, while native AA uses HDR scene color. Moving reconstruction earlier would require redesigning the post-processing path and checking SDR/HDR consistency, rather than simply toggling an NGX flag.
+This prevents the renderer from deliberately reprojecting an unrelated preceding scene after a discontinuity. It is a targeted stability change, not a blanket fix for all DLSS shimmering. NVIDIA's [integration checklist](https://developer.nvidia.com/rtx/streamline/get-started) identifies accurate motion, compatible jitter, mip bias and resets as part of the input contract.
 
-For performance, start with a repeatable capture in the Central Yharnam sewers at the same camera, resolution, preset, cap and FG mode. Record CPU/GPU frame times, GPU pass timings, queue waits and frame-time spikes. A low total CPU percentage can hide one saturated thread; incomplete GPU utilization can also come from caps, submission stalls or synchronization. The current measurements do not identify which case applies. Reducing input resolution helping the frame rate is evidence that some work scales with pixels, not a complete bottleneck diagnosis.
+## Avoidable work removed
 
-Prioritize the pass or wait that dominates those captures. Pipeline-cache misses and shader compilation can explain spikes; redundant waits or copies can explain idle gaps; a shader with high pixel cost needs a different fix. ThinLTO or profile-guided compilation are later experiments, with the same scenes and settings before and after. Keep a change only if frame times improve without new correctness problems. Revision 9 changes no GPU algorithm and claims no performance gain.
+- After the main camera has been captured, later G-buffer bindings skip the redundant guest-memory mapping lookup and signature inspection.
+- The scene mip bias retains `log2(render/output)` but caches the value until either dimension changes, avoiding the logarithm on every sampler request.
+- Upscaler activity uses one provider snapshot instead of repeatedly loading the atomic setting for each comparison.
+- An object-motion image already in General layout can be read again without another read-to-read barrier. Color-attachment writes still transition and synchronize before a reader.
+- Index-range verification now assigns each mesh a stable phase within the existing 32-frame interval. A new entry is checked again within 1–32 frames, then every 32 frames, with topology changes still detected and unused entries trimmed.
+- Revision 4's cached upscaled-display image view is retained, as is the one-frame default GPU queue.
 
-Useful follow-up features include a short repeatable benchmark capture in the developer tools and a settings search for the growing launcher. They would make regressions easier to report and options easier to find. They are proposals, not features shipped in this revision.
+The production cache fixture loads 4,096 meshes together and uses them for 64 more frames. The old policy rescanned all 4,096 together every 32 frames. The new policy peaks at 149 scans in a periodic frame, with the same 12,288 total scans including the initial load. This measures the distribution of renderer work, not FPS in Central Yharnam.
 
-Revision by TatsunaKyo. Existing port and renderer credits remain unchanged.
+## Remaining quality work
+
+Motion coverage for particles, transparent surfaces, weapons and newly visible geometry remains worth checking against the color/depth buffers. The existing opaque/skinned-mesh path must keep exact draw identity and full-precision depth rejection. Reducing that precision just to save bandwidth can introduce incorrect distant motion.
+
+FG quality around text needs real HUDless scene color and matching UI-alpha buffers. Further DLSS improvements may require moving scaled reconstruction earlier in post-processing: native AA uses HDR scene color, while scaled presets currently reconstruct the tonemapped scene. That requires a coordinated post-processing and SDR/HDR change, rather than changing one NGX flag.
+
+The current mip bias already restores fine texture detail. More negative bias or stronger sharpening can increase shimmer, so those are tuning choices to compare on a moving scene. The optional profiler helps quantify future changes; it is not a prerequisite for removing redundant work that is identifiable in the code.
+
+For the main gameplay configuration and open regression checks, see [Testing and known issues](testing.md).

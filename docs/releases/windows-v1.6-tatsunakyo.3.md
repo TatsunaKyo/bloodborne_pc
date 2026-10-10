@@ -22,7 +22,7 @@ For an existing installation, close the game and launcher, preserve saves, mods,
 
 The Windows launcher and native game executable were rebuilt. Launcher preference and updater tests, real ImGui control and OSD layout tests, background transition tests, the Windows job-structure ABI check, and guest clock continuity tests pass. The package includes build details, source changes and executable SHA-256 hashes.
 
-Windows focus switching, actual process suspension, gameplay and GPU behavior still need testing on Windows. They were not exercised on this build host.
+Gameplay coverage and the later cooperative pause fix are documented in [Testing and known issues](../testing.md).
 
 ## Credits
 

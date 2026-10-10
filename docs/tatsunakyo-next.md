@@ -1,26 +1,26 @@
 # Next work for the TatsunaKyo revision
 
-The in-game menu stays in English and Russian. Additional translations are out of scope. Revision 7 fixes the cheat player lookup, adds FSR HDR10, and introduces experimental NVIDIA FG/MFG, independent Reflex and an optional output cap. The implementation and its test limits are described in [the FG guide](frame-generation.md).
+The in-game menu stays in English and Russian; extra translations are out of scope. The current feature list is in the [README](../README.md), and gameplay coverage and open bugs are in [Testing and known issues](testing.md).
 
-Revision 9 fixes the conditional Play layout and adds the continuous stamina guards. Next quality/performance candidates are camera-cut history resets, motion coverage, FG HUD separation and measured bottleneck work; see [the audit notes](quality-and-performance.md). None is described as an FPS gain before a controlled gameplay comparison.
+Revision 10 implements shared camera-cut history resets, safe object-history invalidation and several renderer optimizations. Details and the cache workload comparison are in [Quality and performance](quality-and-performance.md).
 
 ## Frame Generation
 
-- Classical **FSR Frame Generation** is implemented for SDR/HDR10 and the temporal upscalers. Physical-GPU gameplay, desktop pacing and HUD quality still need testing.
-- **NVIDIA Frame Generation and Multi Frame Generation** now have a compiled Vulkan backend and runtime multiplier checks. Actual RTX gameplay/HDR and latency measurements are still needed.
-- A separate **FG preset A/B** choice, distinct from the E–L super-resolution presets. Put FG choices in both the launcher and the R3+L3 menu once connected to the renderer.
-- AMD ML Frame Generation can wait while it depends on a DirectX 12 provider.
+Analytical **FSR 3.1.6 FG** and fixed **NVIDIA FG/MFG** are included for SDR/HDR10. NVIDIA uses Streamline 2.14.1 production runtimes, actual camera/resource tags and frame-token Reflex markers. SDK input-completion fences protect buffer ownership. The normal FPS cap counts real frames, and the optional total cap accounts for the negotiated multiplier. Reflex also works independently of FG.
 
-The Vulkan renderer calls FSR-Vulkan's analytical FSR 3.1.6 FI/OF APIs. Its real capture and interpolation passes pass SDR/HDR headless GPU tests with synchronization validation. The game HUD is still in interpolation; separate HUDless and UI-alpha buffers remain follow-up work. NVIDIA capture keeps only stable depth/motion and uses the actual swapchain color, avoiding unused FSR color/interpolation allocations.
+The remaining FG work is:
 
-The NVIDIA backend uses official Streamline 2.14.1 production binaries, Vulkan creation/acquisition/presentation hooks, actual camera/resource tags and shared frame-token Reflex markers. Buffer ownership is tied to the SDK input-completion fence. Background pause and 30/60 caps disable generation. These paths still need physical RTX testing; they are not described as validated gameplay.
+- Separate the game's HUD from interpolation using genuine HUDless color and matching UI color/alpha. This can improve text and counter stability.
+- Investigate **FG presets A/B** through NVIDIA's public driver-setting interface. `DLSSGOptions` does not expose an A/B model field. A UI-recomposition toggle is not an equivalent selector. Driver profile changes must preserve existing settings and have a confirmed effect before adding an end-user choice.
+- **NVIDIA Dynamic MFG** and **Intel XeSS FG** currently require D3D12 in their public integrations. They are not available through this Vulkan path. Intel XeSS Super Resolution is already included.
+- **AMD ML Frame Generation** remains follow-up work; the shipped FSR FG path is analytical.
 
-The SDK's `DLSSGOptions` has no public A/B render-preset field. NVIDIA's public NVAPI driver-settings header does define separate FG preset A/B overrides. That path needs testing for a game-specific profile, preservation of existing user settings, and whether a change needs feature recreation or restart. Do not label the UI-recomposition option as a verified A/B selector without that check.
+References: [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan), [Streamline DLSS-G guide](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideDLSS_G.md), [manual Vulkan hooks](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideManualHooking.md), [NVAPI settings](https://github.com/NVIDIA/nvapi/blob/main/NvApiDriverSettings.h), [Intel XeSS](https://github.com/intel/xess).
 
-References: [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan), [Streamline DLSS-G guide](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideDLSS_G.md), [manual Vulkan hooks](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideManualHooking.md), [NVAPI settings](https://github.com/NVIDIA/nvapi/blob/main/NvApiDriverSettings.h).
+## Gameplay and renderer follow-up
 
-## Gameplay cheats
+Investigate the reported shooting crash with multiple cheats enabled, confirm continuous-running stamina in the affected states, and compare the new temporal resets during respawn/teleport/loading. Wider GPU and driver coverage will help identify compatibility issues beyond the main Windows 11 / RTX test PC.
 
-The revision 5 hooks had an incorrect player virtual call, corrected in revision 7; see [the cheat guide](cheats.md). The runtime now compares against the actual main player without a game virtual call, and skips player-only changes during loading. Signatures and the RIP-relative lookup match the supplied CUSA03173 1.09 image. Tests execute both the native trampolines and the actual Windows-compiled object, including missing-world/player cases. Whole-feature guards remain in place. Stamina and item/ammunition use take the game's no-consumption branches; generic inventory writes are untouched.
+Further renderer work can target transparent/particle motion coverage and earlier scaled reconstruction, while preserving native UI, HDR and exact object-history identity. A settings search and a repeatable benchmark capture would also make the growing launcher easier to use and regressions easier to compare.
 
-Tests execute the generated hooks, check every multiplier, preserve CPU state, leave NPC behavior and disabled features unchanged, and save/reload the actual launcher and in-game controls. Player death, loading screens, scene changes and save reloads still require a gameplay test on Windows. The build does not claim those tests have been performed.
+Maintained by TatsunaKyo. Original authors and vendor licenses remain credited.

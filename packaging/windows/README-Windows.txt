@@ -1,12 +1,14 @@
 Bloodborne (bbport) for Windows - TatsunaKyo revision
 ==================================================
 
-Revision 9, based on Supermedo's Windows v1.6 port.
+Revision 10, based on Supermedo's Windows v1.6 port.
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
 No game files are included. You need your own decrypted dump of Bloodborne CUSA03173
 (the folder with eboot.bin, sce_module, sce_sys, dvdroot_ps4). Game version 1.09 is needed for
 the community patches (60/90/unlocked FPS, resolution, effects); other versions run at 30 FPS.
+
+Revision 10 adds shared camera-history resets for abrupt transitions, safe object-history invalidation, cached scene mip bias, fewer repeated camera checks/read barriers and staggered index verification. The full feature guide is in README.md.
 
 Requirements
 - Windows 10 (1903 or later) or Windows 11, 64-bit.
@@ -78,7 +80,7 @@ Cheats
   auto-rotation, run with less stick tilt, ragdoll physics). They are game patches for 1.09,
   applied when the game starts.
 - The same Cheats page includes player damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina, consumables kept after use and No Fall Damage. These can also change during play from the in-game menu. Revision 9 adds continuous running and direct/script stamina guards to the earlier attack and ordinary Echoes paths. They default to off and require verified game version 1.09 hooks. See docs\cheats.md.
-- Experimental FSR Frame Generation (2x) supports SDR and HDR10. NVIDIA DLSS FG/MFG and independent Reflex are available through Streamline 2.14.1, with the supported multiplier checked at runtime. The normal FPS cap counts real frames; an optional total cap has its own drag control and numeric entry. FG is available on Play, Graphics and the in-game menu. NVIDIA gameplay/HDR on a physical RTX remains untested on the build host. The game HUD may show interpolation artifacts. AMD ML FG and FG model presets A/B are not included; see docs\frame-generation.md.
+- Experimental FSR Frame Generation (2x) supports SDR and HDR10. NVIDIA DLSS FG/MFG and independent Reflex are available through Streamline 2.14.1, with the supported multiplier checked at runtime. The normal FPS cap counts real frames; an optional total cap has its own drag control and numeric entry. FG is available on Play, Graphics and the in-game menu. Gameplay iterations are tested by TatsunaKyo on Windows 11 with an RTX 5070 Ti; see docs\testing.md for coverage and open issues. The game HUD may show interpolation artifacts. AMD ML FG and FG model presets A/B are not included; see docs\frame-generation.md.
 
 Problems
 - Black screen at start: Advanced -> "Clear shader cache", then start again (the first minutes

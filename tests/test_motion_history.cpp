@@ -46,6 +46,22 @@ int main() {
     auto changed = draw;
     changed.topology++;
     assert(!history.Prepare(changed).load);
+
+    // A camera cut after reservations must not rewind the GPU allocation cursor.
+    History cut(128);
+    Draw cut_draw{.shader=9, .geometry=10, .instances=1, .vertices={0, 8}};
+    cut.NextFrame();
+    const auto old = cut.Prepare(cut_draw);
+    cut.NextFrame();
+    const auto before_cut = cut.Prepare(cut_draw);
+    assert(before_cut.load == old.store);
+    cut.DiscardPrevious();
+    assert(cut.Used() == 8);
+    const auto after_cut = cut.Prepare(cut_draw);
+    assert(!after_cut.load && after_cut.store == before_cut.store + 8);
+    cut.NextFrame();
+    assert(cut.Prepare(cut_draw).load == before_cut.store);
+    assert(cut.Prepare(cut_draw).load == after_cut.store);
     changed = draw;
     changed.first_instance++;
     assert(!history.Prepare(changed).load);
@@ -97,17 +113,48 @@ int main() {
         return IndexRangeCache::Result{{4, 3}, 99};
     };
     assert(ranges.Get(mesh, 0, scan).topology == 99 && scans == 1);
-    assert(ranges.Get(mesh, IndexRangeCache::Revalidate - 1, scan).range == (VertexRange{4, 3}));
-    assert(scans == 1);
-    ranges.Get(mesh, IndexRangeCache::Revalidate, scan);
-    assert(scans == 2);
-    ranges.Trim(IndexRangeCache::Revalidate + IndexRangeCache::Unused + 1);
+    uint64_t first_check = 0;
+    for (uint64_t f = 1; f <= IndexRangeCache::Revalidate; ++f) {
+        assert(ranges.Get(mesh, f, scan).range == (VertexRange{4, 3}));
+        if (scans == 2 && first_check == 0) first_check = f;
+    }
+    assert(first_check > 0 && first_check <= IndexRangeCache::Revalidate && scans == 2);
+    const auto changed_scan = [&] {
+        ++scans;
+        return IndexRangeCache::Result{{4, 4}, 100};
+    };
+    assert(ranges.Get(mesh, first_check + IndexRangeCache::Revalidate, changed_scan).topology == 100);
+    assert(scans == 3 && ranges.stats.stale == 1);
+    ranges.Trim(first_check + IndexRangeCache::Revalidate + IndexRangeCache::Unused + 1);
     assert(ranges.Size() == 0);
+
+    // Meshes loaded together must no longer all revalidate in one periodic frame.
+    IndexRangeCache scene;
+    constexpr uint32_t meshes = 4096;
+    std::array<uint64_t, meshes> last_checked{};
+    std::array<uint32_t, 65> scans_per_frame{};
+    for (uint64_t f = 0; f <= 64; ++f) {
+        for (uint32_t i = 0; i < meshes; ++i) {
+            const IndexRangeCache::Key key{.address=0x100000+uint64_t(i)*4096,
+                .count=384, .index_size=2};
+            scene.Get(key, f, [&] {
+                assert(f - last_checked[i] <= IndexRangeCache::Revalidate);
+                last_checked[i] = f;
+                ++scans_per_frame[f];
+                return IndexRangeCache::Result{{0, 128}, i};
+            });
+        }
+    }
+    const auto peak = *std::max_element(scans_per_frame.begin()+1, scans_per_frame.end());
+    assert(scans_per_frame[0] == meshes && scene.stats.scans == meshes * 3);
+    assert(peak < meshes / 8);
+    std::printf("Index verification fixture: %u meshes; periodic peak %u scans/frame (previous policy: %u)\n",
+                meshes, peak, meshes);
 
     assert(JitterPhases(1920, 1920) == 8);
     assert(JitterPhases(1280, 1920) == 18);
     assert(JitterPhases(960, 1920) == 32);
     assert(JitterPhases(640, 1920) == 72);
     assert(JitterPhases(0, 1920) == 8);
-    std::puts("Motion history: PASS (ranges, restart, offsets, matching, capacity, gating, index cache, jitter)");
+    std::puts("Motion history: PASS (ranges, restart, offsets, matching, capacity, camera cut allocations, gating, staggered index cache, jitter)");
 }

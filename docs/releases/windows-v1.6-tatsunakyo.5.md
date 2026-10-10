@@ -6,7 +6,7 @@ Damage reduction divides the damage received instead of changing the defense sta
 
 The loader checks version 1.09 and the relevant instructions before installing each group of hooks. A mismatch or conflicting patch disables that feature instead of applying only part of it. The tests execute the actual generated hooks, preserve CPU state, exercise every multiplier and click the new menu controls in English and Russian. The Windows renderer and launcher are rebuilt from the revision's sources.
 
-The previous revision's in-game control fix, cooperative background pause, 75 FPS limit, conditional DLSS preset dropdown and Vulkan image-view reuse are included. Gameplay on a Windows desktop still needs testing. Back up your save before trying the higher movement values. Frame Generation is still being integrated and is not included in this build.
+The previous revision's in-game control fix, cooperative background pause, 75 FPS limit, conditional DLSS preset dropdown and Vulkan image-view reuse are included. Gameplay coverage is documented in [Testing and known issues](../testing.md). Back up your save before trying the higher movement values. Frame Generation is still being integrated and is not included in this build.
 
 Extract the complete archive to a new folder. Start its `Bloodborne.exe`, point the launcher at your own game folder and keep the ZIP's `bin` and `_internal` folders together. The game executable and game assets are not included.
 

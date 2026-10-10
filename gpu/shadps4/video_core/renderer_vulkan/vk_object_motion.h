@@ -48,6 +48,7 @@ public:
     /// Start of a frame (display pass).
     void OnFrameStart();
     void InvalidateHistory() { history.NextFrame(); history.NextFrame(); }
+    void DiscardPreviousHistory() { history.DiscardPrevious(); }
 
     /// The motion image for the compose pass (layout General after this call) and whether it
     /// holds this frame's vectors at `width` x `height`.

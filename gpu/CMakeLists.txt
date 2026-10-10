@@ -270,6 +270,9 @@ endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.
 add_executable(motion-history-test EXCLUDE_FROM_ALL ../tests/test_motion_history.cpp)
+add_executable(temporal-history-test EXCLUDE_FROM_ALL ../tests/test_temporal_history.cpp)
+target_include_directories(temporal-history-test PRIVATE ..)
+target_compile_options(temporal-history-test PRIVATE -UNDEBUG)
 target_compile_options(motion-history-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(motion-history-test PRIVATE ..)
 add_executable(motion-shader-test EXCLUDE_FROM_ALL ../tests/test_motion_shaders.cpp ../tests/test_gpu_runtime_stubs.cpp)

@@ -16,7 +16,7 @@ The launcher has an opt-in **Developer profiling and crash diagnostics** option 
 
 `Bloodborne.exe`, `bin/bb-probe.exe` and the supplied test components are rebuilt. Tests exercise actual Tcl variable traces and Dear ImGui controls, cap behavior, the NVIDIA counter/Reflex report handling, settings persistence, focus pause/resume, and the Windows-compiled cheat object. With the private 1.09 image, the tests also execute the original stamina setters and reward stores; no game code or assets are included in the package. Vulkan fixtures check real FSR interpolation, SDR/HDR conversion and the production XeSS color shader. The XeSS API adapter is checked separately with injected contract responses, without shipping a fake runtime.
 
-This environment cannot run Windows gameplay on an RTX or Intel GPU. NVIDIA activation on the user's desktop, physical HDR output, XeSS image quality and the shooting crash still need testing there. The package includes the verification logs and hashes of the actual executables; these tests do not establish a gameplay FPS gain.
+Gameplay coverage on TatsunaKyo’s Windows 11 / RTX PC and the open shooting-crash issue are documented in [Testing and known issues](../testing.md). The package includes verification logs and hashes of the actual executables.
 
 Extract the complete ZIP and launch `Bloodborne.exe`. Keep your existing saves, mods and configuration. For the shooting crash, enable developer diagnostics before playing and keep the session folder if it happens again.
 

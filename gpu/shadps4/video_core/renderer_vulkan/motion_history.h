@@ -76,7 +76,7 @@ public:
     Result Get(const Key& key, uint64_t frame, Scan&& scan) {
         auto& entry = entries[key];
         entry.last_use = frame;
-        if (entry.valid && frame - entry.verified < Revalidate) {
+        if (entry.valid && frame < entry.next_verification) {
             ++stats.hits;
             return entry.result;
         }
@@ -87,7 +87,10 @@ public:
             ++stats.stale; // the cached result was wrong for up to Revalidate frames
         }
         entry.result = fresh;
-        entry.verified = frame;
+        // Assign each mesh a stable phase instead of rescanning the whole scene in one
+        // burst. A new entry is checked again in 1..32 frames, then every 32 frames.
+        const uint64_t phase = uint64_t(KeyHash{}(key)) >> 32;
+        entry.next_verification = frame + 1 + ((phase - frame - 1) % Revalidate);
         entry.valid = true;
         return entry.result;
     }
@@ -99,7 +102,7 @@ public:
 private:
     struct Entry {
         Result result;
-        uint64_t verified{}, last_use{};
+        uint64_t next_verification{}, last_use{};
         bool valid{};
     };
     struct KeyHash {
@@ -259,6 +262,13 @@ public:
         gate_occurrences.clear();
         ++frame;
         used = 0;
+    }
+
+    // Camera capture can occur after a draw has already reserved positions. Preserve
+    // this frame's allocations/parity; only the preceding camera's tables are stale.
+    void DiscardPrevious() {
+        previous.clear();
+        gate_previous.clear();
     }
 
     Allocation Prepare(const Draw& draw) {

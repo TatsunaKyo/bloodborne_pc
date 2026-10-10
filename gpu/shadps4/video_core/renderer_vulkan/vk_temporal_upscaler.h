@@ -20,6 +20,7 @@
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
+#include "video_core/renderer_vulkan/temporal_history.h"
 #include "video_core/renderer_vulkan/vk_dlss.h"
 #include "video_core/renderer_vulkan/vk_xess.h"
 #include "video_core/renderer_vulkan/vk_fsr4.h"
@@ -127,6 +128,7 @@ public:
     const FrameGenerationSource& FrameGenerationInputs() const { return completed_fg_source; }
 
 private:
+    mutable Motion::MipBiasCache mip_bias_cache;
     FrameGenerationSource fg_source{}, completed_fg_source{};
     /// bbport: views of guest images the upscaler reads, kept across frames: FSR 4 registers
     /// images by view in a registry of eight (a new view per frame filled it at Native AA).

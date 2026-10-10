@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "common/types.h"
+#include "video_core/renderer_vulkan/temporal_history.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/texture_cache/image.h"
@@ -30,7 +31,9 @@ public:
     CameraMotion(const Instance& instance, Scheduler& scheduler,
                  VideoCore::TextureCache& texture_cache, Runtime& runtime);
     ~CameraMotion();
-    void InvalidateHistory() { current.valid = previous.valid = false; }
+    void InvalidateHistory() { history.Invalidate(); }
+    [[nodiscard]] bool NeedsCamera() const noexcept { return history.NeedsCamera(); }
+    [[nodiscard]] bool HistoryReset() const noexcept { return history.Reset(); }
     void SetObjectMotion(ObjectMotion* motion) noexcept {
         object_motion = motion;
     }
@@ -83,13 +86,6 @@ public:
     void OnDisplayPass(VideoCore::ImageId frame);
 
 private:
-    struct Camera {
-        std::array<float, 12> view{};     ///< world to view, 3x4 rows
-        std::array<float, 12> inv_view{}; ///< view to world, 3x4 rows
-        std::array<float, 4> proj{};      ///< x scale, y scale, z scale, z offset
-        bool valid = false;
-    };
-
     void Overlay(VideoCore::ImageId frame);
 
     const Instance& instance;
@@ -103,8 +99,9 @@ private:
     vk::UniquePipeline motion_pipeline;
 
     ObjectMotion* object_motion = nullptr;
-    Camera current, previous;
-    bool frame_has_camera = false;
+    Motion::CameraHistory history;
+    Motion::CameraSample& current = history.current;
+    Motion::CameraSample& previous = history.previous;
     std::array<float, 2> jitter{}, previous_jitter{};
     std::array<u32, 2> render_size{};
     VideoCore::ImageId depth_id{};

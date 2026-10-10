@@ -17,7 +17,7 @@ For an existing installation, close the launcher and game, preserve saves, mods,
 
 The Windows launcher entry point was recompiled and tested from both the source and final `Bloodborne.exe`. Settings, DLSS choices, independent overlay controls and the fork update channel passed their regressions. The renderer and native helper executables are unchanged from the verified revision 1 native build. The full package includes source changes, build details and SHA-256 hashes.
 
-Windows GUI rendering, gameplay and GPU latency require testing on Windows; they were not exercised on this build host. Frame Generation and additional cheats are not included in this launcher fix.
+Gameplay coverage is collected in [Testing and known issues](../testing.md). Frame Generation and additional cheats were not included in this launcher fix.
 
 ## Credits and licenses
 

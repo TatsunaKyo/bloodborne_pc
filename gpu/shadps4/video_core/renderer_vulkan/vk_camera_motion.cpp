@@ -188,7 +188,7 @@ void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_vi
         .size = {float(width), float(height)},
         .jitter = jitter,
         .previous_jitter = previous_jitter,
-        .mode = object_valid ? 1u : 0u,
+        .mode = object_valid && !HistoryReset() ? 1u : 0u,
     };
     const vk::DescriptorImageInfo depth_info{.imageView = depth_view,
                                              .imageLayout = vk::ImageLayout::eGeneral};
@@ -219,25 +219,28 @@ void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_vi
 }
 
 void CameraMotion::OnConstants(const float* data) {
+    if (!NeedsCamera()) return; // only the first main camera is used this frame
     // Scene constants: far plane 3000, 1/far, and the render size.
-    if (data[0] != 3000.0f || data[4] < 64.0f || data[5] < 64.0f ||
-        std::abs(data[1] * data[0] - 1.0f) > 1e-3f) {
+    if (!(data[0] == 3000.0f && std::isfinite(data[1]) &&
+          data[4] >= 64.0f && data[4] <= 32768.0f &&
+          data[5] >= 64.0f && data[5] <= 32768.0f &&
+          std::abs(data[1] * data[0] - 1.0f) <= 1e-3f)) {
         return;
     }
-    if (frame_has_camera) {
-        return; // the first one of a frame is the main camera
-    }
-    previous = current;
-    std::memcpy(current.view.data(), data + 8, 12 * sizeof(float));
-    std::memcpy(current.inv_view.data(), data + 180, 12 * sizeof(float));
-    current.proj = {data[52], data[57], data[62], data[63]};
-    current.valid = current.proj[0] != 0.0f && current.proj[1] != 0.0f;
+    Motion::CameraSample sample;
+    std::memcpy(sample.view.data(), data + 8, 12 * sizeof(float));
+    std::memcpy(sample.inv_view.data(), data + 180, 12 * sizeof(float));
+    sample.proj = {data[52], data[57], data[62], data[63]};
     const std::array<u32, 2> size{u32(data[4]), u32(data[5])};
+    if (!history.Capture(sample, size != render_size)) return;
+    if (HistoryReset()) {
+        previous_jitter = jitter;
+        if (object_motion) object_motion->DiscardPreviousHistory();
+    }
     if (size != render_size) {
         std::printf("Camera motion: scene render size %ux%u\n", size[0], size[1]);
         render_size = size;
     }
-    frame_has_camera = true;
 }
 
 void CameraMotion::OnGBufferPass(VideoCore::ImageId depth) {
@@ -248,8 +251,7 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
     if (debug_overlay && frame && depth_id && current.valid && previous.valid) {
         Overlay(frame);
     }
-    if (!frame_has_camera) InvalidateHistory();
-    frame_has_camera = false;
+    history.EndFrame();
     depth_id = {};
 }
 
@@ -371,6 +373,7 @@ void CameraMotion::Overlay(VideoCore::ImageId frame) {
 }
 
 void CameraMotion::FrameGenerationCamera(FrameGenerationSource& source) const {
+    source.reset = source.reset || HistoryReset();
     source.view=current.view;source.projection=current.proj;
     const auto& prev=source.reset || !previous.valid ? current : previous;
     source.previous_view=prev.view;source.previous_inverse_view=prev.inv_view;

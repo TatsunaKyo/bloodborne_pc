@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-labelledby="title description">
+  <title id="title">Bloodborne for Windows — TatsunaKyo revision</title>
+  <desc id="description">Dark burgundy project banner with a blood moon and an original geometric Gothic skyline. Windows, Vulkan, upscaling, Frame Generation and live settings.</desc>
+  <defs>
+    <linearGradient id="background" x2="1" y2="1">
+      <stop stop-color="#0e1117"/><stop offset=".65" stop-color="#1a141b"/><stop offset="1" stop-color="#33171f"/>
+    </linearGradient>
+    <radialGradient id="moon">
+      <stop stop-color="#c65f59"/><stop offset=".72" stop-color="#9b363d"/><stop offset="1" stop-color="#57232d"/>
+    </radialGradient>
+    <linearGradient id="fade" x2="0" y2="1">
+      <stop stop-color="#d6b893" stop-opacity=".45"/><stop offset="1" stop-color="#d6b893" stop-opacity=".08"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="400" rx="12" fill="url(#background)"/>
+  <path d="M0 399H1280" stroke="#9e4c4c" stroke-width="2"/>
+  <circle cx="1080" cy="135" r="93" fill="url(#moon)"/>
+  <circle cx="1080" cy="135" r="109" fill="none" stroke="#9b4a50" stroke-opacity=".22"/>
+  <g fill="#12121a" stroke="url(#fade)" stroke-width="1.2">
+    <path d="M836 400V263L853 236V221L858 208L863 221V236L880 263V400Z"/>
+    <path d="M892 400V255L919 216V163L926 151V118L932 102L938 118V151L945 163V216L972 255V400Z"/>
+    <path d="M981 400V272L1000 252V238L1006 223L1012 238V252L1031 272V400Z"/>
+    <path d="M1042 400V259L1072 215V178L1080 155L1088 178V215L1118 259V400Z"/>
+    <path d="M1131 400V252L1159 215V170L1166 153V121L1172 98L1178 121V153L1185 170V215L1213 252V400Z"/>
+    <path d="M1223 400V294L1251 267V245L1259 224L1267 245V267L1280 280V400Z"/>
+  </g>
+  <g fill="none" stroke="#b48c75" stroke-opacity=".28">
+    <path d="M914 353V281Q932 245 950 281V353M915 300H949M932 263V353"/>
+    <path d="M1059 378V291Q1080 250 1101 291V378M1060 312H1100M1080 272V378"/>
+    <path d="M1154 359V279Q1172 243 1190 279V359M1155 302H1189M1172 261V359"/>
+  </g>
+  <g font-family="Segoe UI,DejaVu Sans,Arial,sans-serif">
+    <text x="64" y="70" fill="#c39885" font-size="15" letter-spacing="3">TATSUNAKYO REVISION</text>
+    <text x="60" y="155" fill="#f3e9df" font-family="Georgia,DejaVu Serif,serif" font-size="64" letter-spacing="3">BLOODBORNE</text>
+    <text x="64" y="196" fill="#d9cbc2" font-size="24">FOR WINDOWS</text>
+    <path d="M64 224H750" stroke="#a06a60" stroke-opacity=".65"/>
+    <text x="64" y="259" fill="#bdb5b4" font-size="18">More control over how you play.</text>
+    <g font-size="14" fill="#d8c3b5">
+      <rect x="64" y="301" width="142" height="37" rx="6" fill="#31232a" stroke="#5d3a41"/>
+      <text x="84" y="325">WINDOW MODES</text>
+      <rect x="219" y="301" width="116" height="37" rx="6" fill="#31232a" stroke="#5d3a41"/>
+      <text x="239" y="325">UPSCALING</text>
+      <rect x="348" y="301" width="177" height="37" rx="6" fill="#31232a" stroke="#5d3a41"/>
+      <text x="369" y="325">FRAME GENERATION</text>
+      <rect x="538" y="301" width="144" height="37" rx="6" fill="#31232a" stroke="#5d3a41"/>
+      <text x="559" y="325">LIVE SETTINGS</text>
+    </g>
+    <text x="64" y="370" fill="#8f8285" font-size="12">Built on bbport · Supermedo's Windows port · shadPS4</text>
+  </g>
+</svg>

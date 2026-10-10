@@ -1,9 +1,15 @@
-# Checking performance in Central Yharnam
+# Performance work and optional comparisons
 
-Keep the same save, location, camera direction, output resolution and window mode for each comparison. Let the shader cache warm up before recording. A lower input resolution improving FPS suggests that part of the cost depends on rendering resolution, but CPU and GPU utilization percentages do not locate that cost. A busy game or renderer thread can be hidden by the CPU average; GPU percentage also combines different types of work and waits.
+Renderer review can find redundant work without requiring a profiling capture first. Revision 10 removes repeated camera mapping checks, caches unchanged mip bias, avoids repeated object-image read barriers and staggers periodic index scans. The implemented changes and workload result are in [Quality and performance](quality-and-performance.md). Earlier revisions also reuse the upscaled display image view and avoid FSR color/interpolation allocations on the NVIDIA FG path.
 
-In **Advanced**, enable **Frame statistics in the log (every 5 s)** and **GPU time per pass in the log**. Start the game, wait for the scene to settle, and stay in the slow sewer area for at least 20 seconds with **DLSS Performance, preset L**. Repeat with **Ultra Performance** using the same output resolution and preset. For an additional comparison, try **Frames ahead of the GPU: 2**, then restore the default if it adds latency or worsens pacing. That option can help overlap CPU recording with GPU execution, but it is not a guaranteed improvement.
+Overall CPU and GPU utilization do not reveal every bottleneck. One busy thread can be hidden by the CPU average; a GPU can spend time waiting between expensive passes. Lowering input resolution helping FPS means some work scales with pixels, but does not identify the entire cause of a slow scene.
 
-The log page shows the capture and `last_run.log` is written to your saves folder, or `user` beside the launcher when no custom folder is set. The frame-stat lines separate guest GPU-command processing, compilation and waits. GPU profile lines contain actual timestamp durations by pass; the upscaler is labeled DLSS in revision 4. Check the median, p99 and spikes alongside average FPS. The diagnostic profiler adds overhead, so disable both switches after capturing.
+## Comparing a change during play
 
-Revision 4 removes repeated Vulkan image-view creation from upscaled presentation. The buffer already has a view cache and a safe resize path, so the presenter now reuses that cache. This change reduces that driver work without increasing the frame queue. No before/after FPS result for the sewer area has been measured on the build host.
+Use the same save, location, camera direction, output resolution, cap and FG mode. Let shader compilation settle. Compare DLSS Performance/preset L and Ultra Performance separately, keeping each before/after pair on the same settings. Real FPS and generated output FPS should be compared separately. Frame-time spikes matter alongside average FPS.
+
+For more detail, Advanced offers frame statistics and GPU pass timing in the log. General → Diagnostics also offers per-session developer profiling and crash diagnostics. These are optional and add overhead, so leave them off for normal play. Logs are written under the chosen saves folder, or `user/` beside the launcher. The upscaler passes are labeled with their provider.
+
+The default one-frame GPU queue favors latency. A larger Frames ahead value may improve overlap on some configurations but can add latency; it is a user choice, not a required performance fix. There is no claimed sewer FPS increase attached to a synthetic cache test.
+
+Gameplay testing is documented once in [Testing and known issues](testing.md), including TatsunaKyo's Windows 11 / RTX setup.

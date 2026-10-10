@@ -233,6 +233,9 @@ vk::ImageView ObjectMotion::PrepareRead(vk::CommandBuffer cmdbuf, u32 width, u32
                                         bool& valid) {
     EnsureImage(std::max(image_width, 1u), std::max(image_height, 1u));
     valid = written && width == image_width && height == image_height;
+    // Attach always transitions to ColorAttachmentOptimal before writing. Repeated
+    // compute readers of an already General image need no read-to-read barrier.
+    if (image_layout == vk::ImageLayout::eGeneral) return *view;
     const vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
         .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,

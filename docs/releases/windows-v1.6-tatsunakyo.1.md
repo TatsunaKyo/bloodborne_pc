@@ -37,7 +37,7 @@ When updating an existing installation manually, close the game and launcher, ke
 
 The package includes rebuilt Windows x64 executables, source changes, build details and SHA-256 hashes. `Start-Verified-Launcher.cmd` checks and starts the included launcher. The release tag provides the complete corresponding source; the included patch also reproduces it from upstream `windows-v1.6`.
 
-Checks cover the compiled launcher settings and update channel, saved preferences, in-game ImGui controls, DLSS feature recreation with mocked NGX/Vulkan, Windows compilation/linking and packaged DLL imports. Windows gameplay, real Tk popup rendering and GPU latency have not been tested on this build host; these need testing on Windows.
+Checks cover the compiled launcher settings and update channel, saved preferences, in-game ImGui controls, DLSS feature recreation with mocked NGX/Vulkan, Windows compilation/linking and packaged DLL imports. Gameplay testing on TatsunaKyo’s Windows 11 / RTX PC is documented in [Testing and known issues](../testing.md).
 
 ## Credits and licenses
 

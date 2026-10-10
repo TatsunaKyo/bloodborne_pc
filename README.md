@@ -1,88 +1,161 @@
+![Bloodborne for Windows — TatsunaKyo revision](docs/assets/tatsunakyo-header.svg)
+
 # Bloodborne for Windows — TatsunaKyo revision
 
-**Revision maintained by [TatsunaKyo](https://github.com/TatsunaKyo), based on the Windows v1.6 port by [Supermedo](https://github.com/Supermedo).**
+My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, a configurable overlay and settings you can change during play.
 
-This fork adds English in-game settings, borderless fullscreen, DLSS preset selection, optional overlay details, cheats and experimental Frame Generation. Revision 9 fixes the Play page's conditional dropdown layout, links directly to overlay customization, and covers the continuous stamina drain used while running. Exact FPS entry, FG controls, optional PC latency, XeSS upscaling and developer diagnostics remain available. See the [release notes](docs/releases/windows-v1.6-tatsunakyo.9.md) for changes and test limits, and the [release guide](docs/releasing.md) for packaging.
+**Current build: v1.6, revision 10.** [Download Windows builds](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 10 notes](docs/releases/windows-v1.6-tatsunakyo.10.md)
 
-The original PlayStation 4 game runs directly on your PC: its own x86-64 code runs natively, and the graphics are translated to Vulkan. No emulator window, no setup scripts: unpack the zip, start `Bloodborne.exe`, pick your game folder and press **PLAY**.
+No game files are included. You need your own decrypted **Bloodborne CUSA03173, version 1.09** dump. The game folder must contain `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09.
 
-**[Download this revision](https://github.com/TatsunaKyo/bloodborne_pc/releases)** · **[Original Windows port](https://github.com/Supermedo/bloodborne_pc)** · **[Upstream community Discord](https://discord.gg/yTMG8c4Bqm)**
+## Get started
 
-> **No game files are included.** You need your own decrypted dump of Bloodborne (CUSA03173). Version 1.09 is needed for the community patches (60/90/unlocked FPS, resolution, effects); other versions run at 30 FPS. This project is not affiliated with Sony Interactive Entertainment or FromSoftware.
+1. Download the full Windows ZIP from Releases and extract it into a new folder.
+2. Open **Bloodborne.exe** and choose your game folder under **Game & effects**.
+3. Set your output resolution and graphics options, then press **PLAY**.
+4. Press **Insert** or **L3+R3** in-game to change the port's settings.
 
-## Features
+After setting things up once, **Play Bloodborne.exe** starts the game with the saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each package includes a SHA-256 checksum and `Start-Verified-Launcher.cmd`, which verifies the included launcher before starting it.
 
-- **Online play (beta):** messages, bloodstains and wandering ghosts from other hunters through [The Hunter's Dream](https://thehuntersdream.com), and bells and summons through a shadNet server (shadPS4's public one by default).
-- **Launcher with every setting in one window**, in 13 languages: English, Arabic, Russian, Spanish, Portuguese, French, German, Italian, Polish, Turkish, Chinese, Japanese, Korean.
-- **Updates from the launcher:** when a new version is out it tells you, and **Update** installs it. This revision checks releases from TatsunaKyo's fork and accepts only its Windows revision packages. Your saves, settings and mods are kept.
-- **NVIDIA DLSS** on GeForce RTX cards (RTX 20 series and newer).
-- **AMD FSR 3.1 and FSR 4** upscaling, plus native-resolution TAA.
-- **Experimental Frame Generation:** analytical FSR 3.1.6 in SDR/HDR10, NVIDIA DLSS FG/MFG through Streamline 2.14.1, independent Reflex, and an optional total FPS cap. NVIDIA desktop gameplay still needs hardware testing; see [the FG guide](docs/frame-generation.md).
-- **Unlocked frame rate** with a frame cap (up to 120 by default), or 30/60/75/90 FPS.
-- **Output resolutions** from 720p to 4K, presets from Native AA to Ultra Performance.
-- **Cheats page:** never die, stealth, silent footsteps, Rally that never fades, enemy control, and gameplay tweaks (camera distance, no camera auto-rotation, easier running, ragdoll physics).
-- **Game effects** on and off: chromatic aberration, depth of field, motion blur, SSAO, the game's own AA, dynamic light shadows, screen-space reflections, model detail.
-- **Mods and third-party patches**, loaded without changing your game files.
-- **Add to Steam** puts the game in your Steam library in one click.
-- **`Play Bloodborne.exe`** starts the game straight away with your saved settings (good for a desktop shortcut).
-- **Controller and keyboard**, an in-game settings menu (Insert or L3+R3), name entry on screen, a desktop shortcut, and a button to clear the shader cache.
+## What this fork adds
 
-## Requirements
+### English in-game menu
 
-- Windows 10 (1903 or later) or Windows 11, 64-bit
-- A graphics card with Vulkan 1.3 and a current driver
-- About 6 GB of free memory (RAM + page file), 10 GB for 1440p or 4K output
-- DLSS: NVIDIA GeForce RTX 20 series or newer
+The menu opened with **L3+R3 / Insert** defaults to English. You can switch between **English and Russian** immediately, independently of the launcher language and the language of the game. The existing launcher still offers its 13 languages. Further in-game translations are not part of this revision.
 
-Nothing else to install: everything the game needs is in the zip.
+The in-game checkbox handling also supports repeated mouse clicks, keyboard activation and controller input. Settings are shared with the launcher through `bbport.menu.ini`, so saving launcher preferences preserves changes made during play.
 
-## How to play
+### Borderless fullscreen and background behavior
 
-1. Download the zip from [Releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) and unpack it anywhere.
-2. Start `Bloodborne.exe`.
-3. On **Game & effects**, choose your game folder (the one with `eboot.bin`).
-4. Press **PLAY**.
+Choose **Windowed**, **Borderless fullscreen** or **Fullscreen (driver default)** from Play, Display & FPS or the in-game menu. Borderless uses the current monitor's desktop resolution and refresh rate, without a display mode switch when you Alt-Tab.
 
-In the game, **Insert** (or **L3+R3** on a controller) opens the settings menu. The in-game menu defaults to English. Its **Menu language** selector switches between English and Russian immediately; the choice is saved in `bbport.menu.ini` as `menu_language=en` or `menu_language=ru`. This setting is independent of the launcher and game languages. The same menu's **Window mode** selector changes the window immediately. **Borderless fullscreen (low latency)** uses the current monitor's desktop resolution and refresh rate, with no display mode switch or automatic minimization on focus loss. On Windows, it requests non-disruptive Vulkan presentation through `VK_EXT_full_screen_exclusive` when the driver supports it. An opaque, desktop-sized swapchain allows Windows/driver independent flip; the actual presentation path and latency depend on the system and should be measured there. Borderless defaults to **Immediate** presentation (no V-sync wait or presentation queue; tearing is possible). **V-sync in borderless** selects Mailbox, with FIFO as the compatibility fallback. Without Immediate support the low latency mode also tries Mailbox before FIFO. The renderer's existing one-frame GPU queue limit is retained (`BB_FRAMES_AHEAD` overrides it). The launcher's **Play** page also has a **Window mode** selector for Windowed, Borderless fullscreen and Fullscreen (driver default). **Display & FPS** includes the same selector, **V-sync in borderless** and **In-game menu language**. These controls share `bbport.menu.ini` with the in-game menu; saving launcher settings preserves changes made during the game. **Launcher setting** in-game uses the launcher's saved window mode. Existing launcher preferences with only a fullscreen checkbox are migrated automatically. `BB_WINDOW_MODE=windowed|borderless|fullscreen|launcher` overrides the saved choice at startup.
+With **V-sync in borderless** off, the renderer requests Vulkan Immediate presentation and retains the default one-frame GPU queue. This avoids a V-sync wait but can tear. Turning it on requests Mailbox, with FIFO as the compatibility fallback. Windows and the driver determine whether independent flip is available; borderless by itself cannot guarantee a particular measured latency.
 
-**DLSS render preset** is available in the launcher's Play and Graphics pages and in the R3+L3 / Insert menu when DLSS is selected. Choose Default (driver), E/F (CNN / legacy), J/K (Transformer 1st gen) or M/L (Transformer 2nd gen). On Play, the entire preset row appears only with DLSS selected; in Graphics, the selector stays visible and is disabled for other upscalers. Switching to another upscaler preserves the saved preset. This is separate from the Quality/Balanced/Performance setting and does not change render resolution. In-game changes wait for submitted GPU work and recreate the DLSS feature on the next frame, without restarting the game. Removed and reserved NVIDIA preset values are excluded. `BB_DLSS_PRESET=default|e|f|j|k|l|m` overrides the saved hint at startup.
+**When in background** gives you four choices:
 
-**Show performance overlay** in Play, Graphics, Display & FPS and near the top of the in-game menu controls the top-right OSD. Hiding it leaves the settings menu accessible. Play's **Customize overlay…** link opens Display & FPS, where you can choose preset, resolution, FG and PC latency details independently. **Show DLSS preset in overlay**, also available in Graphics and the in-game menu, adds only the preset letter on the original FPS/frame-time/upscaler line: `DLSS (M)`. The initial setting is off, preserving the original basic overlay. The descriptions such as Transformer generation and CNN / legacy remain in the preset dropdowns. With DLSS enabled and this option on, the OSD displays the preset requested by the currently created NGX feature; `DLSS (K>M)` means K is active and M is pending. Default is shown as `Default`, and `-` means no accepted DLSS feature yet. NVIDIA driver/profile overrides may choose a different internal model; this readout confirms the application's accepted feature configuration, rather than independently identifying NVIDIA's model. These preferences share `bbport.menu.ini`, so cached launcher writes do not undo changes made in-game. Existing `show_fps` settings in `bbport.ini` are migrated automatically.
+| Setting | Behavior while the window is unfocused |
+|---|---|
+| Keep running | Keeps the foreground settings. |
+| Pause game and rendering | Cooperatively stops game work and rendering, while window events remain responsive. Game clocks exclude the paused time. |
+| Limit to 30 FPS | Runs at up to 30 real FPS and restores the foreground cap on return. |
+| Limit to 60 FPS | Runs at up to 60 real FPS and restores the foreground cap on return. |
 
-**Show input/output resolution in overlay**, in Display & FPS and the in-game menu, adds the current scene render and output sizes to that same line, for example `854x480>1920x1080`. It starts disabled and is independent of the DLSS preset readout. The OSD fits the extra information in a compact width and scales its font down by at most 15%; it does not add another row. Output means the completed game frame, before the window's final scaling or letterboxing.
+Frame Generation is disabled during background pause or a background FPS limit. Keep running preserves it. These choices are available in the launcher and in-game.
 
-**When in background**, in Display & FPS and the in-game menu, offers Keep running, Pause game and rendering, Limit to 30 FPS, and Limit to 60 FPS. Keep running is the default. Pause stops game submissions and presentation at frame boundaries while the window continues handling activation and close events. Guest clocks exclude the pause. Background caps preserve a lower foreground cap and restore it when you return.
+### DLSS model presets
 
-The choice is saved in `bbport.menu.ini` as `background_mode=run|pause|30|60`. The launcher also offers 75 FPS, using the variable frame-time patch with a native 75 FPS cap.
+DLSS render presets are separate from **Quality / Balanced / Performance / Ultra Performance**: the quality setting changes input resolution, while the letter requests a reconstruction model.
 
-The [cheats](docs/cheats.md) are available from the launcher and the in-game menu: damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina and consumables kept after use. All are off by default and require verified 1.09 hooks; revision 7 corrects their player lookup and loading guard. Experimental [FSR/NVIDIA Frame Generation and independent Reflex](docs/frame-generation.md) are available in Graphics and the in-game menu. FG presets A/B and further gameplay validation remain on [the revision roadmap](docs/tatsunakyo-next.md).
+| Preset | Dropdown label |
+|---|---|
+| Default | Driver default |
+| E | E (CNN / legacy) |
+| F | F (CNN / legacy) |
+| J | J (Transformer 1st gen) |
+| K | K (Transformer 1st gen) |
+| M | M (Transformer 2nd gen) |
+| L | L (Transformer 2nd gen) |
 
-Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle, 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab touchpad.
+You can select a preset in **Play**, **Graphics** and the in-game menu. Changing it during play recreates the DLSS feature without restarting the game. The Play row appears only when DLSS is selected; Graphics keeps the choice visible but disabled with another upscaler. Saved selections are retained when switching providers.
 
-## Playing online (beta)
+### Upscaling choices, including XeSS
 
-1. Register a shadNet account at [shadnet.shadps4.net](https://shadnet.shadps4.net).
-2. In the launcher, open **Online co-op**, tick **Play online** and enter your account name (not your email) and password.
-3. Press **Test connection**: all three lines should say "reachable". Then press **PLAY** and choose online at the title screen. The Hunter's Dream welcome message means you are online.
+The graphics selector includes **DLSS**, **FSR 3.1**, **FSR 4**, **XeSS Super Resolution 3.0.2** and **TAA / native AA**. XeSS uses Intel's Vulkan API with scene depth, motion vectors and linear color conversion. If a provider fails or the required hardware features are missing, the renderer reports the problem and falls back to FSR 3.1.
 
-Everyone you want to play with needs game version 1.09 and the same co-op server. A private shadNet server (from the [shadp2p](https://github.com/Wozzardman/shadp2p) project) works too: put its address in **Server address**.
+DLSS needs a supported GeForce RTX GPU. FSR 4 also needs its included shader assets and the required device features. XeSS availability depends on the GPU and driver. The full Windows package includes the necessary runtime files and their licenses.
 
-## Known issues
+### Frame Generation, Multi Frame Generation and Reflex
 
-- The character preview on the character creation screen stays empty. The character is created correctly and looks right in the game.
-- Some AMD graphics cards still crash when the game world loads; fixes are in progress.
-- Online play is new. Messages, bloodstains and ghosts work; summoning other players with the bells has not been confirmed yet. Please report how it goes on Discord.
-- Above about 120 FPS the game's movement slows down (a limit of the game itself): keep the frame cap at 120 or lower.
+**Frame Generation** is available directly on **Play**, on Graphics and in-game. A temporal upscaler must be active; FSR FG can also be combined with DLSS or XeSS.
+
+| Choice | Included integration |
+|---|---|
+| FSR Frame Generation | Analytical **FSR 3.1.6**, generating one intermediate frame for 2x output. |
+| NVIDIA DLSS Frame Generation / MFG | **Streamline 2.14.1** with the production **DLSS-G 310.9.1** runtime; fixed 2x–6x choices, clamped to what the GPU and driver support. |
+| NVIDIA Reflex | **Off**, **On** or **On + Boost**, independently of FG and the upscaler. NVIDIA FG enables Reflex automatically; Boost remains optional. |
+
+Both FG backends accept **SDR and HDR10**. FSR converts PQ color to linear half-float for interpolation and back to HDR10 afterward. NVIDIA uses the actual SDR/HDR10 backbuffer and stable depth/motion inputs. Input lifetime is tied to completion fences before buffers can be reused.
+
+The overlay distinguishes real game FPS from generated output. NVIDIA output uses the SDK's actual presentation counter, rather than multiplying the real FPS by the requested mode. See [the FG guide](docs/frame-generation.md) for hardware requirements, latency readouts and current limitations.
+
+### Separate FPS caps with precise controls
+
+The normal **FPS cap** limits real game frames. **75 FPS** is included between 60 and 90. FG can add output frames above that limit: 75 real FPS with 2x FG can produce up to 150 output FPS.
+
+An optional **Limit total FPS with Frame Generation** has a separate **30–1000** setting. It accounts for the active multiplier without raising the real-frame cap or advancing physics for generated frames. For example, 75 real FPS with a 120 total cap at 2x lowers the real-frame ceiling to 60. A value that does not divide evenly may produce a slightly lower total.
+
+Both caps have an editable number box as well as more precise drag controls. The total-cap range is a configuration range, not a claim that the game can sustain 1000 FPS. Keep real-frame limits at 120 or below: the original game logic can misbehave at extreme real FPS.
+
+### A compact, configurable overlay
+
+**Show performance overlay** switches the OSD on or off in the launcher and in-game. The original basic overlay is still available. You can independently add:
+
+| Optional field | What it shows |
+|---|---|
+| DLSS preset | The accepted preset hint as a letter, such as `DLSS (M)`. `K>M` means a change is pending. Driver overrides may still choose another internal model. |
+| Input/output resolution | The current scene and display dimensions, such as `1280x720>3840x2160`. |
+| Frame Generation | Whether generation is confirmed active, its provider and the negotiated multiplier. |
+| PC latency | A completed NVIDIA Reflex report, or `N/A` when unavailable. It excludes the display and input device. |
+
+The extra fields stay on the same compact line; the full CNN/Transformer descriptions remain in the preset dropdowns. On Play, **Customize overlay…** opens Display & FPS, while the main overlay checkbox stays on the page. Each extra field starts off, keeping the original layout unless you choose otherwise.
+
+### Cheats you can change during play
+
+The added options live in the same **Cheats** section as the original patches. They start off and can be changed from the launcher or the in-game menu.
+
+| Cheat | Available choices / effect |
+|---|---|
+| Player damage | x2, x4, x8, x16 outgoing damage. |
+| Reduce enemy damage | Divides incoming enemy damage by x2, x4, x8 or x16. Defense stats do not change. |
+| Blood Echoes gained | x2, x4, x8, x16 positive rewards; spending and the game's balance ceiling stay intact. |
+| Movement speed | x1.5, x2, x4, x8, x16 for the player. |
+| Infinite stamina | Covers action, continuous movement and direct stamina consumption paths. |
+| Consumables are not reduced on use | Keeps owned items and ammunition after use. |
+| No fall damage | Skips ordinary player fall damage; death volumes and scripted deaths still apply. |
+
+The loader verifies the 1.09 instruction signatures and player binding before installing each feature. A conflicting or mismatched patch disables that feature and logs the reason. NPCs and ordinary inventory transfers retain their normal behavior. The original startup patches are marked as requiring a restart. Details and regression coverage are in [the cheat guide](docs/cheats.md).
+
+### Temporal stability and renderer work
+
+Revision 10 adds a shared camera-history reset for teleports, abrupt camera/FOV changes, resolution changes and returning from frames without a camera. The same reset reaches **DLSS, FSR, XeSS, TAA and Frame Generation**. On the transition frame, motion uses the current camera and discards stale object history; smooth movement and gradual zoom keep temporal accumulation.
+
+The renderer also avoids repeated camera memory checks after capture, caches the unchanged scene mip bias, reuses Vulkan image views and skips repeated read-to-read transitions for the object-motion image. Index-buffer revalidation is spread across 32 frames instead of returning as a scene-wide periodic burst. The production cache test with 4,096 meshes reduces the periodic peak from **4,096 to 149 scans per frame**, with the same maximum revalidation interval. This is a workload result; actual FPS depends on the scene and hardware.
+
+These changes target stale history and avoidable renderer work. [Quality and performance notes](docs/quality-and-performance.md) explain the remaining work on motion coverage and HUD separation.
+
+### Optional developer diagnostics
+
+**General → Diagnostics → Developer profiling and crash diagnostics** enables per-session logs, active settings, timings, exit codes and Windows crash dumps when available. It is off by default. This helps investigate crashes without requiring everyone to run the profiler during ordinary play. [Performance notes](docs/performance.md) describe optional comparisons.
+
+### Launcher and update integration
+
+The launcher identifies this build as **TatsunaKyo revision** and checks releases from this fork. It accepts matching Windows revision packages, preserving saves, mods and settings during updates. The Play grid reserves positions for conditional DLSS/FG controls so they stay aligned and the NVIDIA multiplier does not overlap Output. Small windows and higher DPI reduce the banner to leave space for the controls.
+
+The upstream features remain available: keyboard/controller support, mod and community-patch loading, desktop/Steam shortcuts, shader-cache tools, game effects and beta online co-op through shadNet and The Hunter's Dream. These keep their original project credits.
+
+## Requirements and test setup
+
+- **Windows 10 1903 or later / Windows 11**, 64-bit, with a current graphics driver.
+- **Vulkan 1.3** support. Specific DLSS/FSR 4/XeSS/FG features have additional GPU and driver requirements.
+- Around **6 GB of free memory commit** (RAM plus page file), or **10 GB for 1440p/4K** output.
+- Your own decrypted **CUSA03173 1.09** game files.
+
+I test the revisions on my **Windows 11 PC with a GeForce RTX 5070 Ti**. This is the main gameplay test configuration for the fork. Automated tests also cover settings, controls, hook behavior, renderer contracts and package contents. Coverage and open problems are collected in [Testing and known issues](docs/testing.md), rather than repeated throughout the documentation. AMD/Intel hardware and other Windows configurations depend on community feedback.
 
 ## Problems and feedback
 
-When reporting a problem with this revision, include `user\last_run.log` from the game folder, your graphics card, driver version and the steps that trigger it. The [upstream community Discord](https://discord.gg/yTMG8c4Bqm) is maintained by the original project; check whether the problem also occurs in the original Windows v1.6 build before reporting it upstream. If the game shows only a black screen, try **Advanced → Clear shader cache** first.
+Include your GPU, driver version, settings, reproduction steps and `user/last_run.log` when sending a bug report. For a crash, enable the optional diagnostics before reproducing it and attach that session's output. The reported crash while firing with several cheats enabled is still under investigation. The game HUD can also show FG interpolation artifacts; separating it is follow-up work.
 
-## Building from source
+For black screens, try **Advanced → Clear shader cache**. Rebuilding the cache can cause initial stutter. Dynamic NVIDIA MFG, Intel XeSS FG, AMD ML FG and FG model presets A/B are not included; their status is listed in [the roadmap](docs/tatsunakyo-next.md).
 
-See [packaging/windows/README.md](packaging/windows/README.md): MSYS2 CLANG64, `bash build.sh`, then `bash packaging/windows/package.sh`. DLSS is built separately with `packaging/windows/build_dlss.sh`.
+Report fork-specific issues here. The [upstream community Discord](https://discord.gg/yTMG8c4Bqm) is maintained by the original project; check the original Windows build before sending a fork regression upstream.
+
+## Building and publishing
+
+[Windows build instructions](packaging/windows/README.md) cover MSYS2 CLANG64, the renderer, launcher and runtime packaging. [Release instructions](docs/releasing.md) cover the tag, source commit and ZIP checksum. Both the launcher and native components are rebuilt for each revision package.
 
 ## Credits
+
 
 This revision is maintained by [TatsunaKyo](https://github.com/TatsunaKyo). The Windows port and original launcher are by [Supermedo](https://github.com/Supermedo) Mohammed Albarghouthi. The upstream history, copyright notices and licenses are retained.
 
@@ -90,7 +163,7 @@ Built on [bbport](https://github.com/deadinside28/bloodborne_pc), the native Lin
 
 Online play uses the network and PSN code of [shadp2p](https://github.com/Wozzardman/shadp2p) by Wozzardman (the shadPS4 Bloodborne co-op project), the shadNet server of the [shadPS4](https://shadps4.net) team, and [The Hunter's Dream](https://thehuntersdream.com) server by droogie and its team.
 
-Also used: [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan) and the AMD FidelityFX SDK (FSR), FSR 4 assets from [FireBurn/Q2RTX](https://github.com/FireBurn/Q2RTX), the DLSS bridge adapted from [IFreemz/shadPS4-Bloodborne-DLSS-FSR](https://github.com/IFreemz/shadPS4-Bloodborne-DLSS-FSR), the [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS) (`nvngx_dlss.dll` under NVIDIA's license), [LibAtrac9](https://github.com/Thealexbarney/LibAtrac9), [SDL3](https://github.com/libsdl-org/SDL), [FFmpeg](https://ffmpeg.org), [Dear ImGui](https://github.com/ocornut/imgui), [sirit](https://github.com/shadps4-emu/sirit), [magic_enum](https://github.com/Neargye/magic_enum), [miniz](https://github.com/richgel999/miniz), [xbyak](https://github.com/herumi/xbyak), [wepoll](https://github.com/piscisaureus/wepoll), [cpp-httplib](https://github.com/yhirose/cpp-httplib), [Protocol Buffers](https://protobuf.dev), [OpenSSL](https://www.openssl.org), [miniupnpc](https://miniupnp.tuxfamily.org), [JSON for Modern C++](https://github.com/nlohmann/json), [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), [MSYS2](https://www.msys2.org) / [LLVM](https://llvm.org), [PyInstaller](https://pyinstaller.org) and [Pillow](https://python-pillow.org). Game patches by Kyo, Lance McDonald, auser1337, illusion, emoose and the Bloodborne community.
+Also used: [NVIDIA Streamline](https://github.com/NVIDIA-RTX/Streamline) (DLSS Frame Generation and Reflex), [Intel XeSS](https://github.com/intel/xess) (Super Resolution), [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan) and the AMD FidelityFX SDK (FSR), FSR 4 assets from [FireBurn/Q2RTX](https://github.com/FireBurn/Q2RTX), the DLSS bridge adapted from [IFreemz/shadPS4-Bloodborne-DLSS-FSR](https://github.com/IFreemz/shadPS4-Bloodborne-DLSS-FSR), the [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS) (`nvngx_dlss.dll` under NVIDIA's license), [LibAtrac9](https://github.com/Thealexbarney/LibAtrac9), [SDL3](https://github.com/libsdl-org/SDL), [FFmpeg](https://ffmpeg.org), [Dear ImGui](https://github.com/ocornut/imgui), [sirit](https://github.com/shadps4-emu/sirit), [magic_enum](https://github.com/Neargye/magic_enum), [miniz](https://github.com/richgel999/miniz), [xbyak](https://github.com/herumi/xbyak), [wepoll](https://github.com/piscisaureus/wepoll), [cpp-httplib](https://github.com/yhirose/cpp-httplib), [Protocol Buffers](https://protobuf.dev), [OpenSSL](https://www.openssl.org), [miniupnpc](https://miniupnp.tuxfamily.org), [JSON for Modern C++](https://github.com/nlohmann/json), [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), [MSYS2](https://www.msys2.org) / [LLVM](https://llvm.org), [PyInstaller](https://pyinstaller.org) and [Pillow](https://python-pillow.org). Game patches by Kyo, Lance McDonald, auser1337, illusion, emoose and the Bloodborne community.
 
 NVIDIA, GeForce RTX and DLSS are trademarks of NVIDIA Corporation. The icon is original artwork.
 

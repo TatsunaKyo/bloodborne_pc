@@ -6,7 +6,7 @@ The renderer now keeps each frame's color, depth and motion alive through interp
 
 FSR's actual optical-flow and interpolation dispatches, resource copies, generated pixels, history resets, resizing and background transitions pass the headless Vulkan integration test with synchronization validation and no errors or warnings. The native Windows renderer and launcher are rebuilt from this revision. The tests also click the FG selector in both menu languages and check that launcher settings preserve it.
 
-This still needs a gameplay test on Windows. The game's HUD is included in interpolation and may show artifacts; the port's OSD and settings are drawn afterward. No GPU benchmark or latency improvement is claimed. See [the Frame Generation guide](../frame-generation.md) for details. NVIDIA FG, Multi Frame Generation, their A/B presets and AMD ML FG are not included yet.
+Gameplay coverage is documented in [Testing and known issues](../testing.md). The game's HUD is included in interpolation and may show artifacts; the port's OSD and settings are drawn afterward. No GPU benchmark or latency improvement is claimed. See [the Frame Generation guide](../frame-generation.md) for details. NVIDIA FG, Multi Frame Generation, their A/B presets and AMD ML FG are not included yet.
 
 All revision 5 changes are included: the live cheats, cooperative background pause, working in-game controls, 75 FPS choice, conditional DLSS preset selector, compact optional overlay details and image-view reuse. Extract the full archive to a new folder and start its **Bloodborne.exe**. Keep `bin`, `_internal` and the runtime assets together; replacing only the launcher does not update the native renderer. Game files are not included.
 
