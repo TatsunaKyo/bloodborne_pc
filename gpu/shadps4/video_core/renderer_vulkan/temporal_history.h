@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 namespace Vulkan::Motion {
 
@@ -14,6 +16,23 @@ struct CameraSample {
     std::array<float, 4> proj{};      // x/y scale, depth scale/offset
     bool valid = false;
 };
+
+struct SceneCamera {
+    CameraSample camera;
+    std::array<uint32_t,2> size;
+};
+// Decode the exact scene-constant snapshot bound by this draw, never later guest data.
+inline std::optional<SceneCamera> DecodeSceneCamera(std::span<const float> data) {
+    if (data.size() < 216 || data[0] != 3000.0f || !std::isfinite(data[1]) ||
+        !(data[4] >= 64.0f && data[4] <= 32768.0f && data[5] >= 64.0f && data[5] <= 32768.0f) ||
+        std::abs(data[1]*data[0]-1.0f) > 1e-3f) return std::nullopt;
+    SceneCamera result;
+    std::copy_n(data.begin()+8,12,result.camera.view.begin());
+    std::copy_n(data.begin()+180,12,result.camera.inv_view.begin());
+    result.camera.proj = {data[52],data[57],data[62],data[63]};
+    result.size = {uint32_t(data[4]),uint32_t(data[5])};
+    return result;
+}
 
 inline bool ValidCamera(const CameraSample& sample) {
     const auto finite = [](const auto& values) {

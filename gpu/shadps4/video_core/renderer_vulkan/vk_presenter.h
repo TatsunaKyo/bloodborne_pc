@@ -4,6 +4,7 @@
 #pragma once
 
 #include <deque>
+#include "bbport_amd.h"
 
 #include <condition_variable>
 
@@ -40,6 +41,7 @@ struct Frame {
     u8 id{};
     std::shared_ptr<FrameGeneration::Snapshot> frame_generation;
     void* nvidia_token{};
+    BbAmd::FrameToken amd_token{};
     vk::Semaphore nvidia_fence{};
     u64 nvidia_fence_value{};
     u64 nvidia_fence_epoch{};

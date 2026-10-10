@@ -344,6 +344,39 @@ void Menu() {
                   "Проверка при гостинге: сеть FSR 4 нормирует цвет по экспозиции и по ней "
                   "решает, когда отбросить прошлые кадры. Меняются сразу, без перезапуска."));
     }
+    ImGui::BeginDisabled(!s.variable_frame_time);
+    const int real_cap = s.real_fps_limit;
+    const char* cap_modes[] = {Text("Launcher / display policy", "Настройка запуска / монитора"),
+                              Text("Custom cap", "Свой лимит"), Text("No cap", "Без ограничения")};
+    const int cap_mode = real_cap < 0 ? 0 : real_cap == 0 ? 2 : 1;
+    if (ImGui::BeginCombo(Text("Real game FPS###real_fps_mode", "Реальные FPS игры###real_fps_mode"),cap_modes[cap_mode])) {
+        for (int i=0; i<3; ++i) {
+            const std::string name = std::string(cap_modes[i])+"###real_fps_mode_"+std::to_string(i);
+            if (ImGui::Selectable(name.c_str(),i==cap_mode)) Store(s.real_fps_limit,i==0 ? -1 : i==2 ? 0 : 75,true);
+        }
+        ImGui::EndCombo();
+    }
+    if (s.real_fps_limit > 0) {
+        static int real_limit = 75;
+        static bool editing_real_limit = false;
+        if (!editing_real_limit) real_limit=s.real_fps_limit;
+        ImGui::TextUnformatted(Text("Real FPS cap", "Лимит реальных FPS"));
+        ImGui::SetNextItemWidth(std::max(80.0f,ImGui::GetContentRegionAvail().x-156.0f*base_scale));
+        if (ImGui::DragInt("###real_fps_limit",&real_limit,1.0f,30,120,"%d FPS",ImGuiSliderFlags_AlwaysClamp))
+            Store(s.real_fps_limit,real_limit,true);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(148.0f*base_scale);
+        if (ImGui::InputInt("###real_fps_entry",&real_limit,1,10,ImGuiInputTextFlags_EnterReturnsTrue) ||
+            ImGui::IsItemDeactivatedAfterEdit())
+            Store(s.real_fps_limit,std::clamp(real_limit,30,120),true);
+        editing_real_limit=ImGui::IsItemActive();
+    }
+    ImGui::EndDisabled();
+    Hint(s.variable_frame_time ?
+        Text("Counts real game frames; FG can add frames above this cap. Changes are shared with the launcher. Keep real FPS at or below 120 for the game's timing.",
+             "Лимит реальных кадров; FG может добавлять кадры сверх него. Общая настройка с лаунчером. Для тайминга игры рекомендуется не выше 120 FPS.") :
+        Text("Choose Unlocked under Display & FPS in the launcher to change game FPS live. This session uses a fixed game-timing patch.",
+             "Выберите Unlocked в разделе Display & FPS лаунчера для изменения FPS в игре. В этой сессии используется фиксированный тайминг."));
     const bool upscaler_on = s.upscaler != BbSettings::UpscalerOff;
     const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG"};
     const int fg=std::clamp(s.frame_generation.load(),0,2);
@@ -381,6 +414,14 @@ void Menu() {
     ImGui::EndDisabled();
     Hint(Text("Reflex works independently of NVIDIA FG. NVIDIA FG enables Reflex automatically; Boost is optional. Unsupported choices are disabled.",
               "Reflex работает независимо от NVIDIA FG. Генерация NVIDIA включает Reflex автоматически; Boost необязателен. Неподдерживаемые настройки недоступны."));
+    ImGui::BeginDisabled(!s.amd_antilag_supported);
+    Checkbox("AMD Anti-Lag 2###amd_antilag",s.amd_antilag);
+    ImGui::EndDisabled();
+    Hint(s.amd_antilag_supported ?
+        Text("Reduces input latency through the Radeon Vulkan driver. Works independently of the upscaler and FSR FG.",
+             "Снижает задержку ввода через драйвер Radeon Vulkan. Работает независимо от апскейлера и FSR FG.") :
+        Text("AMD Anti-Lag 2 needs a Radeon GPU and a driver with VK_AMD_anti_lag support.",
+             "AMD Anti-Lag 2 требует Radeon и драйвер с поддержкой VK_AMD_anti_lag."));
     Hint(Text("FSR FG adds one interpolated frame between real frames, in SDR or HDR10. The normal FPS limit counts real frames: 75 can produce 150 with FG 2x. Background FPS caps disable generation.",
               "FSR FG добавляет промежуточный кадр в SDR или HDR10. Обычный лимит относится к реальным кадрам: 75 даёт до 150 с FG 2x. При лимите FPS в фоне генерация отключается."));
     Checkbox(Text("Limit total FPS with Frame Generation###limit_generated_fps",

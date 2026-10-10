@@ -220,19 +220,10 @@ void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_vi
 
 void CameraMotion::OnConstants(const float* data) {
     if (!NeedsCamera()) return; // only the first main camera is used this frame
-    // Scene constants: far plane 3000, 1/far, and the render size.
-    if (!(data[0] == 3000.0f && std::isfinite(data[1]) &&
-          data[4] >= 64.0f && data[4] <= 32768.0f &&
-          data[5] >= 64.0f && data[5] <= 32768.0f &&
-          std::abs(data[1] * data[0] - 1.0f) <= 1e-3f)) {
-        return;
-    }
-    Motion::CameraSample sample;
-    std::memcpy(sample.view.data(), data + 8, 12 * sizeof(float));
-    std::memcpy(sample.inv_view.data(), data + 180, 12 * sizeof(float));
-    sample.proj = {data[52], data[57], data[62], data[63]};
-    const std::array<u32, 2> size{u32(data[4]), u32(data[5])};
-    if (!history.Capture(sample, size != render_size)) return;
+    const auto decoded = Motion::DecodeSceneCamera({data,216});
+    if (!decoded) return;
+    const auto& size = decoded->size;
+    if (!history.Capture(decoded->camera, size != render_size)) return;
     if (HistoryReset()) {
         previous_jitter = jitter;
         if (object_motion) object_motion->DiscardPreviousHistory();

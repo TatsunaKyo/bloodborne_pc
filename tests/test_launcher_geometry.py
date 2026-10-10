@@ -102,13 +102,13 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                         from PIL import ImageGrab
                         bounds=rectangle(root)
                         ImageGrab.grab(bbox=(bounds[0],bounds[1],bounds[0]+bounds[2],bounds[1]+bounds[3]),
-                                       xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-play-revision12.png')
+                                       xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-play-revision13.png')
             finally:
                 for callback in root.tk.call('after', 'info'):
                     root.after_cancel(callback)
                 root.destroy()
     tk.Tk = original_tk
 
-output = source.parents[1] / 'out/verification/launcher-geometry-revision12.json'
+output = source.parents[1] / 'out/verification/launcher-geometry-revision13.json'
 output.write_text(json.dumps({'cases':results, 'checks':'real Tk widgets: aligned columns, distinct rows, conditional controls and overlay link'},indent=2)+'\n')
 print(f'PASS: {len(results)} real Tk layouts in English/Russian at 100/150/200% scaling; no overlapping dropdowns, matching columns, correct conditional labels and working overlay link.')

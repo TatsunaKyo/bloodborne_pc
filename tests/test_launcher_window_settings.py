@@ -204,12 +204,12 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             assert launcher.load_menu()['generated_fps_limit']=='137'
             obj.vars['limit_generated_fps'].set(False)
             assert entry.kwargs['state']==slider.kwargs['state']=='disabled'
-            entry,slider=cap_widgets('frame_cap')
+            entry,slider=cap_widgets('real_fps_limit')
             entry.kwargs['textvariable'].set('93');entry.bindings['<FocusOut>'](None);obj.collect()
             assert launcher.game_environment(obj.app)['BB_FPS_LIMIT']=='93'
             entry.kwargs['textvariable'].set('0');entry.bindings['<Return>'](None)
-            assert obj.vars['frame_cap'].get()=='0'
-            obj.vars['frame_cap'].set('')
+            assert obj.vars['real_fps_limit'].get()=='0'
+            obj.vars['real_fps_limit'].set('-1')
             for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
                 options = launcher.MOVEMENT_MULTIPLIERS if key == 'cheat_movement' else launcher.CHEAT_MULTIPLIERS
                 choice = next(w for w in Widget.nodes if w.kwargs.get('values') == [launcher._(*text) for _value, text in options]
@@ -292,12 +292,12 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             resolution_checks[0].invoke()
             bg = next(w for w in Widget.nodes if w.kwargs.get('values', [None])[0]
                       in ('Keep running', 'Продолжать работу'))
-            frame_cap = obj.vars['frame_cap'].get()
+            frame_cap = obj.vars['real_fps_limit'].get()
             for index, mode in enumerate(('run', 'pause', '30', '60')):
                 bg.choose(index)
                 obj.collect()
                 assert launcher.load_menu()['background_mode'] == mode
-                assert obj.vars['frame_cap'].get() == frame_cap
+                assert obj.vars['real_fps_limit'].get() == frame_cap
             bg.choose(0)
             for index, mode in enumerate(('windowed', 'borderless', 'fullscreen')):
                 home.choose(index)

@@ -1,4 +1,5 @@
 #include "bbport_nvidia.h"
+#include "bbport_amd.h"
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -2308,9 +2309,13 @@ s32 PS4_SYSV_ABI sceGnmSubmitAndFlipCommandBuffersForWorkload(
     }
 
     BbNvidia::QueueFlip(buf_idx,flip_arg);
+    BbAmd::QueueFlip(buf_idx,flip_arg);
     const s32 result=PerformSubmit(count,const_cast<const u32**>(dcb_gpu_addrs),dcb_sizes_in_bytes,
                                   const_cast<const u32**>(ccb_gpu_addrs),ccb_sizes_in_bytes);
-    if (result!=ORBIS_OK) BbNvidia::CancelFlip(buf_idx,flip_arg);
+    if (result!=ORBIS_OK) {
+        BbNvidia::CancelFlip(buf_idx,flip_arg);
+        BbAmd::CancelFlip(buf_idx,flip_arg);
+    }
     lk.unlock();
     if (result==ORBIS_OK) BbNvidia::NextSimulation();
     return result;

@@ -759,7 +759,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         // Present to swapchain.
         {
             std::scoped_lock submit_lock{Scheduler::submit_mutex};
-            const bool presented=BbNvidia::Present(frame,[&] {return swapchain.Present();});
+            const bool presented=BbNvidia::Present(frame,[&] {
+                BbAmd::BeforePresent(frame->amd_token, final && is_game_frame && !is_reusing_frame);
+                return swapchain.Present();
+            });
             if (!presented && window.GetWidth() != 0 && window.GetHeight() != 0) {
                 swapchain.Recreate(window.GetWidth(), window.GetHeight());
             }

@@ -1,61 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" viewBox="0 0 1280 440" role="img" aria-labelledby="title description">
-  <title id="title">Bloodborne for Windows — TatsunaKyo revision</title>
-  <desc id="description">TatsunaKyo's signed Windows revision, with DLSS, FSR, XeSS, Frame Generation, HDR and Reflex. An original ink-style hunter and Gothic skyline stand beneath a red moon.</desc>
-  <defs>
-    <linearGradient id="night" x2="1" y2="1">
-      <stop stop-color="#0c0d12"/><stop offset=".55" stop-color="#171116"/><stop offset="1" stop-color="#351820"/>
-    </linearGradient>
-    <radialGradient id="blood-moon">
-      <stop stop-color="#c9665d"/><stop offset=".7" stop-color="#a13c42"/><stop offset="1" stop-color="#662a35"/>
-    </radialGradient>
-    <linearGradient id="stone" x2="0" y2="1">
-      <stop stop-color="#c59a81" stop-opacity=".38"/><stop offset="1" stop-color="#8f5260" stop-opacity=".06"/>
-    </linearGradient>
-    <clipPath id="paper"><rect width="1280" height="440" rx="10"/></clipPath>
-  </defs>
-  <g clip-path="url(#paper)">
-    <rect width="1280" height="440" fill="url(#night)"/>
-    <path d="M0 439H1280" stroke="#874049" stroke-width="2"/>
-    <g stroke="#a96262" stroke-opacity=".045" stroke-width="1">
-      <path d="M748 0L477 440M798 0L527 440M848 0L577 440M898 0L627 440M948 0L677 440M998 0L727 440M1048 0L777 440M1098 0L827 440M1148 0L877 440M1198 0L927 440M1248 0L977 440"/>
-    </g>
-    <circle cx="1096" cy="126" r="91" fill="url(#blood-moon)"/>
-    <circle cx="1096" cy="126" r="103" fill="none" stroke="#a9575d" stroke-opacity=".23"/>
-    <g fill="none" stroke="#e49783" stroke-opacity=".12">
-      <path d="M1037 89Q1098 67 1157 104M1021 122Q1076 106 1139 135M1060 164Q1106 148 1149 170"/>
-    </g>
-    <g fill="#101017" stroke="url(#stone)" stroke-width="1.3">
-      <path d="M784 440V280L802 251V234L809 218L816 234V251L834 280V440Z"/>
-      <path d="M844 440V256L874 217V165L882 149V123L888 100L895 123V149L904 165V217L934 256V440Z"/>
-      <path d="M944 440V302L965 277V263L973 245L981 263V277L1002 302V440Z"/>
-      <path d="M1048 440V260L1076 219V189L1084 168L1092 189V219L1119 260V440Z"/>
-      <path d="M1145 440V263L1172 225V160L1180 144V118L1188 88L1196 118V144L1204 160V225L1232 263V440Z"/>
-      <path d="M1243 440V311L1265 286V262L1273 244L1281 262V440Z"/>
-    </g>
-    <g fill="none" stroke="#bd8e77" stroke-opacity=".24" stroke-width="1.2">
-      <path d="M869 355V280Q888 244 907 280V355M870 302H906M888 263V355"/>
-      <path d="M1171 368V282Q1188 247 1205 282V368M1172 307H1204M1188 266V368"/>
-      <path d="M856 387H921M1154 397H1223M778 414H1280"/>
-    </g>
-    <g fill="#090b11" stroke="#af8274" stroke-opacity=".29" stroke-linejoin="round">
-      <path d="M989 238L1005 230L1011 215L1045 215L1058 233L1074 238L1038 246L1009 246Z"/>
-      <path d="M1014 247L1043 244L1041 266L1027 278L1015 266Z"/>
-      <path d="M1001 280L1024 270L1045 272L1065 290L1085 366L1064 362L1082 410L1044 418L1024 352L1009 418L971 407L990 353L975 359Z"/>
-      <path d="M1004 406L1000 440H983L985 413M1045 409L1056 440H1074L1063 412"/>
-      <path d="M985 303L965 338L954 366L945 362L949 338L974 288M1061 293L1090 320L1104 349L1095 355L1079 331L1050 319"/>
-      <path d="M1097 352L1124 430" fill="none" stroke-width="3"/>
-      <path d="M948 354L935 343L927 350L942 372L956 368Z"/>
-    </g>
-    <g font-family="Segoe UI,DejaVu Sans,Arial,sans-serif">
-      <text x="63" y="55" fill="#ba8d7e" font-size="13" letter-spacing="3.5">MY WINDOWS REVISION</text>
-      <text x="57" y="137" fill="#f3e9dd" font-family="Georgia,DejaVu Serif,serif" font-size="77" letter-spacing="3">BLOODBORNE</text>
-      <text x="63" y="173" fill="#ccbdb7" font-size="18" letter-spacing="5">FOR WINDOWS</text>
-      <text x="61" y="248" fill="#d6a99b" font-family="Georgia,DejaVu Serif,serif" font-size="61" font-style="italic">TatsunaKyo</text>
-      <path d="M65 267Q240 280 454 254M70 271Q191 278 314 271" fill="none" stroke="#aa5a60" stroke-width="2" stroke-linecap="round"/>
-      <text x="63" y="305" fill="#ded0c8" font-size="24" font-weight="600">DLSS · FSR · XeSS</text>
-      <text x="63" y="343" fill="#ded0c8" font-size="22">Frame Generation · HDR · Reflex</text>
-      <text x="63" y="377" fill="#b5a4a4" font-size="16">Borderless, a custom overlay and settings while you play.</text>
-      <text x="63" y="417" fill="#82787d" font-size="12">Built on bbport · Supermedo's Windows port · shadPS4</text>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1800" height="700" viewBox="0 0 1800 700" role="img" aria-labelledby="title desc">
+  <title id="title">Bloodborne: The Crowned Workshop — TatsunaKyo</title>
+  <desc id="desc">TatsunaKyo's crowned TK emblem beside the project title. A solitary hunter stands at a Gothic workbench lit by a warm lantern. An enormous pale-red moon fills the tall window. Original workshop artwork and editable lettering.</desc>
+  <image id="workshop-art" x="0" y="0" width="1800" height="700" preserveAspectRatio="xMidYMid slice" xlink:href="crowned-workshop-art-moon.png"/>
+  <g id="personal-emblem" transform="translate(82 63) scale(.59)" fill="none" stroke="#d6c1a1" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter">
+    <path id="crown" d="M54 74L47 34L90 54L128 18L166 54L209 34L202 74M58 87H198"/>
+    <path id="workshop-arch" d="M47 218V153Q47 122 128 101Q209 122 209 153V218"/>
+    <path id="initial-t" d="M75 137H137M106 137V216"/>
+    <path id="initial-k" d="M151 137V216M186 137L151 174L189 216"/>
+    <path id="workbench" d="M40 237H216M57 237V246M199 237V246"/>
+  </g>
+  <g id="editable-typography" font-family="Georgia,DejaVu Serif,serif">
+    <text id="signature" x="258" y="155" font-size="53" font-style="italic" fill="#d6c1a1">TatsunaKyo</text>
+    <text id="game-title" x="85" y="341" font-size="98" letter-spacing="1.8" fill="#f1e9dc" textLength="744" lengthAdjust="spacingAndGlyphs">BLOODBORNE</text>
+    <path id="title-rule" d="M92 374H818" fill="none" stroke="#8d7964" stroke-width="1.5"/>
+    <text id="workshop-title-one" x="87" y="465" font-size="71" fill="#ede3d2">The Crowned</text>
+    <text id="workshop-title-two" x="87" y="555" font-size="71" fill="#ede3d2">Workshop</text>
   </g>
 </svg>

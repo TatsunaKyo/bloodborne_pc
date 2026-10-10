@@ -76,6 +76,10 @@ struct Values {
     std::atomic<bool> limit_generated_fps{false};
     std::atomic<int> generated_fps_limit{144};
     std::atomic<int> reflex{0}, nvidia_generated_frames{1}, nvidia_max_generated{0};
+    std::atomic<bool> amd_antilag{false}, amd_antilag_supported{false};
+    // -1 keeps the startup/display policy, 0 removes the real-frame cap.
+    std::atomic<int> real_fps_limit{-1};
+    bool variable_frame_time{true};
     std::atomic<bool> nvidia_fg_supported{false}, reflex_supported{false}, nvidia_api_error{false};
     std::atomic<const char*> frame_generation_problem{nullptr};
     std::atomic<int> cheat_damage{0}, cheat_incoming{0}, cheat_echoes{0}, cheat_movement{0};

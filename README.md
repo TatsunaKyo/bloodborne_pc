@@ -1,10 +1,12 @@
-![Bloodborne for Windows — TatsunaKyo revision](docs/assets/tatsunakyo-header.svg)
+![Bloodborne: The Crowned Workshop — TatsunaKyo](docs/assets/crowned-workshop-header.png)
 
-# Bloodborne for Windows — TatsunaKyo revision
+# Bloodborne: The Crowned Workshop
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, features and cheats, a configurable overlay and settings you can change during play. This project would NOT be possible without the aforementioned work and people involved.
 
-**Current build: v1.6, revision 10.** [Download Windows builds](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 10 notes](docs/releases/windows-v1.6-tatsunakyo.10.md) · [Development roadmap](docs/tatsunakyo-next.md)
+I call this fork **The Crowned Workshop** because it has become my own place to work on the port. The workshop, lantern and crowned TK emblem are part of that identity; the credit for the original game and the port stays with the people who made them.
+
+**Current revision: v1.6, revision 13.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 13 notes](docs/releases/windows-v1.6-tatsunakyo.13.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 Always remember that NO game files are included — you NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump. The game folder must contain `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09 and will NOT work on any other version of the game.
 
@@ -83,15 +85,25 @@ The overlay uses NVIDIA's actual presentation count for output FPS. It also offe
 
 I added **75 FPS** between 60 and 90, and editable number fields because dragging a slider was frustrating when I wanted a precise value. The ordinary **FPS cap** limits real game frames. With 75 real FPS and x2 FG, you can get up to 150 output FPS.
 
+You can now change that real-frame cap in **Display & FPS** or in the **in-game menu**, with an exact number field in both. I keep the choice shared, so changing it while playing also updates what the launcher shows. Choose **Unlocked** timing in the launcher for live changes; sessions using a fixed timing patch keep their original timing. Auto follows the startup/display policy, and No cap removes the real-frame ceiling.
+
 If you also want an output cap, enable **Limit total FPS with Frame Generation** and enter a value from **30 to 1000**. For example, a 130 output cap at x2 gives a 65 real-frame ceiling. Generated frames do not advance game logic or physics. I recommend keeping the real-frame cap at 120 or below, since the original game logic can misbehave at extreme rates. Testing and reporting are welcome if you try other limits.
 
 ### Temporal stability and renderer optimizations
 
 In Revision 10, I added a shared history reset for teleports, abrupt camera/FOV changes, resolution changes and returning from frames without a camera. I want DLSS, FSR, XeSS, TAA and FG to start from the new scene, so the old one does not trail into it. Normal movement and gradual zoom keep their accumulation.
 
-I've also worked on reducing unnecessary CPU and driver overhead: repeated camera checks, unchanged mip-bias calculations, image-view creation and redundant image barriers. I spread mesh verification across frames to avoid checking the whole scene in one periodic burst. I've done this optimization work, but I can't guarantee an FPS increase on different configurations yet. Testing from other users is very welcome; please include your hardware and settings so I can compare the results. The technical details are in [Quality and performance](docs/quality-and-performance.md).
+I've also worked on reducing unnecessary CPU and driver overhead: repeated camera checks, unchanged mip-bias calculations, image-view creation and redundant image barriers. I've done this optimization work, but I can't guarantee an FPS increase on different configurations yet. Testing from other users is very welcome; please include your hardware and settings so I can compare the results. The technical details are in [Quality and performance](docs/quality-and-performance.md).
+
+In Revision 13 I corrected stale camera and mesh data in the temporal path after assets were reported flashing across the screen. Camera and small-skeleton tracking now use the same constant snapshot as the draw. I check index contents before reusing cached bounds, so a reused allocation cannot silently inherit another mesh's history. I also reject vectors that would overflow the half-float motion texture. These changes apply to reconstruction as well as FG; I am keeping the reported flashing issue open until I have a gameplay comparison of the affected scenes.
 
 In the separate [Revision 11 build](docs/releases/windows-v1.6-tatsunakyo.11.md), I changed the limiter so a late frame starts a fresh interval instead of letting queued frames rush through afterwards. I also reused the Windows high-resolution timer for the renderer's waits and the FSR FG gap. I want to improve the uneven pacing reported during play, especially with FG; comparing the same scene and settings with Revision 10 will help me check how much this first change improves it.
+
+### AMD Anti-Lag 2
+
+I added **AMD Anti-Lag 2** as an optional setting in Graphics and in the in-game menu. On a supported Radeon GPU, it uses the driver's Vulkan interface to pace the CPU before game input is sampled. I match that input marker to its real presentation frame, including when FSR FG adds an intermediate frame. The existing FPS controls keep ownership of the limits.
+
+The launcher checks the selected GPU and driver, and the in-game control is disabled when the device does not support `VK_AMD_anti_lag`. Anti-Lag is independent of the upscaler and FSR FG. Reflex stays a separate NVIDIA option. I would appreciate Radeon results for this addition; my own gameplay PC uses an RTX 5070 Ti.
 
 ### Borderless fullscreen and background behavior
 

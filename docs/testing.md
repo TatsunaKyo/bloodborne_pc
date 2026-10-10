@@ -11,10 +11,11 @@ That is my main test configuration. I do not currently own an Intel GPU, and AMD
 - ImGui mouse, keyboard/controller activation, settings round trips and compact overlay layout.
 - Native and Windows-compiled cheat hooks, player/NPC selection, disabled paths, register preservation, missing player/world, and original 1.09 instruction signatures from a private local image. Private game bytes are not distributed.
 - Camera history through smooth motion, abrupt cuts, loading gaps, invalid inputs and recovery. Object-history allocations are preserved even if a cut is detected after a draw has reserved positions.
-- Index-cache verification intervals, stale topology and the distribution of verification work across frames.
+- Revision 13 checks submitted camera snapshots, immediate index-content invalidation and reused allocations with unchanged bounds; unchanged meshes keep their cached range scans.
 - GPU fixtures for motion, color conversion and the analytical FSR FI/OF pipeline, including SDR/HDR10 and synchronization validation. Packaged logs state which revision produced each run.
 - Windows compilation/linking, runtime hashes, DLL import/export closure and reconstruction of the source tree from the included patch.
 - Revision 11 pacing checks use the production helper at 30/60/65/75/90/120 FPS, with queued frames, 50 ms and five-second stalls, slow rendering, uncapped mode, changing caps and timer waits. Background tests cover pause/refocus and stopping while paused.
+- Revision 13 checks shared live real-FPS controls, fixed-timing restrictions, independent FG-output limits, preference migration and unsupported Anti-Lag controls. The production AMD adapter is exercised with captured Vulkan calls, including matching input/present IDs and presentation progress during an input wait.
 
 I check settings, hooks, resource handling and package integrity with automated tests, alongside gameplay on my Windows PC. The logs retain the environment and results of those checks. My own setup only covers one Windows/RTX configuration, so reports from other PCs are welcome, including when an optimization makes little difference or causes a regression.
 
@@ -27,6 +28,8 @@ I check settings, hooks, resource handling and package integrity with automated 
 - **Infinite stamina during continuous running:** revision 9 added continuous movement and direct/script guards after attack stamina was working. The hook tests execute 50 consecutive drain updates; the remaining check is sustained running through the affected gameplay states on the current build.
 - **FG HUD artifacts:** the game's HUD remains in interpolation input. Moving text can distort. Proper HUDless color and UI-alpha separation is follow-up work.
 - **Temporal transitions:** revision 10's new camera resets pass the production-history tests. Compare respawn, teleport, loading and fast normal camera movement in gameplay before considering the visual change confirmed on the main test PC.
+- **Flashing assets:** Revision 13 corrects camera/palette snapshot mismatches, immediately checks changed index contents and rejects unusable/FP16-overflow motion vectors. The affected scenes still need a before/after gameplay comparison, with FG on and off, before I close this report.
+- **AMD Anti-Lag 2:** the integration and its capability/input/presentation/lifetime checks are included in Revision 13. I need Radeon gameplay results for the driver path; an RTX run cannot cover it. It does not provide an AMD latency number for the overlay.
 - **XeSS quality choices:** Revision 12 passes 108 compiled-launcher layout checks, 84 real popup selections and actual ImGui selection/save checks for all seven modes. The SDK-contract fixture verifies seven quality modes at four output sizes with SDR/HDR initialization. Startup/live scene sizing, preference migration and frozen-resolution behavior pass. I would especially appreciate gameplay comparisons of the seven modes on Intel hardware; I do not own an Intel GPU.
 - **Hardware coverage:** broader NVIDIA, AMD and Intel results are welcome, including HDR, Alt-Tab and frame pacing. Unsupported SDK/hardware choices should fall back or display an explanation.
 

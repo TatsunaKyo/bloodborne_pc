@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/image.h"
@@ -69,11 +70,12 @@ int main() {
         cmd.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&b},d);
     };
     const auto run=[&](const char* label,float depth,float translation,float rotation,
-                       float object_depth,u32 mode,float expected,bool jitter=false) {
+                       float object_depth,u32 mode,float expected,bool jitter=false,
+                       float object_x=2.f,float previous_z=1.f,float expected_y=0.f) {
         auto* pixels=static_cast<float*>(ai.pMappedData);
         for (u32 p=0;p<N;++p) {
             pixels[p*4]=depth;
-            pixels[N*4+p*4]=2.f; pixels[N*4+p*4+1]=0.f;
+            pixels[N*4+p*4]=object_x; pixels[N*4+p*4+1]=0.f;
             pixels[N*4+p*4+2]=1.f; pixels[N*4+p*4+3]=object_depth;
         }
         const auto cmd=scheduler.CommandBuffer();
@@ -99,7 +101,7 @@ int main() {
             writes[i]={.dstBinding=i,.descriptorCount=1,.descriptorType=bindings[i].descriptorType,
                 .pImageInfo=&infos[i]};
         }
-        Params params{{1,0,rotation,translation,0,1,0,0,0,0,1,0},
+        Params params{{1,0,rotation,translation,0,1,0,0,0,0,previous_z,0},
             {1,1,1,-0.05f},{1,1,1,-0.05f},{W,H},
             {jitter ? 0.37f : 0.f,jitter ? -0.29f : 0.f},{0,0},mode};
         cmd.bindPipeline(vk::PipelineBindPoint::eCompute,*pipeline,d);
@@ -121,7 +123,7 @@ int main() {
                 std::ldexp(1.f+float(v&1023)/1024.f,e-15));
         };
         assert(std::abs(half(result[0])-expected)<0.002f);
-        assert(std::abs(half(result[1]))<0.001f);
+        assert(std::abs(half(result[1])-expected_y)<0.001f);
         std::printf("Camera motion: %s PASS (%.5f)\n",label,half(result[0]));
     };
     constexpr float distant=0.999995f;
@@ -131,5 +133,9 @@ int main() {
     run("static camera cancels jitter",distant,0,0,0,0,0,true);
     run("matching object vector",distant,0,0,distant,1,2);
     run("stale distant object vector",distant,0,0,0.9999f,1,0);
+    run("point behind previous camera",0.5f,1000,0,0,0,-5.625f,false,2.f,-1.f,-4.375f);
+    run("object vector exceeds FP16",distant,0,0,distant,1,0,false,100000.f);
+    run("nonfinite object vector",distant,0,0,distant,1,0,false,std::numeric_limits<float>::quiet_NaN());
+    run("camera vector exceeds FP16",0.5f,1.0e9f,0,0,0,-5.625f,false,2.f,1.f,-4.375f);
     vmaDestroyBuffer(instance.GetAllocator(),staging,allocation);
 }

@@ -16,10 +16,16 @@ I made this change so a teleport or loading transition starts from the new scene
 - The scene mip bias retains `log2(render/output)` but caches the value until either dimension changes, avoiding the logarithm on every sampler request.
 - Upscaler activity uses one provider snapshot instead of repeatedly loading the atomic setting for each comparison.
 - An object-motion image already in General layout can be read again without another read-to-read barrier. Color-attachment writes still transition and synchronize before a reader.
-- Index-range verification now assigns each mesh a stable phase within the existing 32-frame interval. A new entry is checked again within 1–32 frames, then every 32 frames, with topology changes still detected and unused entries trimmed.
+- Index bounds remain cached, but Revision 13 checks the index contents on each draw before using them. Changed contents immediately invalidate the cached topology, including changes that leave the bounds unchanged. GPU-written indices are excluded from CPU-derived history.
 - Revision 4's cached upscaled-display image view is retained, as is the one-frame default GPU queue.
 
-I checked the scan distribution with the production cache fixture: it loads 4,096 meshes together and uses them for 64 more frames. The old policy rescanned all 4,096 together every 32 frames. The new policy peaks at 149 scans in a periodic frame, with the same 12,288 total scans including the initial load. I made this change to spread that work more evenly. I can't guarantee an FPS increase on different configurations yet, so I would welcome tests from other users, especially in places where frame delivery is uneven.
+Revision 10 spread periodic scans across frames. After the flashing-assets report, I revisited that shortcut: memory can be reused between checks, and bounded history access alone does not make the old contents valid. Revision 13 keeps a full content hash on each draw and reuses the range scan only when it matches. In the 4,096-mesh fixture, unchanged meshes keep their bounds and 16 changed allocations are rejected immediately. I can't guarantee an FPS increase on different configurations yet, so I would welcome tests from other users, especially in places where frame delivery is uneven.
+
+## Camera snapshots and invalid vectors
+
+The draw pipeline copies read-only constants before the recording thread binds them. I now decode the camera and compare small-skeleton palettes from those same snapshots. Reading the live guest address later could give motion tracking a newer camera than the one used to render the image.
+
+A point behind the previous camera has no valid reprojection. I reject that case and vectors that would overflow the FP16 motion texture before they enter reconstruction or FG. The GPU fixture covers behind-camera points, stale/nonfinite object vectors and excessive camera/object vectors. I am keeping the flashing report open until the affected gameplay scenes have been compared.
 
 ## Remaining quality work
 

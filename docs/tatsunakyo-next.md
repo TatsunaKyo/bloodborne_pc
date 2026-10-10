@@ -10,13 +10,13 @@ My first priority is more reliable play: fix the shooting crash, protect saves a
 
 “Partial” means that useful code exists, but the requested behavior is incomplete. An existing setting or an automated fixture does not close a reported gameplay bug.
 
-| Area | Revision 10 status | Next work | Priority |
+| Area | Current implementation | Next work | Priority |
 |---|---|---|---|
 | Shooting with several cheats enabled | Open crash report. Damage/reduction and item/ammunition hooks exist; diagnostics are opt-in. | Check the combined firing path, object lifetimes and hook context. Cover ordinary shots, Blood Bullets, empty ammunition and repeated firing. | P0 stability |
 | Character creation preview | Inherited upstream issue; no dedicated preview fix found. Relaxed readbacks already address a different FaceGen problem. | Follow the preview's render targets, readbacks and UI composition separately from the gameplay camera. | P0 compatibility |
 | AMD world-loading crashes | Partial compatibility work, including a BC6H storage-usage fallback. World-load stability remains open. | Separate object-motion device loss, unsupported formats, memory exhaustion and stuck draws. Preserve evidence for each GPU/driver. | P0 compatibility |
 | Save Manager | Save mounting, configurable user directory and launcher save detection exist. No integrated backup/restore manager was found. | Verified pre-launch snapshots and restore first; named profiles and coordinated live snapshots afterwards. | P0 save protection |
-| Frame pacing | Real-frame cap, separate optional FG output cap, Reflex and a default one-frame GPU queue exist. Uneven delivery is still reported. | Fix overdue-deadline behavior, review Windows waits and NVIDIA scheduling, then compare actual displayed cadence and latency. | P0 pacing |
+| Frame pacing | Revision 11 fixes overdue-deadline bursts and reuses Windows high-resolution waits. Real-frame/FG-output caps remain separate; Revision 13 exposes the real cap in-game. | Compare actual displayed cadence and latency; review remaining NVIDIA scheduling and FSR presentation stalls. | P0 pacing |
 | Continuous-running stamina | Revision 9 added continuous-drain guards; the automated hook fixture covers repeated updates. | Confirm sustained running in the reported gameplay states and keep the issue open until it passes. | P0 existing cheat |
 | Full key/controller remapping | Keyboard fallback and SDL3 gamepads exist; bindings are fixed in `runtime_pad.c`. | Add persistent bindings, conflict detection, device selection and sensible defaults. | P1 input |
 | Mouse camera and sensitivity | Mouse input in the port menu exists; gameplay camera mouse look does not. | Relative mouse input first. Direct camera integration is a separate step from emulating the right stick. | P1 input |
@@ -114,7 +114,7 @@ Shader cache recovery should build on the existing cache rather than introduce a
 - **NVIDIA Dynamic MFG:** Streamline 2.14.1 documents D3D12-only support. Its Auto mode retains a fixed multiplier with conditional disablement; it is not Dynamic MFG. Recheck vendor support before planning an additional backend.
 - **Intel XeSS FG:** the public FG integration requires D3D12. XeSS Super Resolution already works through the current Vulkan adapter.
 - **Intel XeSS Low Latency (XeLL):** Intel's public integration requires D3D12 and a flip-model DXGI swapchain. It cannot be connected directly to the current Vulkan presentation path. Standalone XeLL supports Intel Arc; Intel also requires XeSS FG for its use on non-Intel hardware. I will revisit it with any future D3D12 work rather than add a switch that does nothing.
-- **AMD Anti-Lag 2:** AMD provides a Windows Vulkan integration with Adrenalin 24.9.1 or newer. This is a viable follow-up without replacing the renderer and is independent of FSR upscaling. I need to integrate its CPU frame/input timing markers, check GPU/driver support and coordinate its pacing with FG and the existing limiter. Reflex and Anti-Lag must be selected for the appropriate device; they must not compete over the same frame timing.
+- **AMD Anti-Lag 2:** included in Revision 13 through `VK_AMD_anti_lag`, with GPU/feature checks, an input marker before pad sampling and the matching real-presentation ID. FSR interpolated frames are excluded from simulation markers; VideoOut keeps the cap policy. It is optional and independent of the upscaler. Radeon gameplay coverage is the next check. Reflex remains the separate NVIDIA option.
 - **AMD ML FG:** analytical FSR 3.1.6 FG remains the shipped implementation. Review an actual supported ML API and its hardware/backend requirements before offering another mode.
 - **NVIDIA FG presets A/B:** investigate public driver profile settings independently of SR presets. `DLSSGOptions` has no A/B model field. Preserve existing profiles and prove that selection changes the FG model before exposing a control.
 
@@ -135,6 +135,8 @@ Adding D3D12 or a cross-API presentation bridge is a separate architectural proj
 Revision 11 starts with the overdue-deadline correction and reuse of the existing Windows timer, with regression checks and a Windows rebuild. Targeted malformed-cache rejection and the firing crash are the next items. I am deferring queue-parallelism changes, live save snapshots and the new cheat wave until their dependencies are resolved. HUDless composition has a useful reference, but I need to handle its HDR and resource lifetimes as a separate feature.
 
 Revision 12 adds the requested independent XeSS quality menu after the Revision 11 pacing build has been delivered. It keeps the seven modern XeSS ratios consistent across startup patches, live scene sizing and SDK initialization, with checks for popup selection, preference migration and SDR/HDR flags. I am keeping the broader stability work above open.
+
+Revision 13 adds Anti-Lag 2 and the shared real-FPS control, then addresses the flashing report in the shared temporal path: constant snapshots, immediate topology validation and finite FP16 vectors. I still want an affected-scene gameplay comparison before closing that report. The Crowned Workshop identity does not change the repository, executable names or save paths. The shooting crash and Save Manager remain the next P0 work.
 
 ## Implementation references
 

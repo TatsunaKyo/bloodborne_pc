@@ -66,6 +66,7 @@ static int live_resolution_suits(VkPhysicalDevice device) {
 
 int main(int argc, char **argv) {
     const int live_mode = argc > 1 && !strcmp(argv[1], "--live-resolution");
+    const int anti_lag_mode = argc > 1 && !strcmp(argv[1], "--amd-antilag");
     const VkApplicationInfo app = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "bbport scene scaling probe",
@@ -117,6 +118,21 @@ int main(int argc, char **argv) {
     }
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(selected, &props);
+    if (anti_lag_mode) {
+        VkPhysicalDeviceAntiLagFeaturesAMD anti = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD,
+        };
+        if (props.vendorID == 0x1002 && has_extension(selected, VK_AMD_ANTI_LAG_EXTENSION_NAME)) {
+            VkPhysicalDeviceFeatures2 features = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &anti,
+            };
+            vkGetPhysicalDeviceFeatures2(selected, &features);
+        }
+        printf("%d\n", anti.antiLag == VK_TRUE);
+        free(devices);
+        vkDestroyInstance(instance, NULL);
+        return 0;
+    }
     const struct { VkFormat format; const char *name; } formats[] = {
         {VK_FORMAT_R8G8B8A8_UNORM, "RGBA8"},
         {VK_FORMAT_R8G8B8A8_SRGB, "RGBA8 sRGB"},

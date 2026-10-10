@@ -306,6 +306,37 @@ void TestNvidiaControls() {
     SetOpen(false);s.generated_fps_limit=30;BbSettings::Load();assert(s.generated_fps_limit==selected);SetOpen(true);
     s.limit_generated_fps=false;s.frame_generation=BbSettings::FrameGenerationOff;s.reflex=0;
 }
+void TestRealFpsAndAntiLag() {
+    auto& s=BbSettings::Get();s.variable_frame_time=true;
+    s.real_fps_limit=-1;
+    for (int mode : {1,2,0}) {
+        Reveal("real_fps_mode");selectables.clear();Click(controls.at("real_fps_mode").GetCenter());Frame();Frame();
+        auto it=std::find_if(selectables.begin(),selectables.end(),[&](const auto& item) {
+            return item.first.ends_with("###real_fps_mode_"+std::to_string(mode));
+        });
+        assert(it!=selectables.end());Click(it->second.GetCenter());
+        assert(s.real_fps_limit==(mode==1 ? 75 : mode==2 ? 0 : -1));
+    }
+    s.real_fps_limit=75;
+    Reveal("real_fps_limit");const auto drag=controls.at("real_fps_limit");
+    Click({drag.Min.x+drag.GetWidth()*0.8f,drag.GetCenter().y});assert(s.real_fps_limit==75);
+    Reveal("real_fps_entry");auto rect=controls.at("real_fps_entry");
+    assert(rect.Min.x>=controls.at("real_fps_limit").Max.x);
+    Click({rect.Min.x+15,rect.GetCenter().y});
+    auto& io=ImGui::GetIO();io.AddKeyEvent(ImGuiMod_Ctrl,true);io.AddKeyEvent(ImGuiKey_A,true);Frame();
+    io.AddKeyEvent(ImGuiKey_A,false);io.AddKeyEvent(ImGuiMod_Ctrl,false);Frame();
+    io.AddInputCharactersUTF8("93");Frame();Frame();
+    io.AddKeyEvent(ImGuiKey_Enter,true);Frame();io.AddKeyEvent(ImGuiKey_Enter,false);Frame();
+    assert(s.real_fps_limit==93);
+    SetOpen(false);s.real_fps_limit=-1;BbSettings::Load();assert(s.real_fps_limit==93);SetOpen(true);
+    s.variable_frame_time=false;s.real_fps_limit=75;Reveal("real_fps_mode");selectables.clear();
+    Click(controls.at("real_fps_mode").GetCenter());Frame();assert(selectables.empty() && s.real_fps_limit==75);
+    s.variable_frame_time=true;
+    s.amd_antilag_supported=false;s.amd_antilag=false;Reveal("amd_antilag");
+    Click(controls.at("amd_antilag").GetCenter());assert(!s.amd_antilag);
+    s.amd_antilag_supported=true;TestBoolean("amd_antilag",s.amd_antilag);
+    s.real_fps_limit=-1;
+}
 void TestNavigation(ImGuiKey key) {
     auto& io=ImGui::GetIO();
     auto& s=BbSettings::Get();
@@ -569,6 +600,7 @@ int main(int argc,char** argv) {
         s.fsr4_supported=true; s.fsr411_supported=true;
         TestFrameGeneration();
         TestNvidiaControls();
+        TestRealFpsAndAntiLag();
         TestXessQuality();
         s.upscaler=BbSettings::UpscalerFsr3;
         TestBoolean("sharpen",s.sharpen);
@@ -599,7 +631,7 @@ int main(int argc,char** argv) {
 
     assert(restart_calls==0);
     ImGui::DestroyContext();
-    std::puts("PASS: actual ImGui controls select and save all seven XeSS quality modes independently of DLSS/FSR; conditional quality controls; basic/compact DLSS OSD; all seven active DLSS model hints and pending changes stay on one row with the original window height; shared settings survive saves; both languages/all upscalers tested; no restart from OSD choices.");
+    std::puts("PASS: actual ImGui real-FPS mode/drag/exact entry/save, fixed-timing restriction and supported/unsupported Anti-Lag controls; all seven XeSS quality modes independently of DLSS/FSR; conditional quality controls; basic/compact DLSS OSD; all seven active DLSS model hints and pending changes stay on one row with the original window height; shared settings survive saves; both languages/all upscalers tested; no restart from OSD choices.");
 }
 '''
 # Check all constant widget label pairs against the actual Dear ImGui hash implementation.

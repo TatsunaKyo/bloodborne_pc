@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,6 +21,9 @@
 namespace BbSettings {
 unsigned EffectiveFrameLimit(unsigned foreground_limit) {
     const auto& s = Get();
+    const int requested = s.real_fps_limit;
+    if (s.variable_frame_time && requested >= 0)
+        foreground_limit = unsigned(requested);
     if (s.window_focused || s.background_mode == BackgroundRun) {
         // The ordinary limit counts real game flips. Only an explicitly enabled
         // display cap may reduce that rate to account for generated frames.
@@ -146,6 +150,10 @@ void Load() {
     v.limit_generated_fps = false;
     v.generated_fps_limit = 144;
     v.reflex=0;v.nvidia_generated_frames=1;
+    v.amd_antilag = false;
+    v.real_fps_limit = -1;
+    const char* fps = std::getenv("BB_FPS");
+    v.variable_frame_time = !fps || std::strcmp(fps,"uncap") == 0 || std::strcmp(fps,"75") == 0;
     v.cheat_damage = v.cheat_incoming = v.cheat_echoes = v.cheat_movement = 0;
     v.cheat_infinite_stamina = v.cheat_no_consume = false;
     v.cheat_no_fall_damage=false;
@@ -204,6 +212,14 @@ void Load() {
                 v.frame_generation = value == "fsr" ? FrameGenerationFsr : value == "nvidia" ? FrameGenerationNvidia : FrameGenerationOff;
             } else if (key == "reflex") {
                 v.reflex=value=="boost" ? 2 : value=="on" ? 1 : 0;
+            } else if (key == "amd_antilag") {
+                v.amd_antilag = value == "1";
+            } else if (key == "real_fps_limit") {
+                int limit = -1;
+                const auto [end, error] = std::from_chars(value.data(), value.data()+value.size(), limit);
+                if (error == std::errc{} && end == value.data()+value.size() &&
+                    (limit == -1 || limit == 0 || (limit >= 30 && limit <= 1000)))
+                    v.real_fps_limit = limit;
             } else if (key == "nvidia_generated_frames") {
                 v.nvidia_generated_frames=std::clamp(std::atoi(value.c_str()),1,5);
             } else if (key == "limit_generated_fps") {
@@ -357,6 +373,7 @@ void Save() {
                      background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
         std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : "off");
         std::fprintf(file,"reflex=%s\nnvidia_generated_frames=%d\n",v.reflex==2 ? "boost" : v.reflex==1 ? "on" : "off",v.nvidia_generated_frames.load());
+        std::fprintf(file,"amd_antilag=%d\nreal_fps_limit=%d\n",int(v.amd_antilag.load()),v.real_fps_limit.load());
         std::fprintf(file,"limit_generated_fps=%d\ngenerated_fps_limit=%d\n",
                      int(v.limit_generated_fps.load()),v.generated_fps_limit.load());
         std::fprintf(file,"show_frame_generation=%d\nshow_latency=%d\n",

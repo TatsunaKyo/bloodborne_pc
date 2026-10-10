@@ -320,6 +320,15 @@ add_executable(xess-presets-test EXCLUDE_FROM_ALL ../tests/test_xess_presets.cpp
 target_include_directories(xess-presets-test PRIVATE shim shadps4)
 target_compile_options(xess-presets-test PRIVATE -UNDEBUG)
 
+add_executable(amd-antilag-test EXCLUDE_FROM_ALL ../tests/test_amd_antilag.cpp
+    shim/bbport_amd.cpp shim/bbport_settings.cpp)
+target_include_directories(amd-antilag-test PRIVATE shim ${Vulkan_INCLUDE_DIRS})
+target_compile_options(amd-antilag-test PRIVATE -UNDEBUG)
+
+add_executable(frame-limits-test EXCLUDE_FROM_ALL ../tests/test_real_fps.cpp shim/bbport_settings.cpp)
+target_include_directories(frame-limits-test PRIVATE shim)
+target_compile_options(frame-limits-test PRIVATE -UNDEBUG)
+
 add_executable(xess-test EXCLUDE_FROM_ALL ../tests/test_xess.cpp
     shadps4/video_core/renderer_vulkan/vk_xess.cpp shim/bbport_settings.cpp)
 target_include_directories(xess-test PRIVATE shim shadps4 ${Vulkan_INCLUDE_DIRS})

@@ -50,13 +50,12 @@ inline BufferRole ClassifyBuffer(uint32_t size) {
     return size >= 96 && size % 48 == 0 ? BufferRole::SmallSkeleton : BufferRole::Other;
 }
 
-// Scanning and hashing the index list of every stored draw each frame took ~10% of the GPU
-// thread. Static meshes keep their index buffers, so a result is reused and fully verified
-// again every `Revalidate` frames. A stale result only costs camera-quality vectors: the
-// shader bounds every history access by the stored range.
+// Keep range scans cached, but verify the current index contents before reusing one.
+// Address/count alone cannot identify a mesh: streaming and dynamic geometry reuse memory.
+// Even a changed index list with the same bounds can read unwritten previous positions.
 class IndexRangeCache {
 public:
-    static constexpr uint64_t Revalidate = 32, Unused = 600;
+    static constexpr uint64_t Unused = 600;
     struct Key {
         uint64_t address{};
         uint32_t count{}, index_size{};
@@ -73,10 +72,10 @@ public:
     } stats;
 
     template <class Scan>
-    Result Get(const Key& key, uint64_t frame, Scan&& scan) {
+    Result Get(const Key& key, uint64_t frame, uint64_t topology, Scan&& scan) {
         auto& entry = entries[key];
         entry.last_use = frame;
-        if (entry.valid && frame < entry.next_verification) {
+        if (entry.valid && topology == entry.result.topology) {
             ++stats.hits;
             return entry.result;
         }
@@ -84,13 +83,10 @@ public:
         const Result fresh = scan();
         if (entry.valid && (fresh.topology != entry.result.topology ||
                             !(fresh.range == entry.result.range))) {
-            ++stats.stale; // the cached result was wrong for up to Revalidate frames
+            ++stats.stale; // changed contents are rejected on this draw, never later
         }
         entry.result = fresh;
-        // Assign each mesh a stable phase instead of rescanning the whole scene in one
-        // burst. A new entry is checked again in 1..32 frames, then every 32 frames.
-        const uint64_t phase = uint64_t(KeyHash{}(key)) >> 32;
-        entry.next_verification = frame + 1 + ((phase - frame - 1) % Revalidate);
+        entry.result.topology = topology;
         entry.valid = true;
         return entry.result;
     }
@@ -102,7 +98,7 @@ public:
 private:
     struct Entry {
         Result result;
-        uint64_t next_verification{}, last_use{};
+        uint64_t last_use{};
         bool valid{};
     };
     struct KeyHash {

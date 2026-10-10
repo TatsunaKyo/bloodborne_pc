@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.12'
+VERSION = '1.6-tatsunakyo.13'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -169,7 +169,7 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'player_name': '', 'fullscreen': False, 'window_mode': '', 'hdr': False, 'present_mode': 'Mailbox',
-                'fps_mode': 'uncap', 'frame_cap': '', 'draw_pipe': '', 'readbacks': '',
+                'fps_mode': 'uncap', 'frame_cap': '', 'real_fps_limit': '-1', 'draw_pipe': '', 'readbacks': '',
                 'frames_ahead': '', 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'developer_profile': False, 'extra_env': '', 'close_on_play': False,
                 'check_updates': True, 'online': False, 'online_server': 'srv.shadps4.net:31313',
@@ -179,11 +179,12 @@ MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_v
                  'dlss_preset': 'default', 'xess_preset': '2', 'show_fps': '1', 'show_dlss_preset': '0',
                  'show_resolution': '0', 'show_frame_generation': '0', 'show_latency': '0',
                  'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1',
+                 'amd_antilag': '0', 'real_fps_limit': '-1',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
                  'cheat_infinite_stamina': '0', 'cheat_no_consume': '0', 'cheat_no_fall_damage': '0'}
 MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution',
               'show_frame_generation', 'show_latency',
-              'cheat_infinite_stamina', 'cheat_no_consume', 'cheat_no_fall_damage', 'limit_generated_fps'}
+              'cheat_infinite_stamina', 'cheat_no_consume', 'cheat_no_fall_damage', 'limit_generated_fps', 'amd_antilag'}
 CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
 MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
 FRAME_GENERATORS = [('off', ('Off', 'Выключено')), ('fsr', ('FSR Frame Generation (2x)', 'FSR Frame Generation (2x)')),
@@ -241,8 +242,8 @@ READBACKS = [('', ('Relaxed (default)', 'Relaxed (по умолчанию)')), (
              ('2', ('Precise',))]
 # Frame cap of the unlocked mode (BB_FPS_LIMIT). '' leaves the port's own: the display refresh,
 # at most 120, because the game's movement timing breaks above about 120 FPS.
-FRAME_CAPS = [('', ('Auto: display refresh, max 120 (recommended)', 'Авто: частота монитора, макс. 120 (рекомендуется)')),
-              ('60', ('60',)), ('75', ('75',)), ('90', ('90',)), ('120', ('120',)), ('144', ('144  ⚠',)), ('165', ('165  ⚠',)),
+FRAME_CAPS = [('-1', ('Auto: display refresh, max 120 (recommended)', 'Авто: частота монитора, макс. 120 (рекомендуется)')),
+              ('30', ('30',)), ('60', ('60',)), ('75', ('75',)), ('90', ('90',)), ('120', ('120',)), ('144', ('144  ⚠',)), ('165', ('165  ⚠',)),
               ('240', ('240  ⚠',)), ('0', ('No limit  ⚠', 'Без ограничения  ⚠'))]
 FRAMES_AHEAD = [('', ('1 (default)', '1 (по умолчанию)')), ('2', ('2',)), ('0', ('Unbounded', 'Без ограничения'))]
 UI_LANGUAGES = bbport_lang.LANGUAGE_NAMES
@@ -299,6 +300,9 @@ def load_menu():
         lines = menu_path().read_text(encoding='utf-8').splitlines()
     except OSError:
         lines = []
+    if not any(line.strip().startswith('real_fps_limit=') for line in lines):
+        previous = load_json(CONFIG_FILE, {})
+        values['real_fps_limit'] = '75' if previous.get('fps_mode') == '75' else previous.get('frame_cap') or '-1'
     for line in lines:
         if '=' in line and not line.lstrip().startswith('#'):
             key, value = (part.strip() for part in line.split('=', 1))
@@ -320,6 +324,11 @@ def load_menu():
         values['generated_fps_limit'] = '144'
     if values['reflex'] not in dict(REFLEX_MODES):
         values['reflex'] = 'off'
+    try:
+        limit = int(values['real_fps_limit'])
+        values['real_fps_limit'] = str(limit) if limit in (-1, 0) or 30 <= limit <= 1000 else '-1'
+    except (ValueError, TypeError):
+        values['real_fps_limit'] = '-1'
     if values['nvidia_generated_frames'] not in dict(NVIDIA_MULTIPLIERS):
         values['nvidia_generated_frames'] = '1'
     for key in MENU_FLAGS:
@@ -483,7 +492,10 @@ def game_environment(s):
         env['BB_HDR'] = '1'
     # 75 uses the variable frame-time patch, not a fixed 60/90 timing patch.
     env['BB_FPS'] = 'uncap' if s['fps_mode'] == '75' else s['fps_mode']
-    if s['fps_mode'] == '75':
+    real_cap = str(s.get('real_fps_limit', '-1'))
+    if real_cap.isdecimal() and (real_cap == '0' or 30 <= int(real_cap) <= 1000):
+        env['BB_FPS_LIMIT'] = real_cap
+    elif s['fps_mode'] == '75':
         env['BB_FPS_LIMIT'] = '75'
     elif s.get('frame_cap', ''):
         env['BB_FPS_LIMIT'] = s['frame_cap']
@@ -619,7 +631,7 @@ class Launcher:
         self.banner_source = self.banner_image = None
         self.ui_calls = queue.Queue()  # work for the Tk thread from helper threads
         self.mod_order, self.mod_vars, self.patch_vars = [], {}, {}
-        root.title(f'Bloodborne — bbport [{LAUNCHER_BUILD}]')
+        root.title('Bloodborne: The Crowned Workshop — TatsunaKyo')
         root.configure(bg=BG)
         self.dpi = root.winfo_fpixels('1i') / 96.0
         root.geometry(f'{self.px(1120)}x{self.px(740)}')
@@ -638,12 +650,14 @@ class Launcher:
         return int(size * self.dpi)
 
     def set_icon(self):
-        try:
-            self.root.iconbitmap(default=str(PORT_DIR / 'launcher' / 'bloodborne.ico'))
-            return
-        except self.tk.TclError:
-            pass
-        for icon in (PORT_DIR / 'launcher' / 'bloodborne.png', Path(self.app['game_dir']) / 'sce_sys' / 'icon0.png'):
+        for icon in (PORT_DIR / 'docs/assets/crowned-workshop.ico', PORT_DIR / 'launcher/bloodborne.ico'):
+            try:
+                self.root.iconbitmap(default=str(icon))
+                return
+            except self.tk.TclError:
+                pass
+        for icon in (PORT_DIR / 'docs/assets/crowned-workshop-icon-64.png',
+                     PORT_DIR / 'launcher/bloodborne.png', Path(self.app['game_dir']) / 'sce_sys' / 'icon0.png'):
             try:
                 self.icon = self.tk.PhotoImage(file=str(icon))
                 if self.icon.width() > 128:
@@ -805,7 +819,8 @@ class Launcher:
 
         def number():
             try:
-                return max(minimum, min(maximum, int(value.get())))
+                candidate = int(value.get())
+                return min(maximum, 120) if candidate <= 0 else max(minimum, min(maximum, candidate))
             except (ValueError, tk.TclError):
                 return min(maximum, 120)
 
@@ -890,11 +905,12 @@ class Launcher:
     def check(self, parent, key, store, title, hint=None):
         ttk = self.ttk
         r = self.next_row(parent)
-        ttk.Checkbutton(parent, text=title, variable=self.var(key, store)).grid(
-            row=r, column=0, columnspan=2, sticky='w', pady=(4, 0))
+        widget = ttk.Checkbutton(parent, text=title, variable=self.var(key, store))
+        widget.grid(row=r, column=0, columnspan=2, sticky='w', pady=(4, 0))
         if hint:
             ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(640), justify='left').grid(
                 row=r + 1, column=0, columnspan=2, sticky='w', padx=(26, 0))
+        return widget
 
     def note(self, parent, text, top=12):
         self.ttk.Label(parent, text=text, style='Muted.TLabel', wraplength=self.px(680), justify='left').grid(
@@ -1222,6 +1238,9 @@ class Launcher:
                  self.choice(f, 'reflex', 'menu', REFLEX_MODES),
                  _('Available independently of DLSS FG on supported NVIDIA GPUs. NVIDIA FG enables Reflex automatically; Boost is optional.',
                    'Работает независимо от DLSS FG на совместимых GPU NVIDIA. NVIDIA FG включает Reflex автоматически; Boost необязателен.'))
+        self.amd_antilag_check = self.check(f, 'amd_antilag', 'menu', 'AMD Anti-Lag 2',
+                   _('Reduces input latency on supported Radeon GPUs through VK_AMD_anti_lag. Independent of the upscaler and FSR FG; unavailable drivers keep the normal path.',
+                     'Снижает задержку ввода на совместимых Radeon через VK_AMD_anti_lag. Независимо от апскейлера и FSR FG; без поддержки используется обычный режим.'))
         self.check(f, 'limit_generated_fps', 'menu',
                    _('Limit total FPS with Frame Generation', 'Лимит общих FPS с генерацией кадров'))
         holder = self.fps_cap_control(f, 'generated_fps_limit', 'menu', 30, 1000,
@@ -1297,7 +1316,7 @@ class Launcher:
                    'Патчи сообщества для версии 1.09. «Без ограничения» — игра использует реальное время кадра. '
                    'Другие версии всегда работают в 30 FPS.'))
         self.row(f, _('Frame cap (unlocked mode)', 'Ограничение FPS (режим без ограничения)'),
-                 self.fps_cap_control(f, 'frame_cap', 'app', 30, 120, options=FRAME_CAPS),
+                 self.fps_cap_control(f, 'real_fps_limit', 'menu', 30, 120, options=FRAME_CAPS),
                  _("Above about 120 FPS the game's movement timing breaks (running and rolling get slower, "
                    'physics and animations can glitch): higher caps are at your own risk.',
                    'Выше ~120 FPS ломается тайминг движения игры (бег и перекаты замедляются, возможны '
@@ -1622,6 +1641,11 @@ class Launcher:
             elif result.returncode:
                 text = _('✗ No Vulkan 1.3 graphics card found (update the driver)',
                          '✗ Не найдена видеокарта с Vulkan 1.3 (обновите драйвер)')
+            capability = subprocess.run([str(exe), '--amd-antilag'], capture_output=True, text=True,
+                                        timeout=30, env=env, creationflags=NO_WINDOW)
+            if capability.returncode == 0 and capability.stdout.strip() in ('0', '1'):
+                available = capability.stdout.strip() == '1'
+                self.ui_calls.put(lambda: self.amd_antilag_check.configure(state='normal' if available else 'disabled'))
         except (OSError, subprocess.TimeoutExpired):
             pass
         self.gpu_text = text
@@ -1738,6 +1762,11 @@ class Launcher:
                 self.menu[key] = value
             else:
                 self.app[key] = value
+        # Migrate the old launcher-only cap into the shared live setting, including
+        # an unchanged migrated value. A running game's edits were merged above.
+        menu_changes['real_fps_limit'] = self.menu['real_fps_limit']
+        self.app['frame_cap'] = ''
+        self.app['real_fps_limit'] = self.menu['real_fps_limit']
         save_menu(menu_changes)
         self.menu_baseline = dict(self.menu)
         self.app['window_mode'] = self.menu['window_mode']

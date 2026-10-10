@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1800" height="700" viewBox="0 0 1800 700" role="img" aria-labelledby="title desc">
+  <title id="title">Bloodborne: The Crowned Workshop — TatsunaKyo</title>
+  <desc id="desc">TatsunaKyo's crowned TK emblem beside the project title. A solitary hunter stands at a Gothic workbench lit by a warm lantern. An enormous pale-red moon fills the tall window. Original workshop artwork and editable lettering.</desc>
+  <image id="workshop-art" x="0" y="0" width="1800" height="700" preserveAspectRatio="xMidYMid slice" xlink:href="crowned-workshop-art-lantern.png"/>
+  <g id="personal-emblem" transform="translate(82 63) scale(.59)" fill="none" stroke="#d6c1a1" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter">
+    <path id="crown" d="M54 74L47 34L90 54L128 18L166 54L209 34L202 74M58 87H198"/>
+    <path id="workshop-arch" d="M47 218V153Q47 122 128 101Q209 122 209 153V218"/>
+    <path id="initial-t" d="M75 137H137M106 137V216"/>
+    <path id="initial-k" d="M151 137V216M186 137L151 174L189 216"/>
+    <path id="workbench" d="M40 237H216M57 237V246M199 237V246"/>
+  </g>
+  <g id="editable-typography" font-family="Georgia,DejaVu Serif,serif">
+    <text id="signature" x="258" y="155" font-size="53" font-style="italic" fill="#d6c1a1">TatsunaKyo</text>
+    <text id="game-title" x="85" y="341" font-size="98" letter-spacing="1.8" fill="#f1e9dc" textLength="744" lengthAdjust="spacingAndGlyphs">BLOODBORNE</text>
+    <path id="title-rule" d="M92 374H818" fill="none" stroke="#8d7964" stroke-width="1.5"/>
+    <text id="workshop-title-one" x="87" y="465" font-size="71" fill="#ede3d2">The Crowned</text>
+    <text id="workshop-title-two" x="87" y="555" font-size="71" fill="#ede3d2">Workshop</text>
+  </g>
+</svg>

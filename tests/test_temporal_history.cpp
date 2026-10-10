@@ -18,6 +18,22 @@ static CameraSample Camera(float x = 0, float angle = 0) {
 }
 
 int main() {
+    // A submitted draw owns its camera snapshot even if the guest rewrites the
+    // same allocation before the recording thread processes that draw.
+    std::array<float,216> guest{};
+    const auto original = Camera(2);
+    guest[0]=3000;guest[1]=1.f/3000;guest[4]=1920;guest[5]=1080;
+    std::copy(original.view.begin(),original.view.end(),guest.begin()+8);
+    std::copy(original.inv_view.begin(),original.inv_view.end(),guest.begin()+180);
+    guest[52]=original.proj[0];guest[57]=original.proj[1];guest[62]=original.proj[2];guest[63]=original.proj[3];
+    const auto submitted = guest;
+    guest[183]=1000;guest[4]=3840;
+    const auto decoded=DecodeSceneCamera(submitted);
+    assert(decoded && decoded->camera.inv_view==original.inv_view && decoded->size[0]==1920);
+    assert(DecodeSceneCamera(guest)->camera.inv_view!=decoded->camera.inv_view);
+    assert(!DecodeSceneCamera(std::span(submitted).first(215)));
+    guest[4]=std::numeric_limits<float>::quiet_NaN();assert(!DecodeSceneCamera(guest));
+    guest=submitted;guest[1]=0;assert(!DecodeSceneCamera(guest));
     CameraHistory history;
     assert(history.NeedsCamera());
     assert(history.Capture(Camera()) && history.Reset());
@@ -92,5 +108,5 @@ int main() {
     assert(std::abs(bias.Get(1280, 3840) + 1.5849625f) < 1e-6f);
     assert(bias.Get(3840, 3840) == 0 && bias.Get(3840, 1920) == 0);
     assert(bias.Get(1920, 3840) == -1.0f);
-    std::puts("Temporal history: PASS (smooth motion/FOV, cuts, resize, loading, invalid data, recovery, cached mip bias)");
+    std::puts("Temporal history: PASS (submitted camera snapshot, bounds, smooth motion/FOV, cuts, resize, loading, invalid data, recovery, cached mip bias)");
 }

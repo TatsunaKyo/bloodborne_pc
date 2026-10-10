@@ -1032,7 +1032,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }();
         bool gated = !all_motion;
         u64 palette = 0;
-        for (const auto& resource : vs.buffers) {
+        for (u32 buffer_index=0; buffer_index<vs.buffers.size(); ++buffer_index) {
+            const auto& resource = vs.buffers[buffer_index];
             if (resource.IsSpecial()) continue;
             const auto buffer = resource.GetSharp(vs);
             const u32 size = buffer.GetSize();
@@ -1043,7 +1044,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 break;
             }
             const VAddr address = buffer.base_address;
-            if (role == Motion::BufferRole::SmallSkeleton &&
+            const RingBinding* ring = num_ring_stages ? FindRingBinding(vs,buffer_index) : nullptr;
+            if (role == Motion::BufferRole::SmallSkeleton && ring) {
+                palette = XXH3_64bits_withSeed(constant_ring->Data(ring->offset),ring->size,palette);
+            } else if (role == Motion::BufferRole::SmallSkeleton &&
                 memory->IsValidGpuMapping(address, 0) &&
                 memory->ClampRangeSize(address, size) == size) {
                 palette = XXH3_64bits_withSeed(reinterpret_cast<const void*>(address), size,
@@ -1064,12 +1068,14 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 range = {};
                 const u64 bytes = u64(regs.num_indices) * index_size;
                 if (index_address && memory->IsValidGpuMapping(index_address, 0) &&
-                    memory->ClampRangeSize(index_address, bytes) == bytes) {
+                    memory->ClampRangeSize(index_address, bytes) == bytes &&
+                    !buffer_cache.IsRegionGpuModified(index_address, bytes)) {
                     const bool restart = regs.enable_primitive_restart != 0;
                     const u32 count = regs.num_indices;
+                    const auto* data = reinterpret_cast<const void*>(index_address);
+                    const u64 content = XXH3_64bits(data,bytes);
                     const auto scanned = object_motion->IndexRange(
-                        {index_address, count, index_size, s32(base_vertex), restart}, [&] {
-                            const auto* data = reinterpret_cast<const void*>(index_address);
+                        {index_address, count, index_size, s32(base_vertex), restart}, content, [&] {
                             const auto scan_range =
                                 index_size == 2
                                     ? Motion::IndexedRange(
@@ -1078,8 +1084,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                                     : Motion::IndexedRange(
                                           std::span(static_cast<const u32*>(data), count),
                                           s32(base_vertex), restart);
-                            return Motion::IndexRangeCache::Result{scan_range,
-                                                                   XXH3_64bits(data, bytes)};
+                            return Motion::IndexRangeCache::Result{scan_range,content};
                         });
                     range = scanned.range;
                     topology = scanned.topology;
@@ -2034,9 +2039,10 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         if (ring) {
             // Copied by the GPU command thread into the constant ring (read-only).
             if (!desc.IsSpecial()) {
-                if (ring->size == 864 && gbuffer_draw && camera_motion->NeedsCamera() &&
-                    memory->IsValidGpuMapping(ring->address, 0)) {
-                    camera_motion->OnConstants(reinterpret_cast<const float*>(ring->address));
+                if (ring->size == 864 && gbuffer_draw && camera_motion->NeedsCamera()) {
+                    // The draw uses this snapshot. Guest memory may already contain a
+                    // later camera by the time the recording thread reaches this packet.
+                    camera_motion->OnConstants(reinterpret_cast<const float*>(constant_ring->Data(ring->offset)));
                 }
                 push_data.AddOffset(binding.buffer, 0);
             }
@@ -2096,7 +2102,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
             const auto vsharp =
                 prepared ? prepared->buffer_sharps[buffer_index] : desc.GetSharp(stage);
             if (vsharp.GetSize() == 864 && gbuffer_draw && camera_motion->NeedsCamera() &&
-                memory->IsValidGpuMapping(vsharp.base_address, 0)) {
+                memory->IsValidGpuMapping(vsharp.base_address, 0) &&
+                memory->ClampRangeSize(vsharp.base_address,864) == 864 &&
+                !buffer_cache.IsRegionGpuModified(vsharp.base_address,864)) {
                 camera_motion->OnConstants(reinterpret_cast<const float*>(vsharp.base_address));
             }
             // Object motion research: the vertex shader buffers of G-buffer draws.

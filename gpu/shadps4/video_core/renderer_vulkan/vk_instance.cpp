@@ -1,4 +1,5 @@
 #include "bbport_nvidia.h"
+#include "bbport_amd.h"
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -190,6 +191,7 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
 Instance::~Instance() {
     ImGui::Core::Shutdown(GetDevice());
     BbNvidia::Shutdown();
+    BbAmd::Shutdown();
     if (Xess* xess=Xess::Get()) xess->Shutdown();
     vmaDestroyAllocator(allocator);
 }
@@ -257,6 +259,12 @@ bool Instance::CreateDevice() {
         LOG_WARNING(Render_Vulkan, "Extension {} unavailable.", extension);
         return false;
     };
+
+    const bool anti_lag = BbAmd::QueryFeature(VkPhysicalDevice(physical_device),
+        properties.vendorID == 0x1002,
+        std::ranges::find(available_extensions, VK_AMD_ANTI_LAG_EXTENSION_NAME) != available_extensions.end(),
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceFeatures2);
+    if (anti_lag) add_extension(VK_AMD_ANTI_LAG_EXTENSION_NAME);
 
     // Required
     ASSERT_MSG(add_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
@@ -643,7 +651,12 @@ bool Instance::CreateDevice() {
     const bool use_xess=Xess::Get() &&
         Xess::Get()->PrepareDeviceFeatures(*instance,physical_device,xess_features);
     if (use_xess) xess_chain.get().pNext=xess_features;
-    auto [device_result, dev] = physical_device.createDeviceUnique(use_xess ? xess_chain.get() : device_chain.get());
+    auto& create_info = use_xess ? xess_chain.get() : device_chain.get();
+    VkPhysicalDeviceAntiLagFeaturesAMD anti_lag_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD,
+        const_cast<void*>(create_info.pNext), VK_TRUE};
+    if (anti_lag) create_info.pNext = &anti_lag_features;
+    auto [device_result, dev] = physical_device.createDeviceUnique(create_info);
     if (device_result != vk::Result::eSuccess) {
         LOG_CRITICAL(Render_Vulkan, "Failed to create device: {}", vk::to_string(device_result));
         return false;
@@ -651,6 +664,7 @@ bool Instance::CreateDevice() {
     device = std::move(dev);
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
+    BbAmd::BindDevice(VkDevice(*device), anti_lag, VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr);
     if (Dlss* dlss = Dlss::Get()) {
         dlss->Initialize(*instance, physical_device, *device);
     }
