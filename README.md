@@ -21,34 +21,19 @@ After setting things up once, **Play Bloodborne.exe** starts the game with the s
 
 ## What this fork adds
 
-### English in-game menu
+### DLSS, FSR and XeSS upscaling
 
-I made the **L3+R3 / Insert** menu available in English, with English as the default, so you can use the settings while playing. You can switch between **English and Russian** immediately, independently of the launcher language and the language of the game. The existing launcher still offers its 13 languages.
+I wanted more control over image quality and more choices for people playing on different GPUs. The original port already had DLSS, FSR and TAA; I added **XeSS Super Resolution** and a separate **DLSS model-preset selector**, with the same settings available in the launcher and while playing.
 
-I also fixed the in-game controls that would ignore clicks. Checkboxes now support repeated mouse clicks, keyboard activation and controller input. Their settings are shared with the launcher through `bbport.menu.ini`, so saving launcher preferences preserves the choices you made during play.
-
-I was planning to work on adding the other languages for the in-game menu but it proved to be a bit more difficult than I initially thought, or rather — it's a bit time consuming and I want to make sure that I work on more fundamental QoL improvements first. I do plan to add it down the line though.
-
-### Borderless fullscreen and background behavior
-
-I added several, different options for window management when compared to the already great, original work. You can choose **Windowed**, **Borderless fullscreen** or **Fullscreen (driver default)** from the Play, Display & FPS tabs or the in-game menu. Borderless uses the current monitor's desktop resolution and refresh rate, without a display mode switch when you Alt-Tab, which was my main complaint from the original branch.
-
-I kept the default one-frame GPU queue to avoid adding delay. With **V-sync in borderless** off, the renderer requests Vulkan Immediate presentation, which avoids a V-sync wait but can tear. Turning it on requests Mailbox, with FIFO as the compatibility fallback. Windows and the driver determine whether independent flip is available; borderless by itself cannot guarantee a particular measured latency.
-
-I added **When in background** so you can choose what happens while you use another window, especially in borderless mode:
-
-| Setting | Behavior while the window is unfocused |
+| Upscaler | Available option |
 |---|---|
-| Keep running | Keeps the foreground settings. |
-| Pause game and rendering | Cooperatively stops game work and rendering, while window events remain responsive. Game clocks exclude the paused time. |
-| Limit to 30 FPS | Runs at up to 30 real FPS and restores the foreground cap on return. |
-| Limit to 60 FPS | Runs at up to 60 real FPS and restores the foreground cap on return. |
+| DLSS | Quality/render scale plus a separate model preset; requires a supported RTX GPU. |
+| FSR 3.1 | The existing reconstruction path, also used as a fallback if another provider fails. |
+| FSR 4 | Available with its shader assets and the required device features. |
+| XeSS Super Resolution 3.0.2 | The added Intel Vulkan integration, for supported Intel and other GPUs. |
+| TAA / native AA | Temporal AA at the scene's native resolution. |
 
-Frame Generation is disabled during background pause or a background FPS limit. Keep running preserves it. These choices are available in the launcher and in-game alike.
-
-### DLSS model presets
-
-I added a DLSS model selector for those who want control over which reconstruction model they request. It is separate from **Quality / Balanced / Performance / Ultra Performance**: the quality setting changes input resolution, while the letter requests a model.
+For DLSS, I exposed the following presets exactly as separate choices:
 
 | Preset | Dropdown label |
 |---|---|
@@ -60,84 +45,99 @@ I added a DLSS model selector for those who want control over which reconstructi
 | M | M (Transformer 2nd gen) |
 | L | L (Transformer 2nd gen) |
 
-I put the selector in **Play**, **Graphics** and the in-game menu, so you can change the preset without restarting the game. The Play row appears only when DLSS is selected; Graphics keeps the choice visible but disabled with another upscaler. Your saved selection is retained when switching providers.
+The letter selects the model hint; **Quality / Balanced / Performance / Ultra Performance** still controls the input resolution. I put the selector in **Play**, **Graphics** and the in-game menu so you can try another preset without restarting the game. Play shows it only with DLSS selected; Graphics disables it with another upscaler. Your saved choice stays available when you return to DLSS.
 
-### Upscaling choices, including DLSS, FSR and XeSS
+I do not currently own an Intel GPU, so I would especially appreciate XeSS results from people who can try it on Intel hardware. The package includes the vendor runtimes and their licenses, and the renderer logs a reason if a provider fails and falls back to FSR 3.1.
 
-The graphics selector includes **DLSS**, **FSR 3.1**, **FSR 4**, **XeSS Super Resolution 3.0.2** and **TAA / native AA**. XeSS uses Intel's Vulkan API with scene depth, motion vectors and linear color conversion. If a provider fails or the required hardware features are missing, the renderer reports the problem and falls back to FSR 3.1. I do not currently own an Intel GPU, thus the burden of testing lies on eventual users.
+### Frame Generation, Multi Frame Generation and Reflex
 
-DLSS needs a supported GeForce RTX GPU. FSR 4 also needs its included shader assets and the required device features. XeSS availability depends on the GPU and driver. The full Windows package includes the necessary runtime files and their licenses.
+I added FG so you can get more display updates while keeping the game's real-frame limit separate. You can choose it directly on **Play**, in **Graphics**, or in the in-game menu. It works with the temporal upscalers, including native-resolution TAA; FSR FG can also be used with DLSS or XeSS.
 
-I added XeSS Super Resolution to give supported Intel GPUs another reconstruction option. The original DLSS, FSR and TAA choices remain available as well.
-
-### Upscaler-independent FSR and DLSS Frame Generation, DLSS Multi Frame Generation and NVIDIA Reflex
-
-**Frame Generation** is available directly on **Play** and Graphics tab, and in-game. A temporal upscaler must be active; FSR FG can also be combined with DLSS or XeSS.
-
-| Choice | Included integration |
+| Choice | What I integrated |
 |---|---|
-| FSR Frame Generation | Analytical **FSR 3.1.6**, generating one intermediate frame for 2x output. |
-| NVIDIA DLSS Frame Generation / MFG | **Streamline 2.14.1** with the production **DLSS-G 310.9.1** runtime; fixed 2x–6x choices, clamped to what the GPU and driver support. |
-| NVIDIA Reflex | **Off**, **On** or **On + Boost**, independently of FG and the upscaler. NVIDIA FG enables Reflex automatically; Boost remains optional. |
+| FSR Frame Generation | Analytical FSR 3.1.6, adding one intermediate frame for x2 output. |
+| NVIDIA DLSS FG / MFG | Streamline 2.14.1 with production DLSS-G 310.9.1; fixed x2–x6 choices, according to the GPU and driver. |
+| NVIDIA Reflex | Off, On or On + Boost, usable independently of FG and the upscaler. NVIDIA FG enables Reflex automatically. |
 
-HDR support was a requirement for me, so both FG backends accept **SDR and HDR10**. FSR converts PQ color to linear half-float for interpolation and back to HDR10 afterward. NVIDIA uses the actual SDR/HDR10 backbuffer and stable depth/motion inputs. Input lifetime is tied to completion fences before buffers can be reused. I also kept Reflex independent of FG, so you can use it on its own.
+HDR mattered to me, so I kept **SDR and HDR10** support in both FG paths. I also made Reflex a separate choice because you should be able to use it without switching FG on. Boost remains optional.
 
-The overlay distinguishes real game FPS from generated output. NVIDIA output uses the SDK's actual presentation counter, rather than multiplying the real FPS by the requested mode. See [the FG guide](docs/frame-generation.md) for hardware requirements, latency readouts and current limitations.
+The overlay uses NVIDIA's actual presentation count for output FPS. It also offers the confirmed FG provider/multiplier, so you can see whether generation is active rather than relying on the setting you selected. The [FG guide](docs/frame-generation.md) covers hardware requirements and the remaining HUD/backend work.
 
-### Arbitrary FPS caps and separate toggles for Frame Generation caps
+### Exact FPS limits
 
-I added **75 FPS** between 60 and 90 and kept the normal **FPS cap** tied to real game frames. FG can add output frames above that limit: 75 real FPS with 2x FG can produce up to 150 output FPS.
+I added **75 FPS** between 60 and 90, and editable number fields because dragging a slider was frustrating when I wanted a precise value. The ordinary **FPS cap** limits real game frames. With 75 real FPS and x2 FG, you can get up to 150 output FPS.
 
-For those who also want to limit generated output, I added the optional **Limit total FPS with Frame Generation**, with its own **30–1000** setting. It accounts for the active multiplier without raising the real-frame cap or advancing physics for generated frames. For example, 75 real FPS with a 120 total cap at 2x lowers the real-frame ceiling to 60. A value that does not divide evenly may produce a slightly lower total.
+If you also want an output cap, enable **Limit total FPS with Frame Generation** and enter a value from **30 to 1000**. For example, a 130 output cap at x2 gives a 65 real-frame ceiling. Generated frames do not advance game logic or physics. I recommend keeping the real-frame cap at 120 or below, since the original game logic can misbehave at extreme rates. Testing and reporting are welcome if you try other limits.
 
-Both caps have an editable number box as well as more precise drag controls, so that the user can arbitrarily cap FPS. **BE WARNED** total-cap range is a configuration range, not a claim that the game can sustain 1000 FPS. I recommend to keep real-frame limits at 120 or below: the original game logic can misbehave at extreme real FPS. Of course, testing and reporting is encouraged in order to improve the project.
+### Temporal stability and renderer optimizations
 
-### A compact, configurable overlay
+In Revision 10, I added a shared history reset for teleports, abrupt camera/FOV changes, resolution changes and returning from frames without a camera. I want DLSS, FSR, XeSS, TAA and FG to start from the new scene, so the old one does not trail into it. Normal movement and gradual zoom keep their accumulation.
 
-**Show performance overlay** switches the OSD on or off in the launcher and in-game. The original basic overlay is still available for minimalistic users. You can independently add:
+I've also worked on reducing unnecessary CPU and driver overhead: repeated camera checks, unchanged mip-bias calculations, image-view creation and redundant image barriers. I spread mesh verification across frames to avoid checking the whole scene in one periodic burst. I've done this optimization work, but I can't guarantee an FPS increase on different configurations yet. Testing from other users is very welcome; please include your hardware and settings so I can compare the results. The technical details are in [Quality and performance](docs/quality-and-performance.md).
+
+### Borderless fullscreen and background behavior
+
+I added several, different options for window management when compared to the already great, original work. You can choose **Windowed**, **Borderless fullscreen** or **Fullscreen (driver default)** from the Play, Display & FPS tabs or the in-game menu. Borderless uses the current monitor's desktop resolution and refresh rate, without a display mode switch when you Alt-Tab, which was my main complaint from the original branch.
+
+I kept the default one-frame GPU queue to favor lower latency. With **V-sync in borderless** off, I request Immediate presentation, which can tear. On requests Mailbox, with FIFO as a compatibility fallback. The actual Windows/driver presentation path still matters, so compare both options on your setup.
+
+I added **When in background** so you can choose what happens while using another window:
+
+| Setting | Behavior while the window is unfocused |
+|---|---|
+| Keep running | Keeps the foreground settings and FG. |
+| Pause game and rendering | Pauses game work/rendering while window events remain responsive. Game clocks exclude the paused time. |
+| Limit to 30 FPS | Uses up to 30 real FPS, respecting a lower foreground cap. |
+| Limit to 60 FPS | Uses up to 60 real FPS, respecting a lower foreground cap. |
+
+On return, the foreground policy is restored. FG is suspended during background pause or a background FPS limit. The same choices are available in the launcher and in-game.
+
+### A compact overlay you can customize
+
+I wanted useful information without the overlay taking more space. You can keep the original basic readout, turn it off with **Show performance overlay**, or independently add:
 
 | Optional field | What it shows |
 |---|---|
-| DLSS preset | The accepted preset hint as a letter, such as `DLSS (M)`. `K>M` means a change is pending. Driver overrides may still choose another internal model. |
-| Input/output resolution | The current scene and display dimensions, such as `1280x720>3840x2160`. |
-| Frame Generation | Whether generation is confirmed active, its provider and the negotiated multiplier. |
+| DLSS preset | The accepted letter, such as `DLSS (M)`, or `K>M` while a change is pending. Driver overrides can still choose another internal model. |
+| Input/output resolution | The actual scene and display sizes, such as `1280x720>3840x2160`. |
+| Frame Generation | The confirmed provider and multiplier. |
 | PC latency | A completed NVIDIA Reflex report, or `N/A` when unavailable. It excludes the display and input device. |
 
-I kept the extra fields on the same compact line because I wanted more useful information without taking more screen space. The full CNN/Transformer descriptions remain in the preset dropdowns. On Play, **Customize overlay…** opens Display & FPS, while the main overlay checkbox stays on the page. Each extra field starts off, keeping the original layout unless you choose otherwise.
+I kept the extra fields on the same line and left them off by default. The preset's full CNN/Transformer description stays in the dropdown. **Customize overlay…** on Play opens Display & FPS; the main overlay checkbox stays on Play. You can also change these options in-game.
 
 ### Cheats you can change during play
 
-The added options live in the same **Cheats** section as the original patches. They start off and can be changed from the launcher or the in-game menu. Those are completely optional and any uninterested user can ignore this section entirely.
+I put the added options in the same **Cheats** section as the original patches, with controls in the launcher and in-game. Those are completely optional and any uninterested user can ignore this section entirely.
 
 | Cheat | Available choices / effect |
 |---|---|
 | Player damage | x2, x4, x8, x16 outgoing damage. |
-| Reduce enemy damage | Divides incoming enemy damage by x2, x4, x8 or x16. Defense stats do not change. |
-| Blood Echoes gained | x2, x4, x8, x16 positive rewards; spending and the game's balance ceiling stay intact. |
+| Reduce enemy damage | Divides incoming enemy damage by x2, x4, x8 or x16 without changing defense stats. |
+| Blood Echoes gained | x2, x4, x8, x16 positive rewards. Spending and the normal balance ceiling stay intact. |
 | Movement speed | x1.5, x2, x4, x8, x16 for the player. |
-| Infinite stamina | Covers action, continuous movement and direct stamina consumption paths. |
+| Infinite stamina | Guards action, continuous movement and direct stamina consumption. |
 | Consumables are not reduced on use | Keeps owned items and ammunition after use. |
-| No fall damage | Skips ordinary player fall damage; death volumes and scripted deaths still apply. |
+| No fall damage | Skips ordinary player fall damage. Death volumes and scripted deaths still apply. |
 
-I added instruction and player-binding checks before each feature is installed on 1.09. A conflicting or mismatched patch disables that feature and logs the reason. NPCs and ordinary inventory transfers retain their normal behavior. The original startup patches are marked as requiring a restart. Details and regression coverage are in [the cheat guide](docs/cheats.md).
+The new cheats start off. I verify the 1.09 instructions and player binding before installing them; if a patch conflicts, the affected feature is disabled and the reason is logged. The original startup patches are marked as requiring a restart. The [cheat guide](docs/cheats.md) explains the behavior and current checks.
 
-### Temporal stability and renderer work
+### English in-game settings and working controls
 
-In Revision 10, I added a shared camera-history reset for teleports, abrupt camera/FOV changes, resolution changes and returning from frames without a camera. I want the upscalers and FG to start from the new scene instead of dragging an unrelated previous frame into it. The same reset reaches **DLSS, FSR, XeSS, TAA and Frame Generation**. On the transition frame, motion uses the current camera and discards stale object history; smooth movement and gradual zoom keep temporal accumulation.
+I made the **L3+R3 / Insert** menu available in English and set it as the default. You can switch between **English and Russian** immediately, independently of the launcher and game languages. The launcher still offers its original 13 languages.
 
-I also removed repeated camera memory checks after capture, cached the unchanged scene mip bias, reused Vulkan image views and skipped repeated read-to-read transitions for the object-motion image. Index-buffer revalidation is spread across 32 frames instead of returning as a scene-wide periodic burst. The production cache test with 4,096 meshes reduces the periodic peak from **4,096 to 149 scans per frame**, with the same maximum revalidation interval. This is a workload result; actual FPS depends on the scene and hardware.
+I also corrected the checkboxes that ignored clicks. Settings are shared through `bbport.menu.ini`, so saving from the launcher preserves the choices you made during play.
 
-These are targeted changes for stale history and avoidable renderer work. I still need to improve motion coverage and separate the HUD from interpolation; the [quality and performance notes](docs/quality-and-performance.md) explain those next steps.
+I was planning to work on adding the other languages for the in-game menu but it proved to be a bit more difficult than I initially thought, or rather — it's a bit time consuming and I want to make sure that I work on more fundamental QoL improvements first. I do plan to add it down the line though.
+
+### A cleaner launcher
+
+I named the launcher **TatsunaKyo revision** and pointed its updater at this fork. I also corrected the Play layout: the conditional DLSS/FG controls line up with the other settings, and the NVIDIA multiplier has its own row above Output. Small windows and higher DPI reduce the banner to leave space for the controls.
 
 ### Optional developer diagnostics and data profiling
 
-I added **General → Diagnostics → Developer profiling and crash diagnostics** to make crashes easier to investigate. It keeps per-session logs, active settings, timings, exit codes and Windows crash dumps when available. I left it off by default because ordinary play should not require the profiler. [Performance notes](docs/performance.md) describe optional comparisons.
+For troubleshooting, I added **General → Diagnostics → Developer profiling and crash diagnostics**. It keeps session logs, settings, timings, exit codes and Windows crash dumps when available. I left it off by default so ordinary play does not need the profiler. The [performance guide](docs/performance.md) explains how to compare a slow scene.
 
-### Launcher and update integration
-
-I changed the launcher branding to **TatsunaKyo revision** and pointed its updater at this fork, so updates keep you on this revision. It accepts matching Windows packages while preserving saves, mods and settings. I also corrected the Play layout: the conditional DLSS/FG controls stay aligned, and the NVIDIA multiplier has its own row above Output. Small windows and higher DPI reduce the banner to leave space for the controls.
-
-The upstream features remain available: keyboard/controller support, mod and community-patch loading, desktop/Steam shortcuts, shader-cache tools, game effects and beta online co-op through shadNet and The Hunter's Dream. These keep their original project credits.
+The original port's mod/patch loading, keyboard/controller support, desktop/Steam shortcuts, shader-cache tools, game effects and beta online co-op remain available, with their original credits.
 
 ## Requirements and test setup
 

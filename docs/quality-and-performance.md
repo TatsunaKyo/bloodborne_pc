@@ -19,7 +19,7 @@ I made this change so a teleport or loading transition starts from the new scene
 - Index-range verification now assigns each mesh a stable phase within the existing 32-frame interval. A new entry is checked again within 1–32 frames, then every 32 frames, with topology changes still detected and unused entries trimmed.
 - Revision 4's cached upscaled-display image view is retained, as is the one-frame default GPU queue.
 
-I checked the scan distribution with the production cache fixture: it loads 4,096 meshes together and uses them for 64 more frames. The old policy rescanned all 4,096 together every 32 frames. The new policy peaks at 149 scans in a periodic frame, with the same 12,288 total scans including the initial load. That gives me a concrete workload comparison. It does not establish an FPS gain in Central Yharnam.
+I checked the scan distribution with the production cache fixture: it loads 4,096 meshes together and uses them for 64 more frames. The old policy rescanned all 4,096 together every 32 frames. The new policy peaks at 149 scans in a periodic frame, with the same 12,288 total scans including the initial load. I made this change to spread that work more evenly. I can't guarantee an FPS increase on different configurations yet, so I would welcome tests from other users, especially in places where frame delivery is uneven.
 
 ## Remaining quality work
 

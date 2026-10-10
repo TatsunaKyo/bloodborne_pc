@@ -35,7 +35,7 @@ The seven added runtime cheats remain player damage, incoming-damage reduction, 
 
 The first scheduling issue I found is in `VideoOutDriver::PresentThread`, in `gpu/shadps4/core/libraries/videoout/driver.cpp`. After a delayed flip, the current deadline advances with `max(next_flip + period, now - period)`. That can leave it in the past and let queued requests through in a short burst.
 
-A model of that exact recurrence at 90 FPS, after a 50 ms stall and with 1 ms of present-call work per request, gives submission times of **50, 51, 52 and 61.111 ms**. The first two gaps are 1 ms, while the nominal period is 11.111 ms. This demonstrates a catch-up case in the scheduling rule. It is not a measurement of Windows scanout or proof that it explains every reported stutter.
+A model of that exact recurrence at 90 FPS, after a 50 ms stall and with 1 ms of present-call work per request, gives submission times of **50, 51, 52 and 61.111 ms**. The first two gaps are 1 ms, while the nominal period is 11.111 ms. That helped me identify a catch-up case worth fixing in the scheduler. I still need to check the result on the Windows gameplay setup, since there may be other causes of uneven delivery as well.
 
 For the next pacing patch, I want to handle a missed interval without draining old deadlines in a burst, while preserving normal steady cadence. I need to check that policy with queued requests, changing caps, long stalls, uncapped mode, background transitions and shutdown. The guest's vblank notifications and game timing must stay separate from generated presents.
 
@@ -134,7 +134,7 @@ For the next executable revision, I would start with the overdue-deadline correc
 
 ## Implementation references
 
-References are starting points, with their original authors credited. They are not claims that an external patch has been incorporated or proven on this fork.
+These are the references I used to plan the work, with their original authors credited. I will adapt and check any code I use against this port's own runtime and rendering pipeline.
 
 - [AwesomeObserver native fork at `405f9fe`](https://github.com/AwesomeObserver/bloodborne_pc/tree/405f9fe6a13aaa9e5265dfd7d72c99188706d101): HUD coverage, owned FG inputs, Windows timer use and cache recovery. Its native integration is closer to this port than emulator-specific loader code, but its FG/HDR interfaces differ.
 - [Official shadPS4 Bloodborne 1.09 cheats](https://github.com/shadps4-emu/ps4_cheats/blob/main/CHEATS/CUSA03173_01.09.json), credited to Shiningami + bloo: Insight and one-hit-kill behavior references. Fixed code caves, relocated addresses, balance-forcing logic and assumed object layouts must not be copied directly into this runtime.

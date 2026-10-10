@@ -8,7 +8,7 @@ I fixed the controls that did not toggle in the in-game menu and replaced my bac
 - I kept the Windows event thread running during background pause. Game submissions and presentation wait at native frame boundaries; guest clocks exclude paused time. The game can receive activation and close messages throughout the pause.
 - I kept the DLSS preset dropdown visible in Quick settings and Graphics, but disabled it unless DLSS is selected. The saved preset is preserved and the redundant Quick settings note is removed.
 - I added 75 FPS to the launcher and unlocked-mode cap choices, using the variable frame-time patch with the native limiter.
-- I reused the upscaled display buffer's cached Vulkan image view to avoid a create/destroy cycle on every frame. This reduces driver work; it does not establish a measured Central Yharnam FPS gain.
+- I reused the upscaled display buffer's cached Vulkan image view to avoid a create/destroy cycle on every frame. I made that change to reduce driver overhead. Results from other configurations are welcome.
 - I corrected DLSS GPU-profile labels, which previously appeared as FSR in the timing log. See [the performance capture steps](../performance.md) for comparing the Central Yharnam scene.
 - I kept GitHub prose in complete paragraphs without forced line breaks.
 
