@@ -335,3 +335,11 @@ target_link_libraries(fsr4-bench PRIVATE ffx-vulkan::fsr4-v07-vulkan ffx-vulkan:
 add_executable(background-pause-test EXCLUDE_FROM_ALL ../tests/test_background_pause.cpp shim/bbport_background.cpp)
 target_include_directories(background-pause-test PRIVATE shim)
 target_compile_options(background-pause-test PRIVATE -UNDEBUG)
+
+add_executable(frame-pacing-test EXCLUDE_FROM_ALL ../tests/test_frame_pacing.cpp)
+target_include_directories(frame-pacing-test PRIVATE shim)
+target_compile_options(frame-pacing-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+if (WIN32)
+    target_sources(frame-pacing-test PRIVATE ../src/compat_win.c)
+    target_link_libraries(frame-pacing-test PRIVATE onecore bcrypt)
+endif()

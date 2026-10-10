@@ -15,6 +15,7 @@
 #include "bbport_toggles.h"
 #include "bbport_settings.h"
 #include "bbport_background.h"
+#include "bbframe_pacing.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -595,8 +596,8 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     Common::AccurateTimer timer{vblank_period};
 
-    // bbport: frame limit (see EmulatorSettings::GetFrameLimit). A request waits in the queue
-    // until its slot; slots advance by one period (no drift) but never lag behind by more.
+    // bbport: the limit applies to real frames. A late flip starts a new interval so
+    // queued requests cannot catch up in a burst after a stall.
     const u32 foreground_limit = EmulatorSettings.GetFrameLimit();
     u32 frame_limit = BbSettings::EffectiveFrameLimit(foreground_limit);
     auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
@@ -649,7 +650,8 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         if (flip_slot && vblank_status.count % (main_port.flip_rate + 1) == 0) {
             const auto request = receive_request();
             if (request && frame_limit) {
-                next_flip = std::max(next_flip + frame_period, now - frame_period);
+                next_flip = BbFramePacing::NextFlipDeadline(
+                    next_flip, std::chrono::steady_clock::now(), frame_period);
             }
             if (!request) {
                 if (timer.GetTotalWait().count() < 0) { // Dont draw too fast
@@ -707,17 +709,17 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                 if (next_flip >= tick_deadline) {
                     break;
                 }
-                std::this_thread::sleep_until(next_flip);
+                BbFramePacing::SleepUntil(next_flip);
             }
-            const auto now = std::chrono::steady_clock::now();
             const auto request = receive_request();
             if (request) {
-                next_flip = std::max(next_flip + frame_period, now - frame_period);
+                next_flip = BbFramePacing::NextFlipDeadline(
+                    next_flip, std::chrono::steady_clock::now(), frame_period);
                 Flip(request);
                 FRAME_END;
             }
         }
-        std::this_thread::sleep_until(tick_deadline);
+        BbFramePacing::SleepUntil(tick_deadline);
     }
 }
 

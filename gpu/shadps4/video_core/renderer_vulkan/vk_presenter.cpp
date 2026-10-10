@@ -16,6 +16,7 @@
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
 #include "bbport_background.h"
+#include "bbframe_pacing.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -776,7 +777,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         present_scheduler.Wait(generated_tick);
         const auto half_period=std::chrono::duration<float,std::milli>(
             std::clamp(frame->frame_generation->source.frame_ms*0.5f,1.0f,25.0f));
-        std::this_thread::sleep_for(half_period);
+        BbFramePacing::SleepFor(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(half_period));
         BbBackground::Wait();
         const auto finish_without_real = [&] {
             // FI/OF has already been submitted. Signal the frame's final fence
