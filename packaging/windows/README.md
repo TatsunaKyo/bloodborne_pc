@@ -1,6 +1,6 @@
 # bbport on Windows
 
-Revision 7 builds the NVIDIA Vulkan FG/Reflex integration from the included Streamline 2.14.1 declarations. For a usable Windows package, place the matching production `sl.interposer.dll`, `sl.common.dll`, `sl.dlss_g.dll`, `sl.reflex.dll`, `sl.pcl.dll`, `NvLowLatencyVk.dll`, `nvngx_dlssg.dll` and `nvngx_dlss.dll` in `bin/streamline/`. Include NVIDIA's license files and the matching Microsoft Visual C++ runtime dependencies. The revision ZIP includes these components; copying only `bb-probe.exe` is insufficient. Do not substitute the SDK's development DLLs or mix SDK versions. See [the FG guide](../../docs/frame-generation.md) for supported paths and remaining hardware validation.
+I added the NVIDIA Vulkan FG/Reflex integration in Revision 7 using the included Streamline 2.14.1 declarations. For a usable Windows package, place the matching production `sl.interposer.dll`, `sl.common.dll`, `sl.dlss_g.dll`, `sl.reflex.dll`, `sl.pcl.dll`, `NvLowLatencyVk.dll`, `nvngx_dlssg.dll` and `nvngx_dlss.dll` in `bin/streamline/`. Include NVIDIA's license files and the matching Microsoft Visual C++ runtime dependencies. I bundle these components in the revision ZIP; copying only `bb-probe.exe` is insufficient. Do not substitute the SDK's development DLLs or mix SDK versions. See [the FG guide](../../docs/frame-generation.md) for supported paths and remaining hardware validation.
 
 The port builds and runs natively on 64-bit Windows 10 (1903+) / 11 with the same sources as
 on Linux. Players: see `README-Windows.txt` (it ships in the package).

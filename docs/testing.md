@@ -1,8 +1,8 @@
 # Testing and known issues
 
-Gameplay testing for this fork is carried out by TatsunaKyo on **Windows 11 with an NVIDIA GeForce RTX 5070 Ti**. Revisions are tested and corrected through that setup. The earlier reports of broken controls, continuous stamina drain, an incorrect FG FPS readout and a crash while firing came from those gameplay tests. They are useful regression reports, not evidence that the project has never been played.
+I test this fork on my **Windows 11 PC with an NVIDIA GeForce RTX 5070 Ti** and use those gameplay results to correct each revision. The broken controls, continuous stamina drain, incorrect FG FPS readout and firing crash were problems I encountered during those tests. I keep them here so I can check the same cases again after a fix.
 
-That establishes coverage on one Windows/RTX configuration. It does not establish AMD or Intel gameplay coverage, every monitor/driver combination, or a complete play-through. Newly rebuilt changes should be checked against the same gameplay cases before marking those particular issues resolved.
+That is my main test configuration. I do not currently own an Intel GPU, and AMD/Intel gameplay coverage, other monitor/driver combinations and a complete play-through need separate results. I check newly rebuilt changes against the reported cases before marking those particular issues resolved.
 
 ## Automated coverage
 
@@ -15,7 +15,7 @@ That establishes coverage on one Windows/RTX configuration. It does not establis
 - GPU fixtures for motion, color conversion and the analytical FSR FI/OF pipeline, including SDR/HDR10 and synchronization validation. Packaged logs state which revision produced each run.
 - Windows compilation/linking, runtime hashes, DLL import/export closure and reconstruction of the source tree from the included patch.
 
-Automated fixtures and gameplay reports answer different questions. Test logs record the actual execution environment and results; gameplay coverage is attributed to TatsunaKyo's Windows PC. A synthetic workload reduction is not presented as a measured gameplay FPS increase.
+I use automated fixtures to check settings, hooks, resource contracts and package integrity, alongside gameplay on my Windows PC. The logs state where each check ran and what passed. When a fixture shows less renderer work, I report that workload result; I only call it a gameplay FPS gain when there is a gameplay measurement.
 
 ## Open issues and checks for the current build
 

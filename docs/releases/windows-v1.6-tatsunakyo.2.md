@@ -2,10 +2,12 @@
 
 Based on [revision 1](windows-v1.6-tatsunakyo.1.md), retaining its English in-game menu, borderless fullscreen, DLSS render presets and optional compact performance overlay.
 
+I fixed the sidebar text that was getting clipped. This is a launcher update; the native components remain the verified Revision 1 build.
+
 ## Changes
 
-- Fix clipped launcher text at the top left. The platform and full version now appear on separate, left-aligned lines. The text wraps within the sidebar at the launcher's current DPI instead of extending beyond it.
-- Increment the launcher version to `1.6-tatsunakyo.2`, so revision 1 can detect this update when it is published.
+- I moved the platform and full version onto separate, left-aligned lines. The text wraps within the sidebar at the launcher's current DPI instead of extending beyond it.
+- I incremented the launcher version to `1.6-tatsunakyo.2`, so revision 1 can detect this update when it is published.
 
 ## Installing
 
@@ -15,7 +17,7 @@ For an existing installation, close the launcher and game, preserve saves, mods,
 
 ## Build and validation
 
-The Windows launcher entry point was recompiled and tested from both the source and final `Bloodborne.exe`. Settings, DLSS choices, independent overlay controls and the fork update channel passed their regressions. The renderer and native helper executables are unchanged from the verified revision 1 native build. The full package includes source changes, build details and SHA-256 hashes.
+I recompiled the Windows launcher entry point and checked both its source and the final `Bloodborne.exe`. Settings, DLSS choices, independent overlay controls and the fork update channel passed their regressions. The renderer and native helper executables are unchanged from the verified revision 1 native build. The full package includes source changes, build details and SHA-256 hashes.
 
 Gameplay coverage is collected in [Testing and known issues](../testing.md). Frame Generation and additional cheats were not included in this launcher fix.
 

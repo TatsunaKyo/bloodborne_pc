@@ -1,10 +1,10 @@
 # Bloodborne Windows v1.6 — TatsunaKyo revision 6
 
-This revision adds experimental FSR Frame Generation. Choose **FSR Frame Generation (2x)** in Graphics or the Insert / L3+R3 menu. It works with the temporal upscalers, including DLSS, and starts off. The current implementation uses SDR. With HDR enabled or the upscaler switched off, it keeps presenting real frames.
+I added the first experimental FSR Frame Generation path here. Choose **FSR Frame Generation (2x)** in Graphics or the Insert / L3+R3 menu. It works with the temporal upscalers, including DLSS, and starts off. This initial implementation uses SDR. With HDR enabled or the upscaler switched off, it keeps presenting real frames; HDR support followed in Revision 7.
 
-The renderer now keeps each frame's color, depth and motion alive through interpolation and presentation. Resizing and background pauses reset history. Pause and the 30/60 FPS background limits suspend generation while the window is unfocused. Real-frame FPS limits are unchanged; one interpolated frame adds another presentation update, with its own GPU and pacing cost.
+I keep each frame's color, depth and motion alive through interpolation and presentation. Resizing and background pauses reset history. Pause and the 30/60 FPS background limits suspend generation while the window is unfocused. Real-frame FPS limits are unchanged; one interpolated frame adds another presentation update, with its own GPU and pacing cost.
 
-FSR's actual optical-flow and interpolation dispatches, resource copies, generated pixels, history resets, resizing and background transitions pass the headless Vulkan integration test with synchronization validation and no errors or warnings. The native Windows renderer and launcher are rebuilt from this revision. The tests also click the FG selector in both menu languages and check that launcher settings preserve it.
+I checked FSR's actual optical-flow and interpolation dispatches, resource copies, generated pixels, history resets, resizing and background transitions with the headless Vulkan integration fixture. Synchronization validation reported no errors or warnings. I rebuilt the native Windows renderer and launcher from this revision. The tests also click the FG selector in both menu languages and check that launcher settings preserve it.
 
 Gameplay coverage is documented in [Testing and known issues](../testing.md). The game's HUD is included in interpolation and may show artifacts; the port's OSD and settings are drawn afterward. No GPU benchmark or latency improvement is claimed. See [the Frame Generation guide](../frame-generation.md) for details. NVIDIA FG, Multi Frame Generation, their A/B presets and AMD ML FG are not included yet.
 

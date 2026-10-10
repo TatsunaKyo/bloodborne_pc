@@ -2,9 +2,9 @@
 
 Audit date: **10 October 2026**. Code baseline: [Revision 10, `f84ca08107e77ac7441124835cbb1a38cd386aed`](https://github.com/TatsunaKyo/bloodborne_pc/commit/f84ca08107e77ac7441124835cbb1a38cd386aed).
 
-Revision 10 is finished, rebuilt and delivered, with its source published. It includes the shared camera-history resets and renderer changes described in [Quality and performance](quality-and-performance.md). This roadmap records the next work; its proposed features are not additions to the existing ZIP. The in-game menu stays in English and Russian. Further translations remain out of scope.
+I finished, rebuilt and delivered Revision 10, with its source published. It includes the shared camera-history resets and renderer changes described in [Quality and performance](quality-and-performance.md). Here I have checked each proposed feature against that code and set the order for the next work. The proposed additions are not in the existing ZIP. I am keeping the in-game menu in English and Russian for now; I have postponed further translations while I work on stability and quality of life.
 
-The immediate goal is more reliable play: fix the shooting crash, protect saves and improve frame delivery. New cheats should follow those foundations. Gameplay testing continues on my Windows 11 / RTX 5070 Ti PC, with AMD and Intel results recorded separately. See [Testing and known issues](testing.md).
+My first priority is more reliable play: fix the shooting crash, protect saves and improve frame delivery. I want those foundations in place before adding another wave of cheats. I continue testing gameplay on my Windows 11 / RTX 5070 Ti PC, with AMD and Intel results recorded separately. See [Testing and known issues](testing.md).
 
 ## What exists and what needs work
 
@@ -33,11 +33,11 @@ The seven added runtime cheats remain player damage, incoming-damage reduction, 
 
 ## P0: frame pacing and latency
 
-The first code finding is in `VideoOutDriver::PresentThread`, in `gpu/shadps4/core/libraries/videoout/driver.cpp`. After a delayed flip, the current deadline advances with `max(next_flip + period, now - period)`. That can leave it in the past and let queued requests through in a short burst.
+The first scheduling issue I found is in `VideoOutDriver::PresentThread`, in `gpu/shadps4/core/libraries/videoout/driver.cpp`. After a delayed flip, the current deadline advances with `max(next_flip + period, now - period)`. That can leave it in the past and let queued requests through in a short burst.
 
 A model of that exact recurrence at 90 FPS, after a 50 ms stall and with 1 ms of present-call work per request, gives submission times of **50, 51, 52 and 61.111 ms**. The first two gaps are 1 ms, while the nominal period is 11.111 ms. This demonstrates a catch-up case in the scheduling rule. It is not a measurement of Windows scanout or proof that it explains every reported stutter.
 
-The next pacing patch should handle a missed interval without draining old deadlines in a burst, while preserving normal steady cadence. Test that policy with queued requests, changing caps, long stalls, uncapped mode, background transitions and shutdown. Keep the guest's vblank notifications and game timing separate from generated presents.
+For the next pacing patch, I want to handle a missed interval without draining old deadlines in a burst, while preserving normal steady cadence. I need to check that policy with queued requests, changing caps, long stalls, uncapped mode, background transitions and shutdown. The guest's vblank notifications and game timing must stay separate from generated presents.
 
 Other concrete checks:
 
@@ -70,7 +70,7 @@ Remaining code concerns include unsupported format combinations after the retry,
 3. **Automatic protection:** keep pre-launch snapshots and separate post-exit snapshots, with retention rules that never replace the last known usable save with a crash-session copy. Hash verification detects damaged backup bytes; it cannot prove that the game originally wrote a semantically valid save.
 4. **Profiles and live changes:** switch named save profiles before launch. Snapshots before enabling invasive cheats during play need coordination with all game save writes. Pausing rendering or observing stable timestamps alone does not establish a consistent multi-file snapshot. Defer that live integration until the runtime can acknowledge a safe save boundary.
 
-The first version should preserve the existing save format byte for byte. Save editors are useful format references, but editing balances, converting regions or silently repairing a save is outside the backup manager's initial scope.
+I want the first version to preserve the existing save format byte for byte. Save editors are useful format references, but I am keeping balance editing, region conversion and automatic repair outside the backup manager's initial scope.
 
 ## Cheats: inventory, behavior and feasibility
 
@@ -93,7 +93,7 @@ These additions are planned. None of the requested fourteen features is implemen
 | Easier firearm parry / Adjustable Parry Window | No runtime parry-window control; Bloodborne animation definitions identify parry-possible states. | One shared leveled control: Off, x2, x4, x8, x16 for the eligible vulnerability window. A narrower x0.5 option can serve difficulty customization. Keep non-parryable attacks excluded. | High; one coherent training feature |
 | Increased dodge invulnerability | No runtime dodge-window hook; Bloodborne animation definitions identify invincibility states. | Bounded levels during genuine dodges, restoring normal state afterwards. Use game time, not output/FG frames. Permanent invulnerability is a separate behavior. | High; training tools |
 
-The firearm-parry request and Adjustable Parry Window belong to the same feature. Widen the timing window; do not substitute extra firearm damage or force every shot to stagger every enemy. Higher factors must stay within the eligible attack animation, so a factor may saturate at that bound. Verify how vulnerability enters and exits before selecting the hook. Enlarging a visceral follow-up window is a separate setting and should not be conflated with the shot's parry timing.
+I would combine easier firearm parries and Adjustable Parry Window into one leveled control. I want it to widen the timing window while keeping non-parryable attacks excluded. Higher factors must stay within the eligible attack animation, so a factor may saturate at that bound. I need to verify how vulnerability enters and exits before selecting the hook. Enlarging the visceral follow-up window would be a separate setting.
 
 New runtime features must follow the existing installation contract in `src/runtime_cheats.c` and `gpu/bbcheats.h`: verify the 1.09 image and instructions, reject conflicts, install the complete hook group before game threads start, preserve both game and host ABI state, and provide a cheap disabled path. Validate player/enemy identity and object lifetime at the actual hook context. A matching offset does not prove those preconditions.
 
@@ -128,9 +128,9 @@ Adding D3D12 or a cross-API presentation bridge is a separate architectural proj
 | P2 cheats and training | Start with wear, regeneration, status, Insight and Rally; follow with economy/HP; then parry, dodge, buffs and AI tools. | Verified 1.09 hooks, reversible state, save round trips where relevant, and gameplay checks for the affected mechanic and combinations. |
 | P3 backend extensions | Dynamic MFG, XeSS FG and ML FG feasibility; driver-based FG A/B. | A supported public API, real hardware results and no regression to existing Vulkan/HDR behavior. |
 
-**Revision 10 stays closed.** This documentation update adds the complete inventory and restores omitted upstream issues to the testing page. It keeps the delivered launcher/components and their checksums intact.
+**Revision 10 stays closed.** I have added the complete inventory and restored omitted upstream issues to the testing page. The delivered launcher/components keep their existing checksums.
 
-For the next executable revision, the smallest candidates are the overdue-deadline correction, reuse of the existing Windows timer and targeted malformed-cache rejection. Each still needs its own regression checks and a Windows rebuild. Queue-parallelism changes, live save snapshots, a new cheat wave and wholesale adoption of another fork are deferred until their dependencies are resolved. HUDless composition has a useful reference, but its HDR/resource-lifetime work makes it a separate feature rather than a small pacing fix.
+For the next executable revision, I would start with the overdue-deadline correction, reuse of the existing Windows timer and targeted malformed-cache rejection. Each still needs its own regression checks and a Windows rebuild. I am deferring queue-parallelism changes, live save snapshots and the new cheat wave until their dependencies are resolved. HUDless composition has a useful reference, but I need to handle its HDR and resource lifetimes as a separate feature.
 
 ## Implementation references
 

@@ -1,6 +1,6 @@
 # Publishing TatsunaKyo revisions
 
-The launcher checks releases in `TatsunaKyo/bloodborne_pc`. Use these names consistently:
+I pointed the launcher at releases in `TatsunaKyo/bloodborne_pc`, so an update keeps users on this fork. Use these names consistently:
 
 | Item | Revision 10 |
 |---|---|
@@ -8,6 +8,8 @@ The launcher checks releases in `TatsunaKyo/bloodborne_pc`. Use these names cons
 | GitHub release tag | `windows-v1.6-tatsunakyo.10` |
 | Windows asset | `Bloodborne-Windows-v1.6-TatsunaKyo-Revision-10.zip` |
 | Release title | `Bloodborne for Windows v1.6 — TatsunaKyo revision 10` |
+| Source commit for the existing ZIP | `f84ca08107e77ac7441124835cbb1a38cd386aed` |
+| Existing ZIP SHA-256 | `7f334a030bfb20a4a6a716d0913fef459c9ffc4f9654e8935e7e4eba3b3df06d` |
 
 Increment the revision number for subsequent releases. Increase the upstream version when rebasing onto a newer upstream release. The updater compares the numeric version and revision, rejects unrelated tags, and selects the exact Windows package name.
 
@@ -32,16 +34,18 @@ g++ -std=c++20 -pthread -Igpu/shim tests/test_background_pause.cpp gpu/shim/bbpo
 ./background-pause-test
 ```
 
-On Windows, verify that `Bloodborne.exe` displays TatsunaKyo revision, the Play preset row opens with DLSS selected and is hidden with other upscalers, and L3+R3 / Insert exposes the new controls. Check preservation of saved settings and test borderless presentation with your GPU and Windows version. Record gameplay results on the shared testing page and specific regressions in the release notes; the main setup is Windows 11 with TatsunaKyo’s RTX 5070 Ti.
+On Windows, verify that `Bloodborne.exe` displays TatsunaKyo revision, the Play preset row opens with DLSS selected and is hidden with other upscalers, and L3+R3 / Insert exposes the new controls. Check preservation of saved settings and test borderless presentation with your GPU and Windows version. I use my Windows 11 / RTX 5070 Ti PC for gameplay and record the results on the shared testing page, with specific regressions in the release notes.
 
 ## Release
 
 Create a release in this fork using the names above and target the verified revision commit. Paste [the revision 10 notes](releases/windows-v1.6-tatsunakyo.10.md), attach the full Windows ZIP and its SHA-256 file, then publish when testing is complete. GitHub provides source archives for the release tag. Do not replace an existing release tag with a different commit.
 
+For the already rebuilt Revision 10 ZIP, use the source commit in the table. I have updated the documentation since that build, so the current branch head may be a later documentation commit. If runtime code changes, rebuild and record a new package identity before publishing it.
+
 With the GitHub CLI, a release can first be prepared as a draft:
 
 ```bash
-revision_commit="$(git rev-parse HEAD)"
+revision_commit="f84ca08107e77ac7441124835cbb1a38cd386aed"
 gh release create windows-v1.6-tatsunakyo.10 \
   Bloodborne-Windows-v1.6-TatsunaKyo-Revision-10.zip \
   Bloodborne-Windows-v1.6-TatsunaKyo-Revision-10.zip.sha256 \

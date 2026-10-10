@@ -2,15 +2,17 @@
 
 Based on [Supermedo's Windows v1.6 port](https://github.com/Supermedo/bloodborne_pc/tree/windows-v1.6).
 
+I started this revision because I wanted an English in-game menu, easier Alt-Tab in borderless and more control over DLSS. I put the settings in both interfaces so you can choose them before starting or change them while playing.
+
 ## Changes
 
-- The **in-game menu** opened with **L3+R3 / Insert** defaults to English. English and Russian can be selected in the launcher and in-game independently of the game language.
-- **Borderless fullscreen** is available in the launcher and in-game, alongside Windowed and Fullscreen. In-game switching applies immediately. Borderless uses the desktop resolution and refresh rate without changing display mode or minimizing on focus loss.
+- I made the **in-game menu** opened with **L3+R3 / Insert** default to English. English and Russian can be selected in the launcher and in-game independently of the game language.
+- I added **Borderless fullscreen** in the launcher and in-game, alongside Windowed and Fullscreen. In-game switching applies immediately. Borderless uses the desktop resolution and refresh rate without changing display mode or minimizing on focus loss.
 - **V-sync in borderless** is selectable. With V-sync off the renderer requests Vulkan Immediate presentation, then Mailbox/FIFO if necessary. With V-sync on it requests Mailbox, then FIFO. The existing one-frame GPU queue limit is retained. Immediate can tear; Windows presentation behavior and latency depend on the system and driver.
-- **DLSS render presets** can be selected in the launcher and the in-game menu. They are separate from Quality/Balanced/Performance and do not change render resolution. In-game changes recreate the DLSS feature on the next frame without restarting the game. The launcher selector remains available with other upscalers selected; the saved preset takes effect when DLSS is used.
+- I exposed **DLSS render presets** in the launcher and the in-game menu. They are separate from Quality/Balanced/Performance and do not change render resolution. In-game changes recreate the DLSS feature on the next frame without restarting the game. The launcher selector remains available with other upscalers selected; the saved preset takes effect when DLSS is used.
 - The **top-right performance overlay** can be enabled or disabled from both interfaces. A separate **Show DLSS preset in overlay** choice in the launcher and in-game keeps the original basic overlay or adds the active preset letter on the same line: `DLSS (M)`. `DLSS (K>M)` shows a pending change from K to M; Default is written as `Default` and `-` means no accepted feature yet. There are no extra OSD rows or model-generation descriptions. This option defaults to off. The readout tracks the accepted feature's requested preset; NVIDIA driver/profile overrides can choose a different internal model.
 - Menu language, window mode, borderless V-sync, DLSS preset and both overlay preferences are shared through `bbport.menu.ini`. Launcher saves preserve changes made in-game. Existing fullscreen and `show_fps` preferences are migrated automatically.
-- The launcher is branded **TatsunaKyo revision**. Its updater uses this fork and accepts only matching Windows revision releases and packages.
+- I named the launcher **TatsunaKyo revision** and pointed its updater at this fork. It accepts only matching Windows revision releases and packages.
 - Windows header casing fixes support cross-compilation on case-sensitive systems.
 
 The DLSS dropdown contains these exact choices, in this order:
@@ -37,7 +39,7 @@ When updating an existing installation manually, close the game and launcher, ke
 
 The package includes rebuilt Windows x64 executables, source changes, build details and SHA-256 hashes. `Start-Verified-Launcher.cmd` checks and starts the included launcher. The release tag provides the complete corresponding source; the included patch also reproduces it from upstream `windows-v1.6`.
 
-Checks cover the compiled launcher settings and update channel, saved preferences, in-game ImGui controls, DLSS feature recreation with mocked NGX/Vulkan, Windows compilation/linking and packaged DLL imports. Gameplay testing on TatsunaKyo’s Windows 11 / RTX PC is documented in [Testing and known issues](../testing.md).
+I checked the compiled launcher settings and update channel, saved preferences, in-game ImGui controls, DLSS feature recreation with mocked NGX/Vulkan, Windows compilation/linking and packaged DLL imports. My Windows 11 / RTX gameplay results are collected in [Testing and known issues](../testing.md).
 
 ## Credits and licenses
 
