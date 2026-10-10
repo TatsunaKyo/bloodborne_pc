@@ -1,3 +1,4 @@
+#include "bbport_nvidia.h"
 // bbport: SDL3 window for the Vulkan swapchain (X11 or Wayland).
 #include <cstdlib>
 #include <cstring>
@@ -85,6 +86,7 @@ void WindowSDL::ApplyWindowMode() {
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS,
                 mode == BbSettings::Borderless ? "0" : "1");
     // All SDL window mutations run on the event thread, never on the renderer thread.
+    BbNvidia::BeforeSwapchainChange();
     if (!SDL_SetWindowFullscreenMode(window, nullptr) ||
         !SDL_SetWindowFullscreen(window, mode != BbSettings::Windowed)) {
         LOG_ERROR(Frontend, "Cannot change window mode: {}", SDL_GetError());
@@ -192,6 +194,8 @@ bool WindowSDL::PollEvents() {
         }
     }
     const auto& settings = BbSettings::Get();
+    if (!settings.window_focused && settings.background_mode!=BbSettings::BackgroundRun)
+        BbNvidia::BeforeSwapchainChange();
     BbBackground::Update(is_open && !settings.window_focused &&
                          settings.background_mode == BbSettings::BackgroundPause);
     return is_open;

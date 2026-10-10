@@ -1,3 +1,4 @@
+#include "bbport_nvidia.h"
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -274,7 +275,7 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
 
     static vk::detail::DynamicLoader dl;
     VULKAN_HPP_DEFAULT_DISPATCHER.init(
-        dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
+        reinterpret_cast<PFN_vkGetInstanceProcAddr>(BbNvidia::VulkanLoader(reinterpret_cast<void*>(dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr")))));
 
     const auto [available_version_result, available_version] =
         VULKAN_HPP_DEFAULT_DISPATCHER.vkEnumerateInstanceVersion

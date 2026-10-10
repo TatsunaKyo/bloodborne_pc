@@ -8,12 +8,29 @@ layout(set=0,binding=2,rg16f) uniform readonly image2D scene_motion;
 layout(set=0,binding=3,rgba16f) uniform writeonly image2D color_snapshot;
 layout(set=0,binding=4,r32f) uniform writeonly image2D depth_snapshot;
 layout(set=0,binding=5,rg16f) uniform writeonly image2D motion_snapshot;
-layout(push_constant) uniform Parameters { uvec2 source_size; uvec2 render_size; } parameters;
+layout(push_constant) uniform Parameters { uvec2 source_size; uvec2 render_size; uint transfer; } parameters;
+// HDR10/ST.2084 is converted to scRGB (1.0 = 80 nits) for FI/OF. Highlights
+// stay above 1.0; the generated result is encoded back to PQ before presentation.
+vec3 decodePQ(vec3 pq) {
+    vec3 p=pow(clamp(pq,0.0,1.0),vec3(1.0/78.84375));
+    return pow(max(p-0.8359375,0.0)/max(18.8515625-18.6875*p,vec3(1e-6)),
+               vec3(1.0/0.1593017578125))*125.0;
+}
+vec3 encodePQ(vec3 linear) {
+    vec3 p=pow(clamp(linear/125.0,0.0,1.0),vec3(0.1593017578125));
+    return pow((0.8359375+18.8515625*p)/(1.0+18.6875*p),vec3(78.84375));
+}
 void main() {
     ivec2 p=ivec2(gl_GlobalInvocationID.xy);
     // sRGB sampled views decode to linear scRGB; no second post-processing pass.
-    if (all(lessThan(p,imageSize(color_snapshot))))
-        imageStore(color_snapshot,p,vec4(texelFetch(scene,p,0).rgb,1.0));
+    // NVIDIA uses the native swapchain color; transfer 3 copies only depth/motion.
+    if (parameters.transfer!=3 && all(lessThan(p,imageSize(color_snapshot)))) {
+        vec3 color=texelFetch(scene,p,0).rgb;
+        if (parameters.transfer==1) color=decodePQ(color);
+        if (parameters.transfer==2) color=encodePQ(color);
+        imageStore(color_snapshot,p,vec4(color,1.0));
+    }
+    if (parameters.transfer==2) return;
     if (all(lessThan(uvec2(p),parameters.render_size))) {
         vec2 scale=vec2(parameters.render_size)/vec2(parameters.source_size);
         ivec2 source_p=min(ivec2((vec2(p)+0.5)/scale),ivec2(parameters.source_size)-1);

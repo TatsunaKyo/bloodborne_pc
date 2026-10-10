@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 .text
 .globl invoke_cheat_fixture
+#ifndef _WIN32
 .type invoke_cheat_fixture,@function
+#endif
 invoke_cheat_fixture:
     push %rbx
     push %rbp
@@ -78,5 +80,9 @@ invoke_cheat_fixture:
     pop %rbp
     pop %rbx
     ret
+#ifndef _WIN32
 .size invoke_cheat_fixture,.-invoke_cheat_fixture
+#endif
+#ifndef _WIN32
 .section .note.GNU-stack,"",@progbits
+#endif

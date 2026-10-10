@@ -20,7 +20,16 @@
 namespace BbSettings {
 unsigned EffectiveFrameLimit(unsigned foreground_limit) {
     const auto& s = Get();
-    if (s.window_focused) return foreground_limit;
+    if (s.window_focused || s.background_mode == BackgroundRun) {
+        // The ordinary limit counts real game flips. Only an explicitly enabled
+        // display cap may reduce that rate to account for generated frames.
+        const unsigned multiplier=unsigned(std::max(1,s.frame_generation_active.load()));
+        if (s.limit_generated_fps && multiplier>1) {
+            const unsigned real_cap=unsigned(std::clamp(s.generated_fps_limit.load(),30,1000))/multiplier;
+            return foreground_limit ? std::min(foreground_limit,real_cap) : real_cap;
+        }
+        return foreground_limit;
+    }
     const int mode = s.background_mode;
     const unsigned cap = mode == Background60 ? 60u :
                          (mode == Background30 || mode == BackgroundPause) ? 30u : 0u;
@@ -127,6 +136,9 @@ void Load() {
     v.show_resolution = false;
     v.background_mode = BackgroundRun;
     v.frame_generation = FrameGenerationOff;
+    v.limit_generated_fps = false;
+    v.generated_fps_limit = 144;
+    v.reflex=0;v.nvidia_generated_frames=1;
     v.cheat_damage = v.cheat_incoming = v.cheat_echoes = v.cheat_movement = 0;
     v.cheat_infinite_stamina = v.cheat_no_consume = false;
     for (int e = 0; e < EffectCount; ++e) {
@@ -174,7 +186,15 @@ void Load() {
                 v.background_mode = value == "pause" ? BackgroundPause
                     : value == "30" ? Background30 : value == "60" ? Background60 : BackgroundRun;
             } else if (key == "frame_generation") {
-                v.frame_generation = value == "fsr" ? FrameGenerationFsr : FrameGenerationOff;
+                v.frame_generation = value == "fsr" ? FrameGenerationFsr : value == "nvidia" ? FrameGenerationNvidia : FrameGenerationOff;
+            } else if (key == "reflex") {
+                v.reflex=value=="boost" ? 2 : value=="on" ? 1 : 0;
+            } else if (key == "nvidia_generated_frames") {
+                v.nvidia_generated_frames=std::clamp(std::atoi(value.c_str()),1,5);
+            } else if (key == "limit_generated_fps") {
+                v.limit_generated_fps = value == "1";
+            } else if (key == "generated_fps_limit") {
+                v.generated_fps_limit = std::clamp(std::atoi(value.c_str()),30,1000);
             } else if (key == "cheat_damage" || key == "cheat_incoming" || key == "cheat_echoes") {
                 int index = 0;
                 for (int i = 0; i < 5; ++i) if (value == CheatMultiplierKeys[i]) index = i;
@@ -297,7 +317,10 @@ void Save() {
         std::fprintf(file, "show_resolution=%d\nbackground_mode=%s\n",
                      int(v.show_resolution.load()),
                      background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
-        std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : "off");
+        std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : "off");
+        std::fprintf(file,"reflex=%s\nnvidia_generated_frames=%d\n",v.reflex==2 ? "boost" : v.reflex==1 ? "on" : "off",v.nvidia_generated_frames.load());
+        std::fprintf(file,"limit_generated_fps=%d\ngenerated_fps_limit=%d\n",
+                     int(v.limit_generated_fps.load()),v.generated_fps_limit.load());
         std::fprintf(file, "cheat_damage=%s\ncheat_incoming=%s\ncheat_echoes=%s\ncheat_movement=%s\n"
                           "cheat_infinite_stamina=%d\ncheat_no_consume=%d\n",
                      CheatMultiplierKeys[std::clamp(v.cheat_damage.load(), 0, 4)],

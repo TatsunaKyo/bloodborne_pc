@@ -1083,9 +1083,10 @@ void TemporalUpscaler::Run() {
         frame_ms = 16.6f;
     }
     last_frame = now;
-    if (BbSettings::Get().frame_generation == BbSettings::FrameGenerationFsr) {
+    if (BbSettings::Get().frame_generation != BbSettings::FrameGenerationOff) {
         fg_source={input_depth_view,vk::Image(motion_image),*motion_view,w,h,jitter,
                    camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,true};
+        camera_motion.FrameGenerationCamera(fg_source);
     }
 
     bool dispatched = false;
@@ -1620,9 +1621,10 @@ void TemporalUpscaler::RunScaled() {
         frame_ms = 16.6f;
     }
     last_frame = now;
-    if (BbSettings::Get().frame_generation == BbSettings::FrameGenerationFsr) {
+    if (BbSettings::Get().frame_generation != BbSettings::FrameGenerationOff) {
         fg_source={depth_view,vk::Image(motion_image),*motion_view,w,h,jitter,
                    camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,true};
+        camera_motion.FrameGenerationCamera(fg_source);
     }
 
     // bbport: FSR 4 writes its HDR-format output, copied into the output-size UI image.

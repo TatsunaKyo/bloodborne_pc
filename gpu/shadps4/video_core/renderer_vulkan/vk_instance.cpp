@@ -1,3 +1,4 @@
+#include "bbport_nvidia.h"
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -187,6 +188,7 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
 
 Instance::~Instance() {
     ImGui::Core::Shutdown(GetDevice());
+    BbNvidia::Shutdown();
     vmaDestroyAllocator(allocator);
 }
 

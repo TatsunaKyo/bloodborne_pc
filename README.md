@@ -2,7 +2,7 @@
 
 **Revision maintained by [TatsunaKyo](https://github.com/TatsunaKyo), based on the Windows v1.6 port by [Supermedo](https://github.com/Supermedo).**
 
-This fork adds English in-game settings, borderless fullscreen, DLSS render preset selection, controls for the performance overlay, live cheats and experimental FSR Frame Generation. See the [release notes](docs/releases/windows-v1.6-tatsunakyo.6.md) for the latest changes and [release guide](docs/releasing.md) for versioning and packaging.
+This fork adds English in-game settings, borderless fullscreen, DLSS render preset selection, controls for the performance overlay, cheats and experimental Frame Generation. Revision 7 corrects the cheat player lookup, adds HDR10 to FSR FG, and introduces NVIDIA FG/MFG and independent Reflex controls. See the [release notes](docs/releases/windows-v1.6-tatsunakyo.7.md) for the changes and test limits, and the [release guide](docs/releasing.md) for versioning and packaging.
 
 The original PlayStation 4 game runs directly on your PC: its own x86-64 code runs natively, and the graphics are translated to Vulkan. No emulator window, no setup scripts: unpack the zip, start `Bloodborne.exe`, pick your game folder and press **PLAY**.
 
@@ -17,7 +17,7 @@ The original PlayStation 4 game runs directly on your PC: its own x86-64 code ru
 - **Updates from the launcher:** when a new version is out it tells you, and **Update** installs it. This revision checks releases from TatsunaKyo's fork and accepts only its Windows revision packages. Your saves, settings and mods are kept.
 - **NVIDIA DLSS** on GeForce RTX cards (RTX 20 series and newer).
 - **AMD FSR 3.1 and FSR 4** upscaling, plus native-resolution TAA.
-- **Experimental FSR Frame Generation (2x)** with the temporal upscalers, including DLSS. SDR only for now; see [the FG guide](docs/frame-generation.md).
+- **Experimental Frame Generation:** analytical FSR 3.1.6 in SDR/HDR10, NVIDIA DLSS FG/MFG through Streamline 2.14.1, independent Reflex, and an optional total FPS cap. NVIDIA desktop gameplay still needs hardware testing; see [the FG guide](docs/frame-generation.md).
 - **Unlocked frame rate** with a frame cap (up to 120 by default), or 30/60/75/90 FPS.
 - **Output resolutions** from 720p to 4K, presets from Native AA to Ultra Performance.
 - **Cheats page:** never die, stealth, silent footsteps, Rally that never fades, enemy control, and gameplay tweaks (camera distance, no camera auto-rotation, easier running, ragdoll physics).
@@ -55,7 +55,7 @@ In the game, **Insert** (or **L3+R3** on a controller) opens the settings menu. 
 
 The choice is saved in `bbport.menu.ini` as `background_mode=run|pause|30|60`. The launcher also offers 75 FPS, using the variable frame-time patch with a native 75 FPS cap. The DLSS preset selector stays visible and is enabled when DLSS is selected; choosing another upscaler preserves your saved preset.
 
-The new [live cheats](docs/cheats.md) are available from the launcher and the in-game menu: damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina and consumables kept after use. All are off by default and require verified 1.09 hooks. Experimental [FSR Frame Generation](docs/frame-generation.md) is available in Graphics and the in-game menu. NVIDIA FG and MFG remain on [the revision roadmap](docs/tatsunakyo-next.md).
+The [cheats](docs/cheats.md) are available from the launcher and the in-game menu: damage, enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina and consumables kept after use. All are off by default and require verified 1.09 hooks; revision 7 corrects their player lookup and loading guard. Experimental [FSR/NVIDIA Frame Generation and independent Reflex](docs/frame-generation.md) are available in Graphics and the in-game menu. FG presets A/B and further gameplay validation remain on [the revision roadmap](docs/tatsunakyo-next.md).
 
 Keyboard: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle, 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab touchpad.
 

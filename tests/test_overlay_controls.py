@@ -35,7 +35,7 @@ text_and_open=source[source.index('const char* Text('):source.index('ImGuiKey Ke
 menu=source[source.index('// Marks the settings dirty'):source.index('// The game\'s text dialog', source.index('// Marks the settings dirty'))]
 fps=source[source.index('void FpsCounter()'):source.index('} // namespace\n\nvoid SavePendingSettings')]
 # Instrument only the scratch copy to record the real controls' positions and IDs.
-menu=menu.replace('ImGui::BeginCombo(', 'TrackedCombo(').replace('ImGui::Selectable(', 'TrackedSelectable(').replace('ImGui::Checkbox(', 'TrackedCheckbox(').replace('ImGui::SliderFloat(', 'TrackedSlider(')
+menu=menu.replace('ImGui::BeginCombo(', 'TrackedCombo(').replace('ImGui::Selectable(', 'TrackedSelectable(').replace('ImGui::Checkbox(', 'TrackedCheckbox(').replace('ImGui::SliderFloat(', 'TrackedSlider(').replace('ImGui::SliderInt(', 'TrackedSliderInt(')
 prefix=r'''#include <algorithm>
 #include <atomic>
 #include <cassert>
@@ -105,6 +105,12 @@ bool TrackedSlider(const char* label,float* value,float lo,float hi,const char* 
     bool result=ImGui::SliderFloat(label,value,lo,hi,format);
     const char* key=std::strstr(label,"###");
     if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_ids[key+3]=GImGui->LastItemData.ID; }
+    return result;
+}
+bool TrackedSliderInt(const char* label,int* value,int lo,int hi,const char* format) {
+    bool result=ImGui::SliderInt(label,value,lo,hi,format);
+    const char* key=std::strstr(label,"###");
+    if (key) {controls[key+3]=GImGui->LastItemData.Rect;control_ids[key+3]=GImGui->LastItemData.ID;}
     return result;
 }
 '''
@@ -215,6 +221,42 @@ void TestFrameGeneration() {
             assert(s.frame_generation==BbSettings::FrameGenerationOff);
         }
     }
+}
+void TestNvidiaControls() {
+    auto& s=BbSettings::Get();
+    s.reflex_supported=true;s.nvidia_fg_supported=true;s.nvidia_max_generated=5;
+    for (int u : {BbSettings::UpscalerOff,BbSettings::UpscalerTaa,BbSettings::UpscalerFsr3,BbSettings::UpscalerDlss}) {
+        s.upscaler=u;s.frame_generation=BbSettings::FrameGenerationOff;
+        for (int i=1;i<=3;++i) {
+            const int selected=i%3;
+            Reveal("reflex");selectables.clear();Click(controls.at("reflex").GetCenter());Frame();Frame();
+            const char* label=selected==2 ? "On + Boost" : selected==1 ? Text("On","Включено") : Text("Off","Выключено");
+            assert(selectables.contains(label));Click(selectables.at(label).GetCenter());
+            assert(s.reflex==selected && s.frame_generation==BbSettings::FrameGenerationOff);
+            SetOpen(false);s.reflex=(selected+1)%3;BbSettings::Load();
+            assert(s.reflex==selected);SetOpen(true);
+        }
+    }
+    s.upscaler=BbSettings::UpscalerTaa;
+    Reveal("frame_generation");selectables.clear();Click(controls.at("frame_generation").GetCenter());Frame();Frame();
+    Click(selectables.at("NVIDIA DLSS Frame Generation / MFG").GetCenter());
+    assert(s.frame_generation==BbSettings::FrameGenerationNvidia);
+    for (int i=1;i<=5;++i) {
+        Reveal("nvidia_generated_frames");selectables.clear();Click(controls.at("nvidia_generated_frames").GetCenter());Frame();Frame();
+        Click(selectables.at(std::to_string(i+1)+"x").GetCenter());
+        assert(s.nvidia_generated_frames==i);
+        SetOpen(false);s.nvidia_generated_frames=1;BbSettings::Load();
+        assert(s.nvidia_generated_frames==i);SetOpen(true);
+    }
+    TestBoolean("limit_generated_fps",s.limit_generated_fps);
+    s.limit_generated_fps=true;s.generated_fps_limit=30;
+    Reveal("generated_fps_limit");auto rect=controls.at("generated_fps_limit");
+    const float width=ImGui::FindWindowByName("###bbport_settings")->DC.ItemWidth;
+    Click({rect.Min.x+width*0.80f,rect.GetCenter().y});
+    const int selected=s.generated_fps_limit;
+    assert(selected>600 && selected<=1000);
+    SetOpen(false);s.generated_fps_limit=30;BbSettings::Load();assert(s.generated_fps_limit==selected);SetOpen(true);
+    s.limit_generated_fps=false;s.frame_generation=BbSettings::FrameGenerationOff;s.reflex=0;
 }
 void TestNavigation(ImGuiKey key) {
     auto& io=ImGui::GetIO();
@@ -465,6 +507,7 @@ int main(int argc,char** argv) {
         s.menu_language=language; s.upscaler=BbSettings::UpscalerFsr3;
         s.fsr4_supported=true; s.fsr411_supported=true;
         TestFrameGeneration();
+        TestNvidiaControls();
         s.upscaler=BbSettings::UpscalerFsr3;
         TestBoolean("sharpen",s.sharpen);
         TestBoolean("jitter",s.jitter);

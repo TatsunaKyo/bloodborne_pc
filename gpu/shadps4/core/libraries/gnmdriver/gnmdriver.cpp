@@ -1,3 +1,4 @@
+#include "bbport_nvidia.h"
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -2297,7 +2298,7 @@ s32 PS4_SYSV_ABI sceGnmSubmitAndFlipCommandBuffersForWorkload(
     auto* cmdbuf = dcb_gpu_addrs[count - 1];
     const auto size_dw = dcb_sizes_in_bytes[count - 1] / 4;
 
-    std::scoped_lock lk{m_submit_lock};
+    std::unique_lock lk{m_submit_lock};
     WaitGpuIdle();
 
     const s32 patch_result =
@@ -2306,8 +2307,13 @@ s32 PS4_SYSV_ABI sceGnmSubmitAndFlipCommandBuffersForWorkload(
         return patch_result;
     }
 
-    return PerformSubmit(count, const_cast<const u32**>(dcb_gpu_addrs), dcb_sizes_in_bytes,
-                         const_cast<const u32**>(ccb_gpu_addrs), ccb_sizes_in_bytes);
+    BbNvidia::QueueFlip(buf_idx,flip_arg);
+    const s32 result=PerformSubmit(count,const_cast<const u32**>(dcb_gpu_addrs),dcb_sizes_in_bytes,
+                                  const_cast<const u32**>(ccb_gpu_addrs),ccb_sizes_in_bytes);
+    if (result!=ORBIS_OK) BbNvidia::CancelFlip(buf_idx,flip_arg);
+    lk.unlock();
+    if (result==ORBIS_OK) BbNvidia::NextSimulation();
+    return result;
 }
 
 s32 PS4_SYSV_ABI sceGnmSubmitCommandBuffersForWorkload(u32 workload, u32 count,
@@ -2344,6 +2350,7 @@ s32 PS4_SYSV_ABI sceGnmSubmitCommandBuffersForWorkload(u32 workload, u32 count,
     std::scoped_lock lk{m_submit_lock};
     WaitGpuIdle();
 
+    BbNvidia::BeginRender();
     return PerformSubmit(count, const_cast<const u32**>(dcb_gpu_addrs), dcb_sizes_in_bytes,
                          const_cast<const u32**>(ccb_gpu_addrs), ccb_sizes_in_bytes);
 }

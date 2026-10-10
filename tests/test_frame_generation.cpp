@@ -207,10 +207,12 @@ float Half(u16 bits) {
 struct Inputs {
     Device& gpu;
     u32 rw,rh,w,h;
+    vk::Format color_format;
     InputImage color,depth,motion;
-    Inputs(Device& gpu_,u32 rw_,u32 rh_,u32 w_,u32 h_)
+    Inputs(Device& gpu_,u32 rw_,u32 rh_,u32 w_,u32 h_,bool hdr=false)
         : gpu{gpu_},rw{rw_},rh{rh_},w{w_},h{h_},
-          color{*gpu.device,gpu.allocator,vk::Format::eR8G8B8A8Srgb,w,h,vk::ImageAspectFlagBits::eColor},
+          color_format{hdr ? vk::Format::eA2B10G10R10UnormPack32 : vk::Format::eR8G8B8A8Srgb},
+          color{*gpu.device,gpu.allocator,color_format,w,h,vk::ImageAspectFlagBits::eColor},
           depth{*gpu.device,gpu.allocator,vk::Format::eD32Sfloat,rw,rh,vk::ImageAspectFlagBits::eDepth},
           motion{*gpu.device,gpu.allocator,vk::Format::eR16G16Sfloat,rw,rh,vk::ImageAspectFlagBits::eColor,true} {
         auto cmd=gpu.Begin();
@@ -225,6 +227,14 @@ struct Inputs {
         Buffer upload(gpu.allocator,size_t(w)*h*4);
         auto* pixels=static_cast<unsigned char*>(upload.mapped);
         for (u32 i=0;i<w*h;++i) { pixels[i*4]=128; pixels[i*4+1]=64; pixels[i*4+2]=192; pixels[i*4+3]=255; }
+        if (hdr) {
+            const auto pq=[](double nits) {
+                const double p=std::pow(nits/10000.0,0.1593017578125);
+                return uint32_t(std::round(std::pow((0.8359375+18.8515625*p)/(1+18.6875*p),78.84375)*1023));
+            };
+            const uint32_t pixel=pq(1000) | (pq(500)<<10) | (pq(2000)<<20) | (3u<<30);
+            for (u32 i=0;i<w*h;++i) std::memcpy(pixels+i*4,&pixel,4);
+        }
         vmaFlushAllocation(gpu.allocator,upload.allocation,0,VK_WHOLE_SIZE);
         cmd->copyBufferToImage(upload.buffer,color.image,vk::ImageLayout::eGeneral,
             vk::BufferImageCopy{.imageSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},.imageExtent={w,h,1}});
@@ -241,7 +251,7 @@ struct Inputs {
         return source;
     }
     void Capture(Vulkan::FrameGeneration& fg,std::shared_ptr<Vulkan::FrameGeneration::Snapshot>& snapshot,bool reset=false) {
-        auto cmd=gpu.Begin(); fg.Capture(*cmd,Source(reset),*color.view,w,h,vk::Format::eR8G8B8A8Srgb,snapshot);
+        auto cmd=gpu.Begin(); fg.Capture(*cmd,Source(reset),*color.view,w,h,color_format,snapshot);
         gpu.Submit(*cmd);
     }
 };
@@ -320,6 +330,47 @@ void Test(Device& gpu) {
     Inputs resized(gpu,64,64,192,192);
     resized.Capture(fg,snapshot); assert(!Generate(gpu,fg,snapshot));
     resized.Capture(fg,snapshot); assert(Generate(gpu,fg,snapshot));
+    Inputs hdr(gpu,64,64,128,128,true);
+    hdr.Capture(fg,snapshot); assert(snapshot && snapshot->hdr);
+    const auto hdr_colors=gpu.Read(vk::Image(snapshot->color),128,128,8);
+    const auto* linear=reinterpret_cast<const u16*>(hdr_colors.data());
+    assert(std::abs(Half(linear[0])-12.5f)<.12f);
+    assert(std::abs(Half(linear[1])-6.25f)<.08f);
+    assert(std::abs(Half(linear[2])-25.0f)<.25f);
+    assert(!Generate(gpu,fg,snapshot));
+    hdr.Capture(fg,snapshot);assert(Generate(gpu,fg,snapshot));
+    const auto hdr_generated=gpu.Read(vk::Image(snapshot->generated),128,128,8);
+    const auto* hdr_output=reinterpret_cast<const u16*>(hdr_generated.data());
+    unsigned highlights=0;
+    for (u32 i=0;i<128*128*4;++i) {
+        assert(std::isfinite(Half(hdr_output[i])));
+        if (i%4!=3 && Half(hdr_output[i])>1.0f) ++highlights;
+    }
+    assert(highlights>128*128);
+    const auto hdr_encoded=gpu.Read(snapshot->PresentImage(),128,128,8);
+    const auto* pq=reinterpret_cast<const u16*>(hdr_encoded.data());
+    assert(std::abs(Half(pq[0])-.751827f)<.01f);
+    assert(std::abs(Half(pq[1])-.676585f)<.01f);
+    assert(std::abs(Half(pq[2])-.827425f)<.01f);
+    inputs.Capture(fg,snapshot);assert(!snapshot->hdr && !Generate(gpu,fg,snapshot));
+    inputs.Capture(fg,snapshot);assert(Generate(gpu,fg,snapshot));
+    std::puts("PASS: HDR10 500/1000/2000-nit decode, FI/OF highlights above SDR white, PQ re-encoding, HDR-to-SDR history reset.");
+    settings.frame_generation=BbSettings::FrameGenerationNvidia;
+    for (auto* input : {&inputs,&hdr,&reduced}) {
+        input->Capture(fg,snapshot);
+        assert(snapshot && snapshot->nvidia_input_only);
+        assert(!vk::Image(snapshot->generated) && !vk::Image(snapshot->encoded));
+        const auto depth_copy=gpu.Read(vk::Image(snapshot->depth),snapshot->source.render_width,snapshot->source.render_height,4);
+        const auto motion_copy=gpu.Read(vk::Image(snapshot->motion),snapshot->source.render_width,snapshot->source.render_height,4);
+        assert(*reinterpret_cast<const float*>(depth_copy.data())==.5f);
+        const auto* mv_copy=reinterpret_cast<const u16*>(motion_copy.data());
+        const float scale=float(snapshot->source.render_width)/input->rw;
+        assert(Half(mv_copy[0])==4*scale && Half(mv_copy[1])==-2*scale);
+    }
+    settings.frame_generation=BbSettings::FrameGenerationFsr;
+    inputs.Capture(fg,snapshot);
+    assert(snapshot && !snapshot->nvidia_input_only && vk::Image(snapshot->generated));
+    std::puts("PASS: NVIDIA depth/motion capture in SDR/HDR with no unused full-resolution color/interpolation images; switching back to FSR restores its resources.");
     settings.frame_generation=BbSettings::FrameGenerationOff;
     inputs.Capture(fg,snapshot); assert(!snapshot); assert(!fg.Record({},snapshot));
     settings.frame_generation=BbSettings::FrameGenerationFsr;

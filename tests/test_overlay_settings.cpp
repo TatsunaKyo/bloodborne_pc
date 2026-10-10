@@ -52,7 +52,7 @@ int main() {
     assert(settings.menu_language == MenuEnglish && settings.window_mode == WindowFromLauncher &&
            !settings.show_dlss_preset && !settings.show_resolution && settings.background_mode == BackgroundRun &&
            settings.frame_generation==FrameGenerationOff);
-    for (int fg : {FrameGenerationOff,FrameGenerationFsr}) {
+    for (int fg : {FrameGenerationOff,FrameGenerationFsr,FrameGenerationNvidia}) {
         settings.frame_generation=fg;
         Save();
         { std::ofstream file(config); file << "upscaler=dlss\npreset=2\n"; }
@@ -62,6 +62,53 @@ int main() {
     }
     { std::ofstream file(menu); file << "frame_generation=unknown\n"; }
     Load(); assert(settings.frame_generation==FrameGenerationOff);
+    // Reflex is independent of both the upscaler and frame-generation selection.
+    for (int reflex : {0,1,2}) {
+        for (int generated : {1,2,3,4,5}) {
+            settings.frame_generation=FrameGenerationOff;
+            settings.upscaler=UpscalerTaa;
+            settings.reflex=reflex;
+            settings.nvidia_generated_frames=generated;
+            settings.limit_generated_fps=true;
+            settings.generated_fps_limit=137;
+            Save();
+            settings.reflex=0;settings.nvidia_generated_frames=1;
+            settings.limit_generated_fps=false;settings.generated_fps_limit=144;
+            Load();
+            assert(settings.reflex==reflex && settings.frame_generation==FrameGenerationOff);
+            assert(settings.nvidia_generated_frames==generated);
+            assert(settings.limit_generated_fps && settings.generated_fps_limit==137);
+        }
+    }
+    settings.background_mode=BackgroundRun;
+    settings.window_focused=true;
+    for (int multiplier : {0,1,2,3,4,5,6}) {
+        settings.frame_generation_active=multiplier;
+        settings.limit_generated_fps=false;
+        assert(EffectiveFrameLimit(75)==75); // 75 real frames, also with 2x..6x FG.
+        settings.limit_generated_fps=true;
+        settings.generated_fps_limit=120;
+        const unsigned expected=multiplier>1 ? 120u/multiplier : 75u;
+        assert(EffectiveFrameLimit(75)==expected);
+        if (multiplier>1) {
+            assert(EffectiveFrameLimit(0)==120u/multiplier);
+            settings.window_focused=false;
+            assert(EffectiveFrameLimit(75)==expected); // Keep running preserves the output cap.
+            settings.background_mode=Background60;
+            assert(EffectiveFrameLimit(75)==60);
+            settings.background_mode=Background30;
+            assert(EffectiveFrameLimit(75)==30);
+            settings.background_mode=BackgroundRun;
+            settings.window_focused=true;
+        }
+    }
+    { std::ofstream file(menu); file << "reflex=invalid\nnvidia_generated_frames=20\nlimit_generated_fps=1\ngenerated_fps_limit=2000\n"; }
+    Load();
+    assert(settings.reflex==0 && settings.nvidia_generated_frames==5 && settings.generated_fps_limit==1000);
+    { std::ofstream file(menu); file << "nvidia_generated_frames=-1\ngenerated_fps_limit=-1\n"; }
+    Load();
+    assert(settings.nvidia_generated_frames==1 && settings.generated_fps_limit==30 && !settings.limit_generated_fps);
+    settings.frame_generation_active=0;
     for (int mode : {BackgroundRun, BackgroundPause, Background30, Background60}) {
         for (bool show : {false, true}) {
             settings.background_mode = mode;
@@ -77,7 +124,7 @@ int main() {
     { std::ofstream file(menu); file << "background_mode=invalid\nshow_resolution=invalid\n"; }
     Load();
     assert(settings.background_mode == BackgroundRun && !settings.show_resolution);
-    for (unsigned foreground : {0u, 24u, 30u, 60u, 90u, 120u}) {
+    for (unsigned foreground : {0u, 24u, 30u, 60u, 75u, 90u, 120u}) {
         for (int mode : {BackgroundRun, BackgroundPause, Background30, Background60}) {
             settings.background_mode = mode;
             settings.window_focused = true;

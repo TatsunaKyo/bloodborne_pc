@@ -1,3 +1,4 @@
+#include "bbport_nvidia.h"
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -173,6 +174,8 @@ Presenter::~Presenter() {
     draw_scheduler.Finish();
     present_scheduler.Finish();
     flip_scheduler.Finish();
+    // Streamline can still own the depth/motion images after our queue completes.
+    BbNvidia::BeforeSwapchainChange();
     frame_generation->Reset();
     Check(draw_scheduler.CommandBuffer().reset());
     Check(present_scheduler.CommandBuffer().reset());
@@ -740,6 +743,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             cmdbuf.endDebugUtilsLabelEXT();
         }
 
+        BbNvidia::BeforePresent(frame,cmdbuf,swapchain.Image(),swapchain.ImageView(),
+                                 swapchain.GetSurfaceFormat().format,swapchain.GetImageCount(),
+                                 is_game_frame && !is_reusing_frame);
         // Flush vulkan commands.
 
         SubmitInfo info{};
@@ -752,7 +758,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         // Present to swapchain.
         {
             std::scoped_lock submit_lock{Scheduler::submit_mutex};
-            if (!swapchain.Present() && window.GetWidth() != 0 && window.GetHeight() != 0) {
+            const bool presented=BbNvidia::Present(frame,[&] {return swapchain.Present();});
+            if (!presented && window.GetWidth() != 0 && window.GetHeight() != 0) {
                 swapchain.Recreate(window.GetWidth(), window.GetHeight());
             }
         }
@@ -762,7 +769,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         frame_generation->Record(present_scheduler.CommandBuffer(),frame->frame_generation);
     if (generated) {
         const u64 generated_tick=present_scheduler.CurrentTick();
-        submit_image(vk::Image(frame->frame_generation->generated),false);
+        submit_image(frame->frame_generation->PresentImage(),false);
         // QueuePresent can return before FI/OF finishes. Start the half-frame
         // interval after its submission completes so slow GPU work cannot bunch
         // the generated and real frames into the same presentation interval.
@@ -828,6 +835,7 @@ Frame* Presenter::GetRenderFrame() {
         }
     }
 
+    BbNvidia::WaitForInputs(frame);
     if (frame->width != expected_frame_width || frame->height != expected_frame_height ||
         frame->is_hdr != swapchain.GetHDR()) {
         RecreateFrame(frame, expected_frame_width, expected_frame_height);

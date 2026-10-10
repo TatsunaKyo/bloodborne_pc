@@ -1,3 +1,4 @@
+#include "bbport_nvidia.h"
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -571,6 +572,7 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
         frame = presenter->PrepareFrame(group, buffer.address_left);
     }
 
+    BbNvidia::FinishRender(frame,index,flip_arg);
     {
         std::scoped_lock lock{mutex};
         requests.push({

@@ -39,6 +39,10 @@ struct Frame {
     bool is_hdr{false};
     u8 id{};
     std::shared_ptr<FrameGeneration::Snapshot> frame_generation;
+    void* nvidia_token{};
+    vk::Semaphore nvidia_fence{};
+    u64 nvidia_fence_value{};
+    u64 nvidia_fence_epoch{};
 
 };
 

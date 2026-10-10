@@ -22,7 +22,7 @@ enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugV
 enum MenuLanguage : int { MenuEnglish = 0, MenuRussian, MenuLanguageCount };
 enum WindowMode : int { WindowFromLauncher = -1, Windowed = 0, Borderless, Fullscreen };
 enum BackgroundMode : int { BackgroundRun = 0, BackgroundPause, Background30, Background60 };
-enum FrameGenerationMode : int { FrameGenerationOff=0, FrameGenerationFsr=1 };
+enum FrameGenerationMode : int { FrameGenerationOff=0, FrameGenerationFsr=1, FrameGenerationNvidia=2 };
 // NVIDIA NGX render-preset hints, separate from the upscaling quality/scene size.
 // Removed and reserved presets are deliberately excluded.
 inline constexpr int DlssPresetValues[] = {0, 5, 6, 10, 11, 13, 12};
@@ -67,6 +67,10 @@ inline constexpr int OutputDefault = 1; ///< 1920x1080, the game's own size
 
 struct Values {
     std::atomic<int> frame_generation{FrameGenerationOff}, frame_generation_active{0};
+    std::atomic<bool> limit_generated_fps{false};
+    std::atomic<int> generated_fps_limit{144};
+    std::atomic<int> reflex{0}, nvidia_generated_frames{1}, nvidia_max_generated{0};
+    std::atomic<bool> nvidia_fg_supported{false}, reflex_supported{false}, nvidia_api_error{false};
     std::atomic<const char*> frame_generation_problem{nullptr};
     std::atomic<int> cheat_damage{0}, cheat_incoming{0}, cheat_echoes{0}, cheat_movement{0};
     std::atomic<bool> cheat_infinite_stamina{false}, cheat_no_consume{false};

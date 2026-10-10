@@ -24,6 +24,8 @@ struct FrameGenerationSource {
     std::array<float, 12> inverse_view{};
     float near_plane{}, vertical_fov{}, frame_ms{16.666f};
     bool reset{}, valid{};
+    std::array<float,12> view{}, previous_view{}, previous_inverse_view{};
+    std::array<float,4> projection{}, previous_projection{};
 };
 
 class FrameGeneration {
@@ -49,13 +51,15 @@ public:
     struct Snapshot {
         FrameGenerationSource source;
         u32 width{}, height{};
-        Image color, depth, motion, generated;
-        vk::UniqueImageView color_view, depth_view, motion_view, generated_view;
+        bool hdr{}, nvidia_input_only{};
+        Image color, depth, motion, generated, encoded;
+        vk::UniqueImageView color_view, depth_view, motion_view, generated_view, encoded_view;
+        vk::Image PresentImage() const { return hdr ? vk::Image(encoded) : vk::Image(generated); }
     };
     FrameGeneration(vk::PhysicalDevice physical, vk::Device device,
                     VmaAllocator allocator, Submissions submissions);
     ~FrameGeneration();
-    // Draw queue: copy per-frame depth/motion and decode the completed SDR sRGB
+    // Draw queue: copy per-frame depth/motion and decode SDR sRGB or HDR10 PQ
     // frame into stable linear color. Snapshot ownership follows the final fence.
     void Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSource& source,
                  vk::ImageView color_view, u32 width, u32 height, vk::Format format,
@@ -79,7 +83,7 @@ private:
     FfxVkFsr3_3_1_6FrameGenerationContext* context{};
     u32 render_width{}, render_height{}, width{}, height{};
     u64 frame_id{}, paused_ns{};
-    bool history{};
+    bool history{}, context_hdr{};
     std::atomic<bool> failed{false};
     struct Pending {
         u64 id{}, tick{};

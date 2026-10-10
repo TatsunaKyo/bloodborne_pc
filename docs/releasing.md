@@ -2,12 +2,12 @@
 
 The launcher checks releases in `TatsunaKyo/bloodborne_pc`. Use these names consistently:
 
-| Item | Revision 6 |
+| Item | Revision 7 |
 |---|---|
-| Launcher `VERSION` | `1.6-tatsunakyo.6` |
-| GitHub release tag | `windows-v1.6-tatsunakyo.6` |
-| Windows asset | `Bloodborne-Windows-v1.6-TatsunaKyo-Revision-6.zip` |
-| Release title | `Bloodborne for Windows v1.6 — TatsunaKyo revision 6` |
+| Launcher `VERSION` | `1.6-tatsunakyo.7` |
+| GitHub release tag | `windows-v1.6-tatsunakyo.7` |
+| Windows asset | `Bloodborne-Windows-v1.6-TatsunaKyo-Revision-7.zip` |
+| Release title | `Bloodborne for Windows v1.6 — TatsunaKyo revision 7` |
 
 Increment the revision number for subsequent releases. Increase the upstream version when rebasing onto a newer upstream release. The updater compares the numeric version and revision, rejects unrelated tags, and selects the exact Windows package name.
 
@@ -28,21 +28,21 @@ g++ -std=c++20 -pthread -Igpu/shim tests/test_background_pause.cpp gpu/shim/bbpo
 ./background-pause-test
 ```
 
-On Windows, verify that `Bloodborne.exe` displays TatsunaKyo revision, the preset dropdown opens with both FSR and DLSS selected, and L3+R3 / Insert exposes the new controls. Check preservation of saved settings and test borderless presentation with your GPU and Windows version. Record validation limits in the release notes.
+On Windows, verify that `Bloodborne.exe` displays TatsunaKyo revision, the preset dropdown opens with DLSS selected and is disabled with other upscalers, and L3+R3 / Insert exposes the new controls. Check preservation of saved settings and test borderless presentation with your GPU and Windows version. Record validation limits in the release notes.
 
 ## Release
 
-Create a release in this fork using the names above and target the verified revision commit. Paste [the revision 6 notes](releases/windows-v1.6-tatsunakyo.6.md), attach the full Windows ZIP and its SHA-256 file, then publish when testing is complete. GitHub provides source archives for the release tag. Do not replace an existing release tag with a different commit.
+Create a release in this fork using the names above and target the verified revision commit. Paste [the revision 7 notes](releases/windows-v1.6-tatsunakyo.7.md), attach the full Windows ZIP and its SHA-256 file, then publish when testing is complete. GitHub provides source archives for the release tag. Do not replace an existing release tag with a different commit.
 
 With the GitHub CLI, a release can first be prepared as a draft:
 
 ```bash
-gh release create windows-v1.6-tatsunakyo.6 \
-  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-6.zip \
-  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-6.zip.sha256 \
+gh release create windows-v1.6-tatsunakyo.7 \
+  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-7.zip \
+  Bloodborne-Windows-v1.6-TatsunaKyo-Revision-7.zip.sha256 \
   --repo TatsunaKyo/bloodborne_pc --target tatsunakyo-revision --draft \
-  --title 'Bloodborne for Windows v1.6 — TatsunaKyo revision 6' \
-  --notes-file docs/releases/windows-v1.6-tatsunakyo.6.md
+  --title 'Bloodborne for Windows v1.6 — TatsunaKyo revision 7' \
+  --notes-file docs/releases/windows-v1.6-tatsunakyo.7.md
 ```
 
 Only published, non-prerelease releases are returned by the launcher's latest-release endpoint. Keep upstream credits and third-party licenses in both source and packages.

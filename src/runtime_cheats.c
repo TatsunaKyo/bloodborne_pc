@@ -23,6 +23,10 @@ typedef struct {
 } Registers;
 typedef void (ABI *Handler)(Registers *, unsigned char *);
 static uintptr_t game_begin, game_end;
+/* ChrIns::IsLocalPlayer (1.09, image 0x18c2d00) compares this with
+ * WorldChrMan::mainPlayer at +0x60. The script binding's vtable belongs to a
+ * different object; calling ChrIns slot 0x120 executes an unrelated update. */
+enum { WORLD_CHR_MAN = 0x553e878 };
 
 static uintptr_t pointer(uintptr_t address) {
     uintptr_t result;
@@ -34,13 +38,10 @@ static int in_image(uintptr_t address, size_t size) {
 }
 static int local_player(uintptr_t actor) {
     if (actor < 65536) return 0;
-    const uintptr_t table = pointer(actor);
-    if (!in_image(table, 0x128)) return 0;
-    const uintptr_t method = pointer(table + 0x120);
-    if (!in_image(method, 1)) return 0;
-    /* IsLocalPlayer, used by the game's own scripting binding. */
-    typedef unsigned char (ABI *IsLocalPlayer)(void *);
-    return ((IsLocalPlayer)method)((void *)actor) != 0;
+    if (!in_image(game_begin + WORLD_CHR_MAN, sizeof(uintptr_t))) return 0;
+    const uintptr_t world = pointer(game_begin + WORLD_CHR_MAN);
+    /* Unlike the game's assertion path, loading/unloading simply means Off. */
+    return world >= 65536 && actor == pointer(world + 0x60);
 }
 static int component_is_player(uintptr_t component) {
     return component >= 65536 && local_player(pointer(component + 8));
@@ -201,8 +202,13 @@ uint32_t runtime_cheats_install(void *image, size_t size, const char *app_versio
     const unsigned char player_binding[] = {0x48,0x8b,0x47,0x08,0x48,0x8b,0x38,0x48,0x8b,0x07,
                                             0xff,0xa0,0x20,0x01,0,0};
     bbgpu_cheat_support(0);
-    if (!app_version || strcmp(app_version,"01.09") || size < 0x553e880 ||
-        memcmp((unsigned char *)image+0x125b700,player_binding,sizeof(player_binding))) {
+    const unsigned char local_player_start[] = {0x55,0x48,0x89,0xe5,0x41,0x56,0x53,
+        0x48,0x89,0xfb,0x4c,0x8d,0x35,0x67,0xbb,0xc7,0x03};
+    const unsigned char local_player_compare[] = {0x48,0x39,0x58,0x60,0x0f,0x94,0xc0};
+    if (!app_version || strcmp(app_version,"01.09") || size < WORLD_CHR_MAN + 8 ||
+        memcmp((unsigned char *)image+0x125b700,player_binding,sizeof(player_binding)) ||
+        memcmp((unsigned char *)image+0x18c2d00,local_player_start,sizeof(local_player_start)) ||
+        memcmp((unsigned char *)image+0x18c2d3d,local_player_compare,sizeof(local_player_compare))) {
         puts("Live cheats: executable/version guard failed; no hooks installed"); return 0;
     }
     uint32_t supported = BB_CHEAT_ALL;

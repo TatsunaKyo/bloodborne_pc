@@ -34,6 +34,8 @@ class Widget:
         if self.parent:
             self.parent.rows = max(self.parent.rows, kwargs.get('row', 0) + 1)
 
+    def set(self, value):
+        if 'command' in self.kwargs: self.kwargs['command'](str(value))
     def pack(self, **kwargs): pass
     def columnconfigure(self, *args, **kwargs): pass
     def grid_size(self): return (2, self.rows)
@@ -105,9 +107,9 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
         menu.write_text('menu_language=invalid\nwindow_mode=invalid\nborderless_vsync=bad\n'
                         'background_mode=invalid\nshow_resolution=bad\n')
         assert launcher.load_menu() == launcher.MENU_DEFAULTS
-        for value in ('off', 'fsr', 'invalid', 'dlss'):
+        for value in ('off', 'fsr', 'nvidia', 'invalid', 'dlss'):
             menu.write_text(f'frame_generation={value}\n')
-            assert launcher.load_menu()['frame_generation'] == ('fsr' if value == 'fsr' else 'off')
+            assert launcher.load_menu()['frame_generation'] == (value if value in ('fsr', 'nvidia') else 'off')
 
         # Migrate the original FPS setting, then prefer the shared in-game setting.
         config.write_text('show_fps=0\n')
@@ -144,12 +146,40 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
                 obj.vars['upscaler'].set(upscaler)
                 assert fg.kwargs['state'] == 'readonly'
                 obj.vars['hdr'].set(True)
-                assert fg.kwargs['state'] == 'disabled'
+                assert fg.kwargs['state'] == 'readonly'
                 obj.vars['hdr'].set(False)
                 assert fg.kwargs['state'] == 'readonly'
             obj.vars['upscaler'].set('fsr4')
             fg.choose(0); obj.collect()
             assert launcher.load_menu()['frame_generation'] == 'off'
+            multiplier = next(w for w in Widget.nodes if w.kwargs.get('values') ==
+                              [launcher._(*text) for _value, text in launcher.NVIDIA_MULTIPLIERS])
+            reflex = next(w for w in Widget.nodes if w.kwargs.get('values') ==
+                          [launcher._(*text) for _value, text in launcher.REFLEX_MODES])
+            assert multiplier.kwargs['state'] == 'disabled'
+            for upscaler in ('off', 'taa', 'fsr3', 'dlss'):
+                obj.vars['upscaler'].set(upscaler)
+                for index, (key, _text) in enumerate(launcher.REFLEX_MODES):
+                    reflex.choose(index); obj.collect()
+                    assert launcher.load_menu()['reflex'] == key
+                    assert launcher.load_menu()['frame_generation'] == 'off'
+            obj.vars['upscaler'].set('dlss')
+            fg.choose(2)
+            assert multiplier.kwargs['state'] == 'readonly'
+            for index, (key, _text) in enumerate(launcher.NVIDIA_MULTIPLIERS):
+                multiplier.choose(index); obj.collect()
+                assert launcher.load_menu()['nvidia_generated_frames'] == key
+                assert launcher.load_menu()['frame_generation'] == 'nvidia'
+            fg.choose(0)
+            assert multiplier.kwargs['state'] == 'disabled'
+            obj.vars['upscaler'].set('fsr4')
+            obj.vars['reflex'].set('off')
+            obj.vars['limit_generated_fps'].set(True)
+            obj.vars['generated_fps_limit'].set('137')
+            obj.collect()
+            assert launcher.load_menu()['generated_fps_limit'] == '137'
+            assert launcher.load_menu()['limit_generated_fps'] == '1'
+            obj.vars['limit_generated_fps'].set(False)
             for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
                 options = launcher.MOVEMENT_MULTIPLIERS if key == 'cheat_movement' else launcher.CHEAT_MULTIPLIERS
                 choice = next(w for w in Widget.nodes if w.kwargs.get('values') == [launcher._(*text) for _value, text in options]
@@ -246,6 +276,8 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
                 assert json.loads(launcher.CONFIG_FILE.read_text())['window_mode'] == mode
             display.choose(1)
             assert home.current() == 1
+            obj.vars['generated_fps_limit'].set('144')
+            obj.vars['nvidia_generated_frames'].set('1')
             obj.borderless_vsync_check.invoke()
             obj.vars['menu_language'].set('ru')
             obj.collect()

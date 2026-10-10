@@ -1,3 +1,4 @@
+#include "bbport_nvidia.h"
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -93,6 +94,7 @@ void Swapchain::Create(u32 width_, u32 height_) {
     swapchain = chain;
 
     SetupImages();
+    BbNvidia::BindDevice(instance.GetPhysicalDevice(),instance.GetDevice());
     RefreshSemaphores();
     LOG_INFO(Render_Vulkan, "Window mode {}, present mode {}, extent {}x{}", window_mode,
              vk::to_string(present_mode), extent.width, extent.height);
@@ -323,6 +325,7 @@ void Swapchain::SetSurfaceProperties() {
 }
 
 void Swapchain::Destroy() {
+    BbNvidia::BeforeSwapchainChange();
     vk::Device device = instance.GetDevice();
     const auto wait_result = device.waitIdle();
     if (wait_result != vk::Result::eSuccess) {

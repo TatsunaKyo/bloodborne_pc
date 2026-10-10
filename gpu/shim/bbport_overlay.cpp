@@ -334,22 +334,57 @@ void Menu() {
                   "решает, когда отбросить прошлые кадры. Меняются сразу, без перезапуска."));
     }
     const bool upscaler_on = s.upscaler != BbSettings::UpscalerOff;
-    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)"};
-    const int fg=std::clamp(s.frame_generation.load(),0,1);
+    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG"};
+    const int fg=std::clamp(s.frame_generation.load(),0,2);
     if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
-        for (int i=0;i<2;++i) {
-            ImGui::BeginDisabled(i!=0 && !upscaler_on);
+        for (int i=0;i<3;++i) {
+            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported)));
             if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
             ImGui::EndDisabled();
         }
         ImGui::EndCombo();
     }
-    Hint(Text("FSR FG adds one interpolated frame between real frames. This version requires a temporal upscaler and SDR. Background FPS caps disable generation.",
-              "FSR FG добавляет один промежуточный кадр. Требуется временной апскейлер и SDR. При лимите FPS в фоне генерация отключается."));
+    if (s.frame_generation==BbSettings::FrameGenerationNvidia) {
+        const int selected=s.nvidia_generated_frames;
+        const std::string preview=std::to_string(selected+1)+"x";
+        if (ImGui::BeginCombo(Text("NVIDIA FG multiplier###nvidia_generated_frames","Множитель NVIDIA FG###nvidia_generated_frames"),preview.c_str())) {
+            for (int i=1;i<=5;++i) {
+                ImGui::BeginDisabled(i>s.nvidia_max_generated);
+                const std::string name=std::to_string(i+1)+"x";
+                if (ImGui::Selectable(name.c_str(),i==selected)) Store(s.nvidia_generated_frames,i,true);
+                ImGui::EndDisabled();
+            }
+            ImGui::EndCombo();
+        }
+        if (const char* problem=s.frame_generation_problem.load()) ImGui::TextWrapped("%s",problem);
+        else if (s.frame_generation_active>1) ImGui::Text(Text("NVIDIA FG active: %dx","NVIDIA FG активна: %dx"),s.frame_generation_active.load());
+        else ImGui::TextUnformatted(Text("NVIDIA FG: waiting for valid scene frames","NVIDIA FG: ожидание кадров сцены"));
+    }
+    const char* reflex_modes[]={Text("Off","Выключено"),Text("On","Включено"),"On + Boost"};
+    const int reflex=std::clamp(s.reflex.load(),0,2);
+    ImGui::BeginDisabled(!s.reflex_supported);
+    if (ImGui::BeginCombo("NVIDIA Reflex###reflex",reflex_modes[reflex])) {
+        for(int i=0;i<3;++i) if(ImGui::Selectable(reflex_modes[i],i==reflex)) Store(s.reflex,i,true);
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    Hint(Text("Reflex works independently of NVIDIA FG. NVIDIA FG enables Reflex automatically; Boost is optional. Unsupported choices are disabled.",
+              "Reflex работает независимо от NVIDIA FG. Генерация NVIDIA включает Reflex автоматически; Boost необязателен. Неподдерживаемые настройки недоступны."));
+    Hint(Text("FSR FG adds one interpolated frame between real frames, in SDR or HDR10. The normal FPS limit counts real frames: 75 can produce 150 with FG 2x. Background FPS caps disable generation.",
+              "FSR FG добавляет промежуточный кадр в SDR или HDR10. Обычный лимит относится к реальным кадрам: 75 даёт до 150 с FG 2x. При лимите FPS в фоне генерация отключается."));
+    Checkbox(Text("Limit total FPS with Frame Generation###limit_generated_fps",
+                  "Лимит общих FPS с генерацией кадров###limit_generated_fps"),s.limit_generated_fps);
+    ImGui::BeginDisabled(!s.limit_generated_fps);
+    int generated_limit=s.generated_fps_limit;
+    if (ImGui::SliderInt(Text("Total FPS cap###generated_fps_limit","Общий лимит FPS###generated_fps_limit"),
+                         &generated_limit,30,1000,"%d FPS")) Store(s.generated_fps_limit,generated_limit,true);
+    ImGui::EndDisabled();
+    Hint(Text("Optional. This cap includes generated frames and can reduce the real frame rate. Generated frames do not advance game logic or physics.",
+              "Этот необязательный лимит включает промежуточные кадры и может снизить реальные FPS. Генерация не меняет физику и логику игры."));
     if (s.frame_generation==BbSettings::FrameGenerationFsr) {
         if (const char* problem=s.frame_generation_problem.load()) ImGui::TextWrapped("%s",problem);
         else ImGui::TextUnformatted(s.frame_generation_active==2 ? Text("FSR FG active: 2x","FSR FG активна: 2x") :
-                                  Text("FSR FG: waiting for valid scene frames (SDR)","FSR FG: ожидание кадров сцены (SDR)"));
+                                  Text("FSR FG: waiting for valid scene frames","FSR FG: ожидание кадров сцены"));
     }
     const bool taa = s.upscaler == BbSettings::UpscalerTaa;
     if (s.upscaler == BbSettings::UpscalerDlss) {
@@ -541,7 +576,7 @@ void Menu() {
               "игры остаётся в 1080p — на Steam Deck и старых видеокартах это заметно медленнее. "
               "Выключена: всё рисуется в разрешении пресета, смена — через перезапуск. Авто "
               "включает её на мощных дискретных видеокартах. Применяется после перезапуска игры."));
-    ImGui::SeparatorText(Text("Live cheats", "Читы без перезапуска"));
+    ImGui::SeparatorText(Text("Cheats", "Читы"));
     const auto multiplier = [&](const char* label, std::atomic<int>& target,
                                 uint32_t feature, bool motion = false) {
         const char* const* labels = motion ? BbSettings::MovementMultipliers : BbSettings::CheatMultipliers;
@@ -575,6 +610,14 @@ void Menu() {
     if (s.cheat_supported.load() != 63u)
         ImGui::TextWrapped("%s", Text("Some live cheats are unavailable for this executable or conflict with a patch. See last_run.log.",
                                      "Часть читов недоступна для этого исполняемого файла или конфликтует с патчем. См. last_run.log."));
+    for (int e=0;e<BbSettings::EffectCount;++e) {
+        const auto& effect=BbSettings::Effects[e];
+        if (std::string_view(effect.key).starts_with("cheat_")) {
+            const std::string label=std::string(Text(effect.label_en,effect.label))+
+                Text(" (restart required)###"," (после перезапуска)###")+effect.key;
+            Checkbox(label.c_str(),s.effects[e]);
+        }
+    }
     ImGui::SeparatorText(Text("Game effects (restart required)", "Эффекты игры (после перезапуска)"));
     const char* lods[] = {
         Text("Highest (-2)###lod_highest", "Максимальная (-2)###lod_highest"),
@@ -597,6 +640,7 @@ void Menu() {
     }
     for (int e = 0; e < BbSettings::EffectCount; ++e) {
         const auto& effect = BbSettings::Effects[e];
+        if (std::string_view(effect.key).starts_with("cheat_")) continue;
         const std::string label = std::string(Text(effect.label_en, effect.label)) + "###" + effect.key;
         Checkbox(label.c_str(), s.effects[e]);
     }

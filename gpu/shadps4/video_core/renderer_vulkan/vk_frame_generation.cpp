@@ -71,7 +71,7 @@ bool FrameGeneration::EnsureCopyPipeline() {
         .bindingCount=u32(bindings.size()),.pBindings=bindings.data()});
     if (descriptors.result!=vk::Result::eSuccess) return false;
     copy_descriptors=std::move(descriptors.value);
-    const vk::PushConstantRange range{.stageFlags=vk::ShaderStageFlagBits::eCompute,.offset=0,.size=16};
+    const vk::PushConstantRange range{.stageFlags=vk::ShaderStageFlagBits::eCompute,.offset=0,.size=20};
     auto layout=device.createPipelineLayoutUnique({
         .setLayoutCount=1,.pSetLayouts=&*copy_descriptors,.pushConstantRangeCount=1,.pPushConstantRanges=&range});
     if (layout.result!=vk::Result::eSuccess) return false;
@@ -90,15 +90,18 @@ void FrameGeneration::Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSou
                               vk::ImageView color_view, u32 w, u32 h, vk::Format format,
                               std::shared_ptr<Snapshot>& snapshot) {
     auto& settings=BbSettings::Get();
-    if (settings.frame_generation != BbSettings::FrameGenerationFsr ||
-        settings.upscaler==BbSettings::UpscalerOff || failed.load(std::memory_order_relaxed) || !source.valid ||
+    const bool nvidia=settings.frame_generation==BbSettings::FrameGenerationNvidia;
+    const bool hdr=format==vk::Format::eA2B10G10R10UnormPack32 || format==vk::Format::eA2R10G10B10UnormPack32;
+    if (settings.frame_generation == BbSettings::FrameGenerationOff ||
+        settings.upscaler==BbSettings::UpscalerOff ||
+        (settings.frame_generation==BbSettings::FrameGenerationFsr && failed.load(std::memory_order_relaxed)) || !source.valid ||
         !source.depth_view || !source.motion_view || !source.render_width || !source.render_height || !w || !h ||
         (!settings.window_focused && settings.background_mode!=BbSettings::BackgroundRun) ||
-        (format != vk::Format::eB8G8R8A8Srgb && format != vk::Format::eR8G8B8A8Srgb)) {
+        (!hdr && format != vk::Format::eB8G8R8A8Srgb && format != vk::Format::eR8G8B8A8Srgb)) {
         snapshot.reset(); return;
     }
     if (!EnsureCopyPipeline()) {
-        settings.frame_generation_problem="FSR FG input pipeline could not be created. The real frame is kept.";
+        settings.frame_generation_problem="FG input pipeline could not be created. The real frame is kept.";
         failed=true;
         snapshot.reset(); return;
     }
@@ -107,14 +110,18 @@ void FrameGeneration::Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSou
     const float scale=std::min({1.0f,float(w)/source.render_width,float(h)/source.render_height});
     const u32 rw=std::max(1u,u32(source.render_width*scale));
     const u32 rh=std::max(1u,u32(source.render_height*scale));
-    if (!snapshot || snapshot->width!=w || snapshot->height!=h ||
+    if (!snapshot || snapshot->width!=w || snapshot->height!=h || snapshot->hdr!=hdr || snapshot->nvidia_input_only!=nvidia ||
         snapshot->source.render_width!=rw || snapshot->source.render_height!=rh) {
-        snapshot=std::make_shared<Snapshot>(); snapshot->width=w; snapshot->height=h;
-        if (!CreateImage(device,allocator,snapshot->color,snapshot->color_view,vk::Format::eR16G16B16A16Sfloat,w,h) ||
-            !CreateImage(device,allocator,snapshot->generated,snapshot->generated_view,vk::Format::eR16G16B16A16Sfloat,w,h) ||
+        snapshot=std::make_shared<Snapshot>(); snapshot->width=w; snapshot->height=h; snapshot->hdr=hdr;
+        snapshot->nvidia_input_only=nvidia;
+        // NVIDIA consumes WSI color directly. Keep only a 1x1 descriptor dummy,
+        // rather than allocating/copying three unused full-resolution FP16 images.
+        if (!CreateImage(device,allocator,snapshot->color,snapshot->color_view,vk::Format::eR16G16B16A16Sfloat,nvidia ? 1u : w,nvidia ? 1u : h) ||
+            (!nvidia && !CreateImage(device,allocator,snapshot->generated,snapshot->generated_view,vk::Format::eR16G16B16A16Sfloat,w,h)) ||
             !CreateImage(device,allocator,snapshot->depth,snapshot->depth_view,vk::Format::eR32Sfloat,rw,rh) ||
-            !CreateImage(device,allocator,snapshot->motion,snapshot->motion_view,vk::Format::eR16G16Sfloat,rw,rh)) {
-            settings.frame_generation_problem="FSR FG could not allocate its input images. The real frame is kept.";
+            !CreateImage(device,allocator,snapshot->motion,snapshot->motion_view,vk::Format::eR16G16Sfloat,rw,rh) ||
+            (hdr && !nvidia && !CreateImage(device,allocator,snapshot->encoded,snapshot->encoded_view,vk::Format::eR16G16B16A16Sfloat,w,h))) {
+            settings.frame_generation_problem="FG could not allocate its input images. The real frame is kept.";
             failed=true;
             snapshot.reset(); return;
         }
@@ -144,9 +151,9 @@ void FrameGeneration::Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSou
         .descriptorType=i<2 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,.pImageInfo=&images[i]};
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute,*copy_pipeline);
     cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,*copy_layout,0,writes);
-    const std::array<u32,4> render_size{source.render_width,source.render_height,rw,rh};
-    cmdbuf.pushConstants(*copy_layout,vk::ShaderStageFlagBits::eCompute,0,16,render_size.data());
-    cmdbuf.dispatch((w+7)/8,(h+7)/8,1);
+    const std::array<u32,5> render_size{source.render_width,source.render_height,rw,rh,nvidia ? 3u : u32(hdr)};
+    cmdbuf.pushConstants(*copy_layout,vk::ShaderStageFlagBits::eCompute,0,20,render_size.data());
+    cmdbuf.dispatch(((nvidia ? rw : w)+7)/8,((nvidia ? rh : h)+7)/8,1);
     const vk::MemoryBarrier2 complete{
         .srcStageMask=vk::PipelineStageFlagBits2::eComputeShader,.srcAccessMask=vk::AccessFlagBits2::eShaderWrite,
         .dstStageMask=vk::PipelineStageFlagBits2::eAllCommands,.dstAccessMask=vk::AccessFlagBits2::eMemoryRead};
@@ -159,7 +166,11 @@ void FrameGeneration::RetireCompleted() {
         pending.pop_front();
     }
 }
-void FrameGeneration::Invalidate() { history=false; BbSettings::Get().frame_generation_active=0; }
+void FrameGeneration::Invalidate() {
+    history=false;
+    if (BbSettings::Get().frame_generation!=BbSettings::FrameGenerationNvidia)
+        BbSettings::Get().frame_generation_active=0;
+}
 void FrameGeneration::Reset() {
     if (context) {
         submissions.wait_submitted();
@@ -174,6 +185,7 @@ bool FrameGeneration::Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Sna
         settings.upscaler==BbSettings::UpscalerOff || !snapshot ||
         (!settings.window_focused && settings.background_mode!=BbSettings::BackgroundRun)) {
         Invalidate();
+        if (settings.frame_generation==BbSettings::FrameGenerationNvidia && context) Reset();
         if (settings.frame_generation==BbSettings::FrameGenerationOff) { Reset(); failed=false; settings.frame_generation_problem=nullptr; }
         return false;
     }
@@ -183,7 +195,7 @@ bool FrameGeneration::Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Sna
     if (pending.size()>=2) { submissions.wait(pending.front().tick); RetireCompleted(); }
     const auto& source=snapshot->source;
     if (context && (width!=snapshot->width || height!=snapshot->height ||
-        render_width!=source.render_width || render_height!=source.render_height)) Reset();
+        render_width!=source.render_width || render_height!=source.render_height || context_hdr!=snapshot->hdr)) Reset();
     if (!context) {
         const FfxVkFsr3_3_1_6FrameGenerationCreateInfo create{
             VkPhysicalDevice(physical),VkDevice(device),
@@ -195,6 +207,7 @@ bool FrameGeneration::Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Sna
             failed=true; Invalidate(); return false;
         }
         width=snapshot->width; height=snapshot->height;
+        context_hdr=snapshot->hdr;
         render_width=source.render_width; render_height=source.render_height;
         std::printf("FSR Frame Generation: %ux%u render, %ux%u display, analytical 3.1.6\n",render_width,render_height,width,height);
     }
@@ -211,7 +224,7 @@ bool FrameGeneration::Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Sna
     prepare.jitterOffsetX=source.jitter[0]; prepare.jitterOffsetY=source.jitter[1];
     prepare.motionVectorScaleX=prepare.motionVectorScaleY=1.0f;
     prepare.frameTimeMilliseconds=std::clamp(source.frame_ms,1.0f,100.0f);
-    prepare.minLuminance=0.0f; prepare.maxLuminance=80.0f;
+    prepare.minLuminance=0.0f; prepare.maxLuminance=snapshot->hdr ? 10000.0f : 80.0f;
     prepare.transferFunction=FFX_VK_FSR3_3_1_6_FRAMEGEN_TRANSFER_SCRGB;
     prepare.cameraNear=source.near_plane; prepare.cameraFar=3000.0f;
     prepare.viewSpaceToMeters=1.0f; prepare.cameraVerticalFovRadians=source.vertical_fov;
@@ -242,6 +255,30 @@ bool FrameGeneration::Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Sna
         std::printf("FSR Frame Generation: prepare/dispatch failed (%d)\n",int(result));
         settings.frame_generation_problem="FSR FG dispatch failed. The real frame is kept; turn FG off and on to retry.";
         failed=true; Invalidate(); return false;
+    }
+    if (snapshot->hdr) {
+        // FI writes linear FP16; a plain blit into a PQ swapchain would clamp
+        // the HDR highlights. Encode into stable FP16 PQ, then blit to UNORM10.
+        const vk::MemoryBarrier2 ready{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask=vk::AccessFlagBits2::eMemoryWrite,.dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask=vk::AccessFlagBits2::eShaderRead};
+        cmdbuf.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&ready});
+        WriteBarrier(cmdbuf,vk::Image(snapshot->encoded));
+        const std::array<vk::DescriptorImageInfo,6> images{{
+            {.imageView=*snapshot->generated_view,.imageLayout=vk::ImageLayout::eGeneral},
+            {.imageView=source.depth_view,.imageLayout=vk::ImageLayout::eGeneral},
+            {.imageView=source.motion_view,.imageLayout=vk::ImageLayout::eGeneral},
+            {.imageView=*snapshot->encoded_view,.imageLayout=vk::ImageLayout::eGeneral},
+            {.imageView=*snapshot->depth_view,.imageLayout=vk::ImageLayout::eGeneral},
+            {.imageView=*snapshot->motion_view,.imageLayout=vk::ImageLayout::eGeneral}}};
+        std::array<vk::WriteDescriptorSet,6> writes{};
+        for (u32 i=0;i<6;++i) writes[i]={.dstBinding=i,.descriptorCount=1,
+            .descriptorType=i<2 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,.pImageInfo=&images[i]};
+        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute,*copy_pipeline);
+        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,*copy_layout,0,writes);
+        const std::array<u32,5> parameters{source.render_width,source.render_height,render_width,render_height,2};
+        cmdbuf.pushConstants(*copy_layout,vk::ShaderStageFlagBits::eCompute,0,20,parameters.data());
+        cmdbuf.dispatch((width+7)/8,(height+7)/8,1);
     }
     history=true; settings.frame_generation_active=reset ? 0 : 2;
     settings.frame_generation_problem=nullptr;

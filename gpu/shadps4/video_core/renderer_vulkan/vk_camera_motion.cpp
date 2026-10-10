@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
+#include "video_core/renderer_vulkan/vk_frame_generation.h"
 
 #include <cmath>
 #include <cstdio>
@@ -367,6 +368,13 @@ void CameraMotion::Overlay(VideoCore::ImageId frame) {
         device.destroyImageView(depth_view);
         device.destroyImageView(color_view);
     });
+}
+
+void CameraMotion::FrameGenerationCamera(FrameGenerationSource& source) const {
+    source.view=current.view;source.projection=current.proj;
+    const auto& prev=source.reset || !previous.valid ? current : previous;
+    source.previous_view=prev.view;source.previous_inverse_view=prev.inv_view;
+    source.previous_projection=prev.proj;
 }
 
 } // namespace Vulkan

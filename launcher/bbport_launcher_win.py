@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.6'
+VERSION = '1.6-tatsunakyo.7'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -177,14 +177,17 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'online_community': COMMUNITY_SERVER}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'show_fps': '1', 'show_dlss_preset': '0',
-                 'show_resolution': '0', 'background_mode': 'run', 'frame_generation': 'off',
+                 'show_resolution': '0', 'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
                  'cheat_infinite_stamina': '0', 'cheat_no_consume': '0'}
 MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution',
-              'cheat_infinite_stamina', 'cheat_no_consume'}
+              'cheat_infinite_stamina', 'cheat_no_consume', 'limit_generated_fps'}
 CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
 MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
-FRAME_GENERATORS = [('off', ('Off', 'Выключено')), ('fsr', ('FSR Frame Generation (2x)', 'FSR Frame Generation (2x)'))]
+FRAME_GENERATORS = [('off', ('Off', 'Выключено')), ('fsr', ('FSR Frame Generation (2x)', 'FSR Frame Generation (2x)')),
+                    ('nvidia', ('NVIDIA DLSS Frame Generation / MFG', 'NVIDIA DLSS Frame Generation / MFG'))]
+REFLEX_MODES = [('off', ('Off', 'Выключено')), ('on', ('On', 'Включено')), ('boost', ('On + Boost', 'Включено + Boost'))]
+NVIDIA_MULTIPLIERS = [(str(n-1), (f'{n}x', f'{n}x')) for n in range(2, 7)]
 BACKGROUND_MODES = [('run', ('Keep running', 'Продолжать работу')),
                     ('pause', ('Pause game and rendering', 'Приостановить игру и рендер')),
                     ('30', ('Limit to 30 FPS', 'Лимит 30 FPS')),
@@ -293,6 +296,14 @@ def load_menu():
         values['background_mode'] = 'run'
     if values['frame_generation'] not in dict(FRAME_GENERATORS):
         values['frame_generation'] = 'off'
+    try:
+        values['generated_fps_limit'] = str(max(30, min(1000, int(float(values['generated_fps_limit'])))))
+    except (ValueError, OverflowError):
+        values['generated_fps_limit'] = '144'
+    if values['reflex'] not in dict(REFLEX_MODES):
+        values['reflex'] = 'off'
+    if values['nvidia_generated_frames'] not in dict(NVIDIA_MULTIPLIERS):
+        values['nvidia_generated_frames'] = '1'
     for key in MENU_FLAGS:
         values[key] = '1' if values[key] == '1' else '0'
     for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
@@ -662,11 +673,10 @@ class Launcher:
 
     def frame_generation_choice(self, parent):
         box = self.choice(parent, 'frame_generation', 'menu', FRAME_GENERATORS, width=38)
-        upscaler, hdr = self.var('upscaler', 'ini'), self.var('hdr', 'app')
+        upscaler = self.var('upscaler', 'ini')
         def availability(*_args):
-            box.configure(state='readonly' if upscaler.get() != 'off' and not hdr.get() else 'disabled')
+            box.configure(state='readonly' if upscaler.get() != 'off' else 'disabled')
         upscaler.trace_add('write', availability)
-        hdr.trace_add('write', availability)
         availability()
         return box
 
@@ -945,8 +955,40 @@ class Launcher:
                      'Меньше гостинга на персонажах и одежде; стоит около 10% FPS.'))
         self.row(f, _('Frame Generation', 'Генерация кадров'),
                  self.frame_generation_choice(f),
-                 _('FSR FG adds one interpolated frame between real frames. Requires a temporal upscaler and SDR; background FPS caps disable generation.',
-                   'FSR FG добавляет один промежуточный кадр. Требуется временной апскейлер и SDR; при лимите FPS в фоне генерация отключается.'))
+                 _('FSR FG adds one interpolated frame between real frames. Supports SDR and HDR10 with a temporal upscaler. The normal FPS limit counts real frames: 75 can produce 150 with FG 2x.',
+                   'FSR FG добавляет один промежуточный кадр. Поддерживает SDR и HDR10 с временным апскейлером. Обычный лимит относится к реальным кадрам: 75 даёт до 150 с FG 2x.'))
+        multiplier_choice = self.choice(f, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS)
+        def multiplier_state(*_args):
+            multiplier_choice.configure(state='readonly' if self.var('frame_generation', 'menu').get() == 'nvidia' else 'disabled')
+        self.var('frame_generation', 'menu').trace_add('write', multiplier_state)
+        multiplier_state()
+        self.row(f, _('NVIDIA FG multiplier', 'Множитель NVIDIA FG'),
+                 multiplier_choice,
+                 _('NVIDIA FG requires a compatible GPU, driver and Hardware-accelerated GPU scheduling. Only multipliers supported by your GPU will run. SDR and HDR10 use the same FG path.',
+                   'Нужны совместимые GPU, драйвер и планирование GPU с аппаратным ускорением. Работают только поддерживаемые GPU множители. Поддерживаются SDR и HDR10.'))
+        self.row(f, _('NVIDIA Reflex', 'NVIDIA Reflex'),
+                 self.choice(f, 'reflex', 'menu', REFLEX_MODES),
+                 _('Available independently of DLSS FG on supported NVIDIA GPUs. NVIDIA FG enables Reflex automatically; Boost is optional.',
+                   'Работает независимо от DLSS FG на совместимых GPU NVIDIA. NVIDIA FG включает Reflex автоматически; Boost необязателен.'))
+        self.check(f, 'limit_generated_fps', 'menu',
+                   _('Limit total FPS with Frame Generation', 'Лимит общих FPS с генерацией кадров'))
+        holder = ttk.Frame(f)
+        cap = self.var('generated_fps_limit', 'menu')
+        slider = ttk.Scale(holder, from_=30, to=1000,
+                           command=lambda value: cap.set(str(round(float(value)))))
+        slider.set(int(cap.get()))
+        slider.pack(side='left', fill='x', expand=True)
+        readout = ttk.Label(holder, width=9)
+        readout.pack(side='left', padx=10)
+        def show_cap(*_args):
+            readout.configure(text=f'{cap.get()} FPS')
+            slider.configure(state='normal' if self.var('limit_generated_fps', 'menu').get() else 'disabled')
+        cap.trace_add('write', show_cap)
+        self.var('limit_generated_fps', 'menu').trace_add('write', show_cap)
+        show_cap()
+        self.row(f, _('Total FPS cap', 'Общий лимит FPS'), holder,
+                 _('Optional. Includes generated frames and can reduce the real frame rate. Generated frames do not advance game logic or physics.',
+                   'Необязательный лимит включает промежуточные кадры и может снизить реальные FPS. Генерация не меняет физику и логику игры.'))
         self.section(f, _('FSR 4 assets', 'Ассеты FSR 4'))
         self.fsr4_label = ttk.Label(f, text='', wraplength=self.px(640), justify='left')
         self.fsr4_label.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')
@@ -1076,11 +1118,11 @@ class Launcher:
 
     def build_cheats(self):
         f = self.scrolled_page('cheats', _('Cheats', 'Читы'),
-                               _('Game patches for version 1.09, applied at start. Leave them off for a normal '
-                                 'play-through.', 'Патчи игры для версии 1.09, применяются при запуске. Для обычного '
+                               _('Player cheats for version 1.09. Choices marked below require a restart. Leave them off for a normal '
+                                 'play-through.', 'Читы для версии 1.09. Отмеченные настройки требуют перезапуска. Для обычного '
                                  'прохождения оставьте их выключенными.'))
         self.version_warning(f)
-        self.section(f, _('Live cheats', 'Читы без перезапуска'), top=4)
+        self.section(f, _('Cheats', 'Читы'), top=4)
         self.row(f, _('Player damage', 'Урон игрока'),
                  self.choice(f, 'cheat_damage', 'menu', CHEAT_MULTIPLIERS))
         self.row(f, _('Reduce enemy damage', 'Снизить урон врагов'),
@@ -1098,9 +1140,8 @@ class Launcher:
                      'Включая боеприпасы. Нужен предмет в инвентаре; продажа, выбрасывание и покупка работают как обычно.'))
         self.note(f, _('These choices can also be changed from the in-game menu. They are enabled only when the version 1.09 hooks pass verification.',
                       'Эти настройки можно менять в меню игры. Они доступны только после проверки кода версии 1.09.'))
-        self.section(f, _('Cheats', 'Читы'), top=4)
         for key, title, _on in CHEATS:
-            self.check(f, key, 'ini', _(*title))
+            self.check(f, key, 'ini', _(*title) + _(' (restart required)', ' (после перезапуска)'))
         self.section(f, _('Gameplay tweaks', 'Изменения игрового процесса'))
         for key, title, _on in TWEAKS:
             self.check(f, key, 'ini', _(*title))

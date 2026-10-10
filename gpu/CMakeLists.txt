@@ -156,6 +156,13 @@ add_library(bbgpu ${BBGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOU
     shadps4/core/libraries/kernel/equeue.cpp ${AVPLAYER}
     shadps4/core/libraries/videodec/video_utils.cpp)
 add_dependencies(bbgpu host_shaders)
+target_include_directories(bbgpu PRIVATE third_party/streamline-headers)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    set_source_files_properties(shim/bbport_nvidia.cpp PROPERTIES COMPILE_OPTIONS "-std=c++23")
+endif()
+if(WIN32)
+    target_link_libraries(bbgpu PRIVATE wintrust crypt32)
+endif()
 # bbport co-op: PS4 network and PSN libraries with the shadNet client, from shadp2p
 # (github.com/Wozzardman/shadp2p, GPL-2.0), for private Bloodborne co-op servers.
 find_package(Protobuf CONFIG REQUIRED)
