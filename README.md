@@ -10,6 +10,9 @@ I have rebuilt the Revision 10 ZIP and it is ready for release. GitHub Releases 
 
 Always remember that NO game files are included — you NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump. The game folder must contain `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09 and will NOT work on any other version of the game.
 
+<img width="1920" height="1080" alt="immagine" src="https://github.com/user-attachments/assets/a0fd524a-0cb2-4d71-a7c7-bd7a0c3bab1e" />
+
+
 ## How to use it
 
 1. Download the full Windows ZIP from Releases and extract it into a new folder.
