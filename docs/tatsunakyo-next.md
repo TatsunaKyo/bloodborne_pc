@@ -1,23 +1,24 @@
 # Where I am taking The Crowned Workshop
 
-Updated **11 October 2026**, against the `windows` branch after Revision 15 and the Revision 16 work. I checked the renderer, presentation code, launcher, input runtime, save mounting and cheat hooks so this page reflects the current build.
+Updated **11 October 2026**, against the `windows` branch and Revision 17. I checked the renderer, presentation code, launcher, input runtime, save mounting and cheat hooks so this page reflects the current build.
 
-Revision 15 improved things on my Windows PC, but assets still flash in the Hunter's Dream. That is the first scene I want to compare after the next geometry-read correction. The shooting crash, running stamina and Echoes reports also remain open; I want those under control before adding another wave of cheats.
+Revision 15 improved things on my Windows PC, but assets still flash in the Hunter's Dream on Revision 16. Revision 17 therefore stays focused on geometry correctness. The shooting crash, running stamina and Echoes reports also remain open; I want those under control before adding another wave of cheats.
 
 ## Current work and release order
 
 | Revision / stage | What I am doing | Current state | What completes it |
 |---|---|---|---|
 | **15 — rendering, launcher and this roadmap** | Complete queued geometry reads before ConstRam replaces their source; redesign the launcher. | Rebuilt and tested on my PC: better, but the Hunter's Dream still flashes. | Keep the remaining flashing report open. |
-| **16 — Hunter's Dream and the in-game menu** | Publish the draw thread's remaining copy batch before a drained queue permits source replacement; give the menu compact tabs. | Implemented and rebuilt. The real draw queue/copy pool regression and 1,960 menu layouts pass; existing live controls and saves pass too. | Compare the same Hunter's Dream scene on this Windows build, with FG off and on. The source-ordering defect is reproduced, but I still want the visible result checked. |
-| **17 — existing gameplay bugs** | Investigate firing with damage/reduction and kept ammunition; check sustained running stamina and Echoes awards. | Next. These runtime features already exist, and these reports remain unresolved. | Hook-context/lifetime checks, repeated firing/Blood Bullets/empty ammunition, sustained running and save/reload award checks on my Windows setup. |
-| **18 — Save Manager, first version** | Verified pre-launch backups, manual closed-game snapshots, restore with rollback and retention. | Audited and scoped; no backup manager is shipped yet. | Interrupted copies, failed restore, locked files, disk-full/custom-path tests and game loads from restored saves. |
+| **16 — Hunter's Dream and the in-game menu** | Publish the draw thread's remaining copy batch before a drained queue permits source replacement; give the menu compact tabs. | Rebuilt; queue/copy regression and 1,960 menu layouts pass. My Hunter's Dream test still shows flashing assets. | Retain the menu and ordering correction, and continue the rendering investigation. |
+| **17 — vertex tables and CPU DMA** | Validate worker-prepared vertex inputs against the actual descriptor table at selection/binding; complete earlier reads before CPU DMA replaces guest memory. Include normal/serial diagnostic starts. | Both defects reproduced against Revision 16 and corrected in the command-data tests. Windows game components and launcher rebuilt. | Compare the Hunter's Dream scene on Windows. If it persists, compare the two logged renderer paths with the same graphics/FG settings. |
+| **18 — existing gameplay bugs** | Investigate firing with damage/reduction and kept ammunition; check sustained running stamina and Echoes awards. | Next after the rendering check. These runtime features already exist, and these reports remain unresolved. | Hook-context/lifetime checks, repeated firing/Blood Bullets/empty ammunition, sustained running and save/reload award checks on my Windows setup. |
+| **19 — Save Manager, first version** | Verified pre-launch backups, manual closed-game snapshots, restore with rollback and retention. | Audited and scoped; no backup manager is shipped yet. | Interrupted copies, failed restore, locked files, disk-full/custom-path tests and game loads from restored saves. |
 | **P1 — frame delivery and image quality** | Tail frametimes, damaged shader-cache recovery, HUDless FG inputs and more reliable particle/transparent motion. | Scheduling/history fixes exist; remaining work is split into separate changes below. | Compare real and displayed cadence, HDR/SDR, FG off/on, resize and focus changes without adding extra latency. |
 | **P1 — PC input and ultrawide** | Remapping and relative mouse input first; aspect-aware HUD/FOV and cinematic policy afterwards. | Existing pad/keyboard and community aspect patches are useful foundations. | Reconnect/release/menu-capture tests and real 21:9/32:9 gameplay checks. |
 | **P2 — new cheats and training tools** | Durability, regeneration, status and Rally first; progression and timing changes after save protection. | Reviewed individually below; no new feature in this group is being presented as finished. | Verified 1.09 hooks, reversible disabled states and gameplay/save round trips for the affected mechanics. |
 | **P3 — vendor/backend extensions** | Dynamic MFG, XeSS FG/XeLL, AMD ML FG and FG model presets. | Feasibility work; blocked or incomplete public integration paths. | Supported vendor API and target-hardware results while preserving Vulkan and HDR compatibility. |
 
-I am keeping each revision small enough to compare with the previous one. Revision 15 stays available with its original checksum. English and Russian remain the in-game menu languages; I have postponed the additional translations.
+I am keeping each revision small enough to compare with the previous one. Revisions 15 and 16 stay available with their original checksums. English and Russian remain the in-game menu languages; I have postponed the additional translations.
 
 ## What is already available
 
@@ -29,7 +30,7 @@ I am keeping each revision small enough to compare with the previous one. Revisi
 | Real/FG frame limits | Shared real-FPS setting in both interfaces, editable numeric fields/sliders, independent optional output limit and background 30/60 modes. | Revision 14 corrects recurring timer drift; remaining hitches and latency need scene comparisons. |
 | Borderless and background behavior | Windowed/borderless/exclusive modes and cooperative pause/refocus in VideoOut/runtime. | Keep HDR, VRR and focus transitions in every presentation regression. |
 | Custom performance overlay | Optional preset letter, input/output sizes, FG mode/output FPS and supported latency telemetry; compact layout and whole-overlay switch. | Game HUD is still part of FG's input image. |
-| Temporal history and geometry reads | Camera/cut/loading/resize resets, index-content checks, finite-vector guards, repeated-instance rejection, ConstRam waits and publication of the draw thread's copy batch. | Revision 15 still flashes in the Hunter's Dream. Compare that scene on Revision 16. |
+| Temporal history and geometry reads | Camera/cut/loading/resize resets, index-content checks, finite-vector guards, repeated-instance rejection, ConstRam waits, draw-thread copy publication, vertex-table validation and CPU DMA completion waits. | Revision 16 still flashes in the Hunter's Dream. Compare that scene on Revision 17. |
 | Seven live cheats | Damage, incoming-damage reduction, Echoes gained, movement, stamina, kept consumables/ammunition and no fall damage in `runtime_cheats.c`. | Shooting combination, running stamina and Echoes multiplier reports. Existing startup cheats also remain available. |
 | Diagnostics | Opt-in session logs, performance counters and Windows crash capture, under Advanced → Diagnostics. | Add evidence where it can distinguish a failure; keep normal launches free of profiling overhead. |
 | Workshop identity | Original workshop paintings, crowned TK emblem, editable banner and eleven README infographics. Revision 15 redesigned the launcher; Revision 16 adds the themed in-game tabs. | Both interfaces have layout/control coverage; keep checking actual game input and different monitor sizes. |
@@ -42,7 +43,11 @@ Revision 13 and 14 addressed unsafe temporal inputs, but the objects still appea
 
 Revision 15 calls the existing host-copy completion path before the dump. It keeps the constant ring, threaded recording and upscalers enabled. The regression compiles the actual command branch and covers direct, recorder and worker copies with and without the draw pipeline: the old branch corrupts 2,048 of 3,072 snapshots; the new branch preserves all of them. My Revision 15 gameplay test improved, but the Hunter's Dream still has flashing assets.
 
-I found another unfinished-read path in Revision 16: small copies can stay in the draw thread's private batch when Vulkan recording is synchronous for that draw. Waiting on the command thread cannot see an unpublished batch owned by another thread. I now publish it at the end of a queued draw burst, before reporting that the draw queue is drained. The existing host-copy wait can then finish those reads before ConstRam or a guest-visible write replaces their source.
+I found another unfinished-read path in Revision 16: small copies can stay in the draw thread's private batch when Vulkan recording is synchronous for that draw. Waiting on the command thread cannot see an unpublished batch owned by another thread. I publish it at the end of a queued draw burst, before reporting that the draw queue is drained. The existing host-copy wait can then finish those reads before ConstRam or a guest-visible write replaces their source.
+
+Revision 16 still flashes in my Hunter's Dream test. I traced two additional paths for Revision 17. Prepared vertex inputs were trusted when register/flattened-resource data matched, although their pointed-to V# tables could already describe another mesh. I now compare the effective descriptor of every attribute at pipeline selection and again at binding; a mismatch uses the ordinary current-data path. CPU DMA fill/copy also drained the draw thread without completing deferred source reads, so I added the host-copy and ordered-signal waits before those CPU writes. GPU-side operations retain their existing path.
+
+The production-branch regressions reproduce 1,024 stale pipeline selections, 1,025 stale vertex bindings and 768 corrupted DMA snapshots in Revision 16; those cases pass with the corrections. The packaged normal/serial diagnostic starts log actual thread settings and preserve preferences. This gives the next Hunter's Dream comparison a way to separate concurrent geometry handling from the remaining rendering/presentation paths. I am leaving the visual report open until that comparison.
 
 The regression uses the actual `DrawPipe` and `BbCopy` pool. In 384 short/medium/long bursts, the old code leaves all 384 snapshots unfinished and eventually copies the replacement data into all 384. The corrected code completes the original snapshots in all cases. Address/undefined-behavior checks pass too. I keep the Hunter's Dream visual report open for the new-build comparison.
 
@@ -86,7 +91,7 @@ The community XML already contains 21:9 and 32:9 patches. That is useful, but th
 
 ## P2 — proposed cheats
 
-I checked all fourteen proposals against the runtime hooks and existing patches. The table below describes new work; these additions are not part of Revision 16. Difficulty estimates can change once the exact 1.09 hook and object lifetime are verified.
+I checked all fourteen proposals against the runtime hooks and existing patches. The table below describes new work; these additions are not part of Revision 17. Difficulty estimates can change once the exact 1.09 hook and object lifetime are verified.
 
 | Proposed cheat | Existing basis | Intended behavior and main dependency | Estimated work / order |
 |---|---|---|---|

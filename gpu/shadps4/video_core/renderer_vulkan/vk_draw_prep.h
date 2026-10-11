@@ -9,7 +9,8 @@
 // the graphics pipeline and resource sharps of each direct draw. All helpers run as
 // SCHED_IDLE: they only use idle cores. The GPU thread uses a prepared draw only when the
 // running register checksums match and the flattened user data it computes itself equals the
-// worker's; otherwise it takes the regular path. Workers never create or compile anything.
+// worker's, including the pointed-to vertex descriptors; otherwise it takes the regular path.
+// Workers never create or compile anything.
 
 #pragma once
 
@@ -74,6 +75,21 @@ struct PreparedVertexInputs {
     u32 count, num_ranges;
     u64 buffers_hash; ///< XXH3 of `buffers` (object motion stream identity)
     bool valid;
+
+    /// V# tables are read through user-data pointers, outside the flattened resource table.
+    /// Matching the pointer alone does not make an earlier worker's vertex inputs current.
+    [[nodiscard]] bool Matches(const Shader::Info& vs,
+                               const Shader::Gcn::FetchShaderData& fetch) const noexcept {
+        if (!valid || fetch.attributes.size() != count || (count && !buffers)) {
+            return false;
+        }
+        for (u32 i = 0; i < count; ++i) {
+            if (fetch.attributes[i].GetSharp(vs) != buffers[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 struct PreparedDraw {

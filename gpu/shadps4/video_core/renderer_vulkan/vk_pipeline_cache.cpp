@@ -383,9 +383,8 @@ const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& p
         prepared.reg_checksum != liverpool->gfx_reg_checksum) {
         return nullptr;
     }
-    // Same registers; the stage programs and their flattened user data (which also covers
-    // everything read from guest memory for the specialization) must match as well. This is
-    // the per-stage work GetProgram does on the regular path.
+    // Same registers; the stage programs and flattened shader resources must match as well.
+    // Vertex descriptors are read through separate tables and are checked below.
     const auto& regs = liverpool->regs;
     for (u32 i = 0; i < prepared.num_stages; ++i) {
         const auto& stage = prepared.stages[i];
@@ -408,7 +407,24 @@ const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& p
         }
     }
     const auto it = graphics_pipelines.find(prepared.key);
-    return it != graphics_pipelines.end() ? it->second.get() : nullptr;
+    if (it == graphics_pipelines.end()) {
+        return nullptr;
+    }
+    const auto* pipeline = it->second.get();
+    const auto& fetch = pipeline->GetFetchShader();
+    if (fetch && !fetch->attributes.empty() &&
+        !prepared.vertex.Matches(pipeline->GetStage(Shader::SwStage::Vertex), *fetch)) {
+        // The same table address can describe a different mesh by the time this draw runs.
+        // Re-select the pipeline too: number types, swizzles and static formats can change.
+        static const bool stats = std::getenv("BB_FRAME_STATS") != nullptr;
+        static u32 reports = 0;
+        if (stats && prepared.vertex.valid && reports++ < 8) {
+            std::printf("Vertex inputs: rejected a stale worker table before pipeline selection "
+                        "(%u attributes)\n", prepared.vertex.count);
+        }
+        return nullptr;
+    }
+    return pipeline;
 }
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectParams params,

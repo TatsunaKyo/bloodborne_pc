@@ -43,7 +43,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.16'
+VERSION = '1.6-tatsunakyo.17'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -524,7 +524,18 @@ def game_environment(s):
         env['BB_COMMUNITY_SERVER'] = community_address(s['online_community'])
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
+    if s.get('_geometry_diagnostic') == 'serial':
+        # One comparison run, after saved/extra environment settings. Do not persist
+        # these overrides: the normal launch must retain the user's renderer choices.
+        env.update(BB_DRAW_PIPE='0', BB_PREP_WORKERS='0', BB_VK_RECORD_THREAD='0', BB_COPY_THREADS='0')
     return env
+
+
+def geometry_diagnostic_settings(settings, args):
+    for mode in ('normal', 'serial'):
+        if f'--geometry-diagnostic={mode}' in args:
+            return {**settings, 'developer_profile': True, '_geometry_diagnostic': mode}
+    return settings
 
 
 class DiagnosticSession:
@@ -550,6 +561,8 @@ class DiagnosticSession:
                          'settings': {key: settings.get(key) for key in keys},
                          'ini': load_ini()[0], 'menu_at_start': menu_values(settings),
                          'status': 'running'}
+        if settings.get('_geometry_diagnostic'):
+            self.metadata['geometry_diagnostic'] = settings['_geometry_diagnostic']
         self.write_metadata()
         self.log = open(self.directory / 'session.log', 'w', encoding='utf-8', buffering=1)
 
@@ -557,6 +570,12 @@ class DiagnosticSession:
         if self.directory:
             env.update(BB_FRAME_STATS='1', BB_GPU_PROFILE='1',
                        BB_DIAGNOSTICS_DIR=str(self.directory.resolve()))
+            keys = ('BB_DRAW_PIPE', 'BB_PREP_WORKERS', 'BB_VK_RECORD_THREAD', 'BB_COPY_THREADS',
+                    'BB_FRAME_STATS', 'BB_GPU_PROFILE', 'BB_PIPE_VERIFY')
+            self.metadata['renderer_environment'] = {key: env[key] for key in keys if key in env}
+            self.write_metadata()
+            if self.metadata.get('geometry_diagnostic'):
+                self.record('Geometry diagnostic: ' + self.metadata['geometry_diagnostic'] + '\n')
         return env
 
     def write_metadata(self):
@@ -2211,6 +2230,7 @@ def main():
     if args and args[0] in ('--run', '--script'):
         sys.exit(run_role(args))
     settings = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
+    settings = geometry_diagnostic_settings(settings, args)
     LANG = settings.get('ui_language') or windows_language()
     if args[:1] == ['--install-update'] and len(args) == 3:
         sys.exit(install_update(args[1], args[2]))

@@ -1716,7 +1716,8 @@ void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
     bindings.clear();
     VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT> divisors;
     VertexInputs<AmdGpu::Buffer> guest_buffers;
-    // Inputs a draw-preparation worker read from the same registers and (verified) user data.
+    // Check the pointed-to V# contents again on the recording thread: an ordered DMA may
+    // have updated that table since pipeline selection on the command thread.
     const auto& fetch = pipeline->GetFetchShader();
     const PreparedVertexInputs* ready =
         prepared && prepared->vertex.valid && instance.IsVertexInputDynamicState() && fetch &&
@@ -1724,6 +1725,15 @@ void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
                 !BbToggle::Disabled(BbToggle::PreparedResources)
             ? &prepared->vertex
             : nullptr;
+    if (ready && !ready->Matches(pipeline->GetStage(Shader::SwStage::Vertex), *fetch)) {
+        static const bool stats = std::getenv("BB_FRAME_STATS") != nullptr;
+        static thread_local u32 reports = 0;
+        if (stats && reports++ < 8) {
+            std::printf("Vertex inputs: discarded a stale worker table on the recording thread "
+                        "(%u attributes)\n", ready->count);
+        }
+        ready = nullptr;
+    }
     if (ready) {
         attributes.assign(ready->attributes, ready->attributes + ready->count);
         bindings.assign(ready->bindings, ready->bindings + ready->count);
@@ -3044,6 +3054,10 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     if (!is_gds) {
         texture_cache.ClearMeta(address);
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
+            // A recorded draw may still be uploading from this guest range on stage C or
+            // a copy worker. Draining stage B alone does not finish those reads.
+            scheduler.WaitHostCopies();
+            scheduler.WaitDeferredSignals();
             u32* buffer = std::bit_cast<u32*>(address);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
             return;
@@ -3063,7 +3077,10 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {
-            // Both buffers were not transferred to GPU yet. Can safely copy in host memory.
+            // Read-only stream uploads do not set IsRegionGpuModified. Complete their
+            // source reads before replacing guest memory, including stage B's own batch.
+            scheduler.WaitHostCopies();
+            scheduler.WaitDeferredSignals();
             std::memcpy(std::bit_cast<void*>(dst), std::bit_cast<void*>(src), num_bytes);
             return;
         }
