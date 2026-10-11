@@ -34,8 +34,13 @@ int main() {
     assert(!history.Prepare(draw).store && history.stats.exhausted == 1);
     history.NextFrame();
     const auto next = history.Prepare(draw);
-    assert(next.load == first.store && next.store != first.store);
-    assert(history.Prepare(draw).load == duplicate.store);
+    assert(!next.load && next.store != first.store);
+    assert(!history.Prepare(draw).load && history.stats.ambiguous >= 2);
+    // A unique identity still retains animated object motion.
+    History unique(32);
+    const auto unique_first = unique.Prepare(draw);
+    unique.NextFrame();
+    assert(unique.Prepare(draw).load == unique_first.store);
     history.NextFrame(); // a missing frame invalidates the match
     history.NextFrame();
     assert(!history.Prepare(draw).load);
@@ -60,8 +65,8 @@ int main() {
     const auto after_cut = cut.Prepare(cut_draw);
     assert(!after_cut.load && after_cut.store == before_cut.store + 8);
     cut.NextFrame();
-    assert(cut.Prepare(cut_draw).load == before_cut.store);
-    assert(cut.Prepare(cut_draw).load == after_cut.store);
+    assert(!cut.Prepare(cut_draw).load);
+    assert(!cut.Prepare(cut_draw).load);
     changed = draw;
     changed.first_instance++;
     assert(!history.Prepare(changed).load);
@@ -99,6 +104,9 @@ int main() {
     gated.NextFrame();
     assert(!gated.Moving(weapon, 4));     // after a skipped frame: no comparison
     assert(!gated.Moving(weapon, 5));     // second occurrence of the same draw
+    gated.NextFrame();
+    assert(!gated.Moving(weapon, 5));     // reordered duplicates must not look animated
+    assert(!gated.Moving(weapon, 4));
     assert(ClassifyBuffer(864) == BufferRole::Other && ClassifyBuffer(416) == BufferRole::Other);
     assert(ClassifyBuffer(96) == BufferRole::SmallSkeleton &&
            ClassifyBuffer(384) == BufferRole::SmallSkeleton);
@@ -148,5 +156,5 @@ int main() {
     assert(JitterPhases(960, 1920) == 32);
     assert(JitterPhases(640, 1920) == 72);
     assert(JitterPhases(0, 1920) == 8);
-    std::puts("Motion history: PASS (ranges, restart, offsets, matching, capacity, camera cut allocations, gating, immediate index-content validation, jitter)");
+    std::puts("Motion history: PASS (ranges, restart, offsets, unique matching, ambiguous instance rejection, capacity, camera cut allocations, gating, immediate index-content validation, jitter)");
 }

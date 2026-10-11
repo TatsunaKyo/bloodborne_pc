@@ -598,8 +598,8 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     Common::AccurateTimer timer{vblank_period};
 
-    // bbport: the limit applies to real frames. A late flip starts a new interval so
-    // queued requests cannot catch up in a burst after a stall.
+    // bbport: the limit applies to real frames. Preserve the timer phase through
+    // ordinary wake-up jitter; a genuine stall rebases it without catch-up bursts.
     const u32 foreground_limit = EmulatorSettings.GetFrameLimit();
     u32 frame_limit = BbSettings::EffectiveFrameLimit(foreground_limit);
     auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)

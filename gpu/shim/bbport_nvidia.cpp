@@ -289,6 +289,7 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
     Transpose(c.clipToPrevClip,Multiply(Multiply(Multiply(pp,View(source.previous_view)),View(source.inverse_view)),ip));
     Transpose(c.prevClipToClip,Multiply(Multiply(Multiply(p,View(source.view)),View(source.previous_inverse_view)),ipp));
     c.jitterOffset={source.jitter[0],source.jitter[1]};c.mvecScale={1.0f/source.render_width,1.0f/source.render_height};
+    c.cameraPinholeOffset={0.0f,0.0f};c.motionVectorsJittered=sl::eFalse;
     c.cameraPos={source.inverse_view[3],source.inverse_view[7],source.inverse_view[11]};
     c.cameraRight={source.inverse_view[0],source.inverse_view[4],source.inverse_view[8]};
     c.cameraUp={source.inverse_view[1],source.inverse_view[5],source.inverse_view[9]};
@@ -301,10 +302,12 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
     auto color=Resource(image,view,format,snapshot->width,snapshot->height,vk::ImageLayout::ePresentSrcKHR);
     color.usage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     color.internalFlags=sl::Resource::eVulkanSwapChainImage;
+    const sl::Extent render_extent{0,0,source.render_width,source.render_height};
+    const sl::Extent output_extent{0,0,snapshot->width,snapshot->height};
     sl::ResourceTag inputs[]={
-        {&depth,sl::kBufferTypeDepth,sl::ResourceLifecycle::eValidUntilPresent},
-        {&motion,sl::kBufferTypeMotionVectors,sl::ResourceLifecycle::eValidUntilPresent},
-        {&color,sl::kBufferTypeBackbuffer,sl::ResourceLifecycle::eValidUntilPresent}};
+        {&depth,sl::kBufferTypeDepth,sl::ResourceLifecycle::eValidUntilPresent,&render_extent},
+        {&motion,sl::kBufferTypeMotionVectors,sl::ResourceLifecycle::eValidUntilPresent,&render_extent},
+        {&color,sl::kBufferTypeBackbuffer,sl::ResourceLifecycle::eValidUntilPresent,&output_extent}};
     const auto options_result=fg_options(viewport,options);
     const auto constants_result=constants(c,*token,viewport);
     const auto tags_result=tags(*token,viewport,inputs,3,reinterpret_cast<sl::CommandBuffer*>(VkCommandBuffer(command)));

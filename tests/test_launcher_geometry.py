@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
     os.environ['BB_CONFIG'] = str(root_dir / 'bbport.ini')
     for language in ('en', 'ru'):
         launcher.LANG = language
-        for scale in (1.0, 1.5, 2.0):
+        for scale in (1.0, 1.25, 1.5, 1.75, 2.0):
             root = original_tk()
             root.tk.call('tk', 'scaling', scale * 96 / 72)
             text_font = font.Font(root, family='Segoe UI', size=10)
@@ -57,6 +57,23 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                         obj.vars['upscaler'].set(provider)
                         obj.vars['frame_generation'].set(fg)
                         root.update()
+                        # The longer project identity must fit at the minimum window
+                        # size too, without pushing navigation or the menu hint out.
+                        side_rect = rectangle(obj.side)
+                        for label in (obj.brand_title, obj.brand_author, obj.brand_origin,
+                                      obj.brand_version, obj.side_note, *obj.nav.values()):
+                            bounds = rectangle(label)
+                            assert label.winfo_ismapped(), (language, scale, size, label.cget('text'))
+                            assert bounds[0] >= side_rect[0] and bounds[0]+bounds[2] <= side_rect[0]+side_rect[2]
+                            assert bounds[1] >= side_rect[1] and bounds[1]+bounds[3] <= side_rect[1]+side_rect[3], (language,scale,size,label.cget('text'),bounds,side_rect)
+                        for label in (obj.brand_title, obj.brand_author, obj.brand_origin, obj.brand_version):
+                            face = font.Font(root, font=label.cget('font'))
+                            available = label.winfo_width()
+                            for line in str(label.cget('text')).splitlines():
+                                assert face.measure(line) <= available, (scale, size, line, face.measure(line), available)
+                            assert label.winfo_height() >= face.metrics('linespace') * len(str(label.cget('text')).splitlines())
+                        assert obj.brand_author.cget('text') == 'by TatsunaKyo'
+                        assert obj.brand_title.cget('text').replace('\n',' ') == 'BLOODBORNE: THE CROWNED WORKSHOP'
                         quick = obj.quick_dlss_row.master
                         controls = [w for w in quick.winfo_children()
                                     if w.winfo_class() == 'TCombobox' and w.winfo_ismapped()]
@@ -102,13 +119,13 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                         from PIL import ImageGrab
                         bounds=rectangle(root)
                         ImageGrab.grab(bbox=(bounds[0],bounds[1],bounds[0]+bounds[2],bounds[1]+bounds[3]),
-                                       xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-play-revision13.png')
+                                       xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-play-revision14.png')
             finally:
                 for callback in root.tk.call('after', 'info'):
                     root.after_cancel(callback)
                 root.destroy()
     tk.Tk = original_tk
 
-output = source.parents[1] / 'out/verification/launcher-geometry-revision13.json'
-output.write_text(json.dumps({'cases':results, 'checks':'real Tk widgets: aligned columns, distinct rows, conditional controls and overlay link'},indent=2)+'\n')
-print(f'PASS: {len(results)} real Tk layouts in English/Russian at 100/150/200% scaling; no overlapping dropdowns, matching columns, correct conditional labels and working overlay link.')
+output = source.parents[1] / 'out/verification/launcher-geometry-revision14.json'
+output.write_text(json.dumps({'cases':results, 'checks':'real Tk widgets: complete sidebar identity, visible navigation, aligned columns, distinct rows, conditional controls and overlay link'},indent=2)+'\n')
+print(f'PASS: {len(results)} real Tk layouts in English/Russian at 100/125/150/175/200% scaling; readable sidebar identity, visible navigation, no overlapping dropdowns, matching columns, correct conditional labels and working overlay link.')

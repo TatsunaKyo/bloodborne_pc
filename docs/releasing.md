@@ -1,5 +1,25 @@
 # Publishing TatsunaKyo revisions
 
+## Revision 14
+
+I publish the complete rebuilt package, so the launcher and renderer stay together. For this revision, use **Bloodborne-Windows-v1.6-TatsunaKyo-Revision-14.zip** and its **.zip.sha256** file, with tag **windows-v1.6-tatsunakyo.14**.
+
+The prepared publishing page delivered with the ZIP contains the title, description, exact source commit and archive checksum. Open it, attach those two files, review the preview and publish. I leave the upload to you; opening the form does not publish anything.
+
+The source commit also lives in `BUILD-IDENTITY.json` inside the package. I pin the release to that commit, rather than assuming the current branch head still matches the binaries. The [Revision 14 notes](releases/windows-v1.6-tatsunakyo.14.md) give the changes and checks.
+
+To regenerate the same publishing page from the completed ZIP:
+
+```bash
+python tools/prepare_release.py Bloodborne-Windows-v1.6-TatsunaKyo-Revision-14.zip --output Revision-14-Release.md
+```
+
+The helper reads the package identity and calculates its SHA256 before creating the link. GitHub supports the tag, target, title and body parameters in its [release-form documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/automation-for-release-forms-with-query-parameters).
+
+## Earlier Revision 10 package
+
+The details below belong to the existing Revision 10 ZIP. I keep them here for its original publishing request; they are separate from Revision 14.
+
 I pointed the launcher at releases in `TatsunaKyo/bloodborne_pc`, so an update keeps users on this fork. Use these names consistently:
 
 | Item | Revision 10 |

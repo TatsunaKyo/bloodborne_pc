@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "bbframe_pacing.h"
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -29,7 +30,31 @@ static void QueuedFrames(unsigned fps, std::chrono::nanoseconds render_time,
     }
 }
 
+static void TimerJitter(unsigned fps) {
+    constexpr unsigned frames = 10000;
+    const auto period = std::chrono::nanoseconds(1'000'000'000 / fps);
+    auto now = Clock::time_point{};
+    auto deadline = now;
+    Clock::time_point first{}, last{};
+    for (unsigned frame = 0; frame < frames; ++frame) {
+        const auto oversleep = 250us + std::chrono::microseconds((frame % 5) * 20);
+        now = std::max(now, deadline) + oversleep;
+        if (frame) assert(now - last >= period - BbFramePacing::WakeTolerance(period));
+        else first = now;
+        last = now;
+        deadline = NextFlipDeadline(deadline, now, period);
+        now += 1ms;
+    }
+    const auto expected = period * (frames - 1);
+    const auto elapsed = last - first;
+    assert(elapsed >= expected && elapsed - expected <= 100us);
+    const double measured = double(frames - 1) / std::chrono::duration<double>(elapsed).count();
+    assert(std::abs(measured - fps) < .01);
+    std::printf("Timer jitter: target %u, real %.4f FPS, x2 output %.4f FPS\n", fps, measured, measured * 2);
+}
+
 int main() {
+    for (const unsigned fps : {30u, 60u, 65u, 75u, 90u, 120u}) TimerJitter(fps);
     for (const unsigned fps : {30u, 60u, 65u, 75u, 90u, 120u})
         for (const auto stall : {0ns, 50'000'000ns, 5'000'000'000ns}) {
             QueuedFrames(fps, 1ms, stall);
@@ -58,5 +83,5 @@ int main() {
     const auto wake = Clock::now() + 2ms;
     BbFramePacing::SleepUntil(wake);
     assert(Clock::now() >= wake);
-    std::puts("frame pacing: queued frames, stalls, real/FG caps, resume and timer waits passed");
+    std::puts("frame pacing: timer jitter without cumulative FPS loss, queued frames, stalls, real/FG caps, resume and timer waits passed");
 }

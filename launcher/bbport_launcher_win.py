@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.13'
+VERSION = '1.6-tatsunakyo.14'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -966,15 +966,23 @@ class Launcher:
         side = tk.Frame(self.root, bg=BG, width=self.px(220))
         side.pack(side='left', fill='y')
         side.pack_propagate(False)
-        tk.Label(side, text='BLOODBORNE', bg=BG, fg=GOLD, font=('Georgia', 16)).pack(anchor='w', padx=22, pady=(24, 0))
         self.side = side
-        tk.Label(side, text=_('by Super Medo'), bg=BG, fg=TEXT, font=('Segoe UI', 10)).pack(anchor='w', padx=22)
-        tk.Label(side, text=_('native port · Windows', 'нативный порт · Windows') + f'\nv{VERSION}' + ('\n' + _('co-op test build') if COOP_TEST else ''),
-                 bg=BG, fg=MUTED, anchor='w', justify='left',
-                 wraplength=self.px(220) - 44, bd=0, padx=0,
-                 font=('Segoe UI', 9)).pack(fill='x', padx=22, pady=(0, 20))
-        tk.Label(side, text=LAUNCHER_BUILD, bg=BG, fg=GOLD,
-                 font=('Segoe UI', 9)).pack(anchor='w', padx=22, pady=(0, 10))
+        brand_width = self.px(184)
+        self.brand_title = tk.Label(side, text='BLOODBORNE:\nTHE CROWNED\nWORKSHOP',
+                                   bg=BG, fg=GOLD, font=('Georgia', 13),
+                                   anchor='w', justify='left', wraplength=brand_width, bd=0, padx=0)
+        self.brand_title.pack(fill='x', padx=self.px(18), pady=(self.px(14), self.px(4)))
+        self.brand_author = tk.Label(side, text='by TatsunaKyo', bg=BG, fg=TEXT,
+                                    font=('Segoe UI', 10), anchor='w', bd=0, padx=0)
+        self.brand_author.pack(fill='x', padx=self.px(18))
+        self.brand_origin = tk.Label(side, text='Native Windows port based on\nSuper Medo\'s bloodbornepc',
+                                    bg=BG, fg=MUTED, font=('Segoe UI', 8),
+                                    anchor='w', justify='left', wraplength=brand_width, bd=0, padx=0)
+        self.brand_origin.pack(fill='x', padx=self.px(18), pady=(self.px(5), 0))
+        self.brand_version = tk.Label(side, text=f'v{VERSION}' + ('\n' + _('co-op test build') if COOP_TEST else ''),
+                                     bg=BG, fg=GOLD, font=('Segoe UI', 9),
+                                     anchor='w', justify='left', wraplength=brand_width, bd=0, padx=0)
+        self.brand_version.pack(fill='x', padx=self.px(18), pady=(self.px(3), self.px(12)))
         self.nav, self.current_page = {}, None
         for name, title in (('play', _('Play', 'Играть')), ('graphics', _('Graphics', 'Графика')),
                             ('display', _('Display & FPS', 'Экран и FPS')), ('game', _('Game & effects', 'Игра и эффекты')),
@@ -983,7 +991,7 @@ class Launcher:
                             ('advanced', _('Advanced', 'Дополнительно')),
                             ('log', _('Log', 'Журнал'))):
             item = tk.Label(side, text='    ' + title, bg=BG, fg=TEXT, anchor='w', font=('Segoe UI', 11),
-                            pady=10, cursor='hand2')
+                            pady=self.px(7), cursor='hand2')
             item.pack(fill='x')
             item.bind('<Button-1>', lambda _e, n=name: self.show(n))
             item.bind('<Enter>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg='#1a1613'))
@@ -993,8 +1001,8 @@ class Launcher:
         self.update_box = None
         self.side_note = tk.Label(side, text=_('In the game: Insert or L3+R3\nopens the port\'s menu.',
                                                'В игре: Insert или L3+R3\nоткрывает меню порта.'),
-                                  bg=BG, fg=MUTED, font=('Segoe UI', 9), justify='left', wraplength=self.px(210))
-        self.side_note.pack(anchor='w', padx=22, pady=(0, 18))
+                                  bg=BG, fg=MUTED, font=('Segoe UI', 9), justify='left', wraplength=brand_width)
+        self.side_note.pack(anchor='w', padx=self.px(18), pady=(0, self.px(14)))
 
         right = tk.Frame(self.root, bg=PANEL)
         right.pack(side='left', fill='both', expand=True)

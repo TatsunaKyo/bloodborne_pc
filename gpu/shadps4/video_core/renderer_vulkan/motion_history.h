@@ -227,7 +227,7 @@ public:
         uint32_t store{}, load{}, vertices{}, instances{}, first_vertex{}, first_instance{};
     };
     struct Stats {
-        uint64_t draws{}, stored{}, loaded{}, unmatched{}, exhausted{}, invalid{}, still{};
+        uint64_t draws{}, stored{}, loaded{}, unmatched{}, exhausted{}, invalid{}, still{}, ambiguous{};
     } stats;
 
     // A small skeleton (weapon, prop; most are static world pieces) only needs history
@@ -242,8 +242,11 @@ public:
     bool Moving(GateKey key, uint64_t palette) {
         key.occurrence = 0;
         key.occurrence = gate_occurrences[key]++;
+        auto identity = key;
+        identity.occurrence = 0;
+        const auto* count = gate_previous_occurrences.find(identity);
         const auto* prev = gate_previous.find(key);
-        const bool moving = prev && *prev != palette;
+        const bool moving = count && *count == 1 && key.occurrence == 0 && prev && *prev != palette;
         gate_current.emplace(key, palette);
         stats.still += moving ? 0 : 1;
         return moving;
@@ -252,9 +255,11 @@ public:
     void NextFrame() {
         previous.swap(current);
         current.clear();
+        previous_occurrences.swap(occurrences);
         occurrences.clear();
         gate_previous.swap(gate_current);
         gate_current.clear();
+        gate_previous_occurrences.swap(gate_occurrences);
         gate_occurrences.clear();
         ++frame;
         used = 0;
@@ -264,7 +269,9 @@ public:
     // this frame's allocations/parity; only the preceding camera's tables are stale.
     void DiscardPrevious() {
         previous.clear();
+        previous_occurrences.clear();
         gate_previous.clear();
+        gate_previous_occurrences.clear();
     }
 
     Allocation Prepare(const Draw& draw) {
@@ -277,7 +284,12 @@ public:
             ++stats.invalid;
             return {};
         }
-        const auto* prev = previous.find(key);
+        // Repeated meshes can exchange draw order after culling. An occurrence
+        // number is not an object identity: use camera motion for ambiguous matches.
+        const auto* count_previous = previous_occurrences.find(Key{draw, 0});
+        const bool ambiguous = key.occurrence != 0 || (count_previous && *count_previous > 1);
+        const auto* prev = ambiguous ? nullptr : previous.find(key);
+        stats.ambiguous += ambiguous ? 1 : 0;
         Allocation result{0, 0, draw.vertices.count, draw.instances,
                           draw.vertices.first, draw.first_instance};
         if (prev) {
@@ -318,7 +330,7 @@ private:
     };
     uint32_t capacity{}, used{};
     uint64_t frame{};
-    FlatMap<Key, uint32_t, Hash> previous, current, occurrences;
+    FlatMap<Key, uint32_t, Hash> previous, current, occurrences, previous_occurrences;
     struct GateHash {
         size_t operator()(const GateKey& key) const {
             uint64_t h = 0;
@@ -329,7 +341,7 @@ private:
         }
     };
     FlatMap<GateKey, uint64_t, GateHash> gate_previous, gate_current;
-    FlatMap<GateKey, uint32_t, GateHash> gate_occurrences;
+    FlatMap<GateKey, uint32_t, GateHash> gate_occurrences, gate_previous_occurrences;
 };
 
 } // namespace Vulkan::Motion

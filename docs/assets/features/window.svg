@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="460" viewBox="0 0 1000 460" role="img" aria-labelledby="title desc">
+<title id="title">WINDOW &amp; BACKGROUND</title><desc id="desc">Windowed, borderless and fullscreen choices share a background policy: keep running, pause, or limit real frames to 30 or 60 FPS.</desc>
+<rect width="1000" height="460" fill="#12100f"/>
+<rect x="12" y="12" width="976" height="436" rx="4" fill="none" stroke="#655341"/>
+<path d="M32 100H968M32 365H968" stroke="#5c4e40"/>
+<g transform="translate(896 31) scale(.22)" color="#d6c1a1"><ns0:g xmlns:ns0="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter">
+    <ns0:path id="crown" d="M54 74L47 34L90 54L128 18L166 54L209 34L202 74M58 87H198" />
+    <ns0:path id="workshop-arch" d="M47 218V153Q47 122 128 101Q209 122 209 153V218" />
+    <ns0:path id="initial-t" d="M75 137H137M106 137V216" />
+    <ns0:path id="initial-k" d="M151 137V216M186 137L151 174L189 216" />
+    <ns0:path id="workbench" d="M40 237H216M57 237V246M199 237V246" />
+  </ns0:g>
+</g>
+<text x="42" y="77" text-anchor="start" fill="#d6c1a1" font-family="DejaVu Serif" font-size="44">WINDOW &amp; BACKGROUND</text>
+<rect x="60" y="145" width="390" height="194" rx="4" fill="#1b1714" stroke="#5c4e40"/><path d="M76 321V161H434" fill="none" stroke="#aa8f6e" stroke-opacity=".3"/>
+<text x="255" y="231" text-anchor="middle" fill="#d6c1a1" font-family="DejaVu Serif" font-size="44">Borderless</text>
+<text x="255" y="295" text-anchor="middle" fill="#b3a48f" font-family="DejaVu Sans" font-size="32">Easy Alt-Tab</text>
+<rect x="550" y="145" width="390" height="194" rx="4" fill="#1b1714" stroke="#5c4e40"/><path d="M566 321V161H924" fill="none" stroke="#aa8f6e" stroke-opacity=".3"/>
+<text x="745" y="231" text-anchor="middle" fill="#d6c1a1" font-family="DejaVu Serif" font-size="44">Background</text>
+<text x="745" y="295" text-anchor="middle" fill="#b3a48f" font-family="DejaVu Sans" font-size="32">Pause · 30 · 60</text>
+<path d="M474 238H523M510 226L523 238L510 250" fill="none" stroke="#8d7964" stroke-width="3"/>
+<text x="500" y="418" text-anchor="middle" fill="#f1e9dc" font-family="DejaVu Sans" font-size="32">Windowed · Borderless · Fullscreen</text>
+</svg>
