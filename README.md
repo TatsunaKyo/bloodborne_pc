@@ -1,12 +1,11 @@
 ![Bloodborne: The Crowned Workshop — TatsunaKyo](docs/assets/crowned-workshop-header.png)
 
 # Bloodborne: The Crowned Workshop
+**Current revision: v1.6, revision 13.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 13 notes](docs/releases/windows-v1.6-tatsunakyo.13.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, features and cheats, a configurable overlay and settings you can change during play. This project would NOT be possible without the aforementioned work and people involved.
 
 I call this fork **The Crowned Workshop** because it has become my own place to work on the port. The workshop, lantern and crowned TK emblem are part of that identity; the credit for the original game and the port stays with the people who made them.
-
-**Current revision: v1.6, revision 13.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 13 notes](docs/releases/windows-v1.6-tatsunakyo.13.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 > [!CAUTION]
 > Remember that NO game files are included — you NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump. The game folder must contain `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09 and will NOT work on any other version of the game.
