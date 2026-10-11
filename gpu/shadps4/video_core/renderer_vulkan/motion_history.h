@@ -2,9 +2,13 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
+#include <optional>
 #include <span>
 #include <unordered_map>
 #include <utility>
@@ -48,6 +52,34 @@ inline BufferRole ClassifyBuffer(uint32_t size) {
         return BufferRole::Skeleton;
     }
     return size >= 96 && size % 48 == 0 ? BufferRole::SmallSkeleton : BufferRole::Other;
+}
+
+// This G-buffer shader draws arrays of 416-byte model records, with two wind
+// matrices per tree. The vertex/index buffers identify the mesh, not the trees
+// occupying each array slot after culling. Only the first 3x4 world transform
+// in each record is stable; the rest also contains per-frame camera data.
+inline constexpr uint64_t ModelBatchShader = 0x6a833138;
+inline bool HasModelBatch(uint64_t shader, uint32_t bytes) {
+    if (shader != ModelBatchShader || bytes % 416 != 0) return false;
+    const uint32_t count = bytes / 416;
+    return count >= 1 && count <= 32 && (count & (count - 1)) == 0;
+}
+
+inline std::optional<uint64_t> ModelBatchIdentity(std::span<const std::byte> data) {
+    if (data.size() > 32 * 416 || !HasModelBatch(ModelBatchShader, uint32_t(data.size())))
+        return std::nullopt;
+    uint64_t hash = 14695981039346656037ULL;
+    for (size_t offset = 0; offset < data.size(); offset += 416) {
+        std::array<float, 12> transform;
+        std::memcpy(transform.data(), data.data() + offset, sizeof(transform));
+        if (!std::all_of(transform.begin(), transform.end(), [](float v) {
+                return std::isfinite(v);
+            })) return std::nullopt;
+        for (const auto byte : data.subspan(offset, sizeof(transform))) {
+            hash = (hash ^ std::to_integer<uint8_t>(byte)) * 1099511628211ULL;
+        }
+    }
+    return hash ? hash : 1;
 }
 
 // Keep range scans cached, but verify the current index contents before reusing one.
@@ -211,7 +243,7 @@ inline uint32_t JitterPhases(uint32_t render_width, uint32_t output_width) {
 }
 
 struct Draw {
-    uint64_t shader{}, geometry{}, indices{}, topology{};
+    uint64_t shader{}, geometry{}, indices{}, topology{}, model_batch{};
     uint32_t index_count{}, instances{}, first_instance{};
     VertexRange vertices;
     bool operator==(const Draw& rhs) const = default;
@@ -235,7 +267,7 @@ public:
     // Checked before the index scan of Prepare, with a cheap identity. The first frame
     // of a change stores positions (nothing to load yet), the next one loads them.
     struct GateKey {
-        uint64_t shader{}, geometry{}, indices{};
+        uint64_t shader{}, geometry{}, indices{}, model_batch{};
         uint32_t index_count{}, instances{}, first_instance{}, occurrence{};
         bool operator==(const GateKey&) const = default;
     };
@@ -322,7 +354,7 @@ private:
             uint64_t h = 0;
             const auto mix = [&](uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2); };
             const auto& d = key.draw;
-            mix(d.shader); mix(d.geometry); mix(d.indices); mix(d.topology);
+            mix(d.shader); mix(d.geometry); mix(d.indices); mix(d.topology); mix(d.model_batch);
             mix(d.index_count); mix(d.instances); mix(d.first_instance);
             mix(d.vertices.first); mix(d.vertices.count); mix(key.occurrence);
             return size_t(h);
@@ -335,7 +367,7 @@ private:
         size_t operator()(const GateKey& key) const {
             uint64_t h = 0;
             const auto mix = [&](uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2); };
-            mix(key.shader); mix(key.geometry); mix(key.indices); mix(key.index_count);
+            mix(key.shader); mix(key.geometry); mix(key.indices); mix(key.model_batch); mix(key.index_count);
             mix(key.instances); mix(key.first_instance); mix(key.occurrence);
             return size_t(h);
         }

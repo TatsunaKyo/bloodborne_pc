@@ -275,6 +275,23 @@ bool TemporalUpscaler::RasterScaling() const {
     return !scaled_session && scene_targets.Reduced() && !done_this_frame;
 }
 
+vk::ImageView TemporalUpscaler::FreezeFrameGenerationDepth(vk::CommandBuffer command,
+                                                         vk::Image depth, vk::Format format,
+                                                         u32 w, u32 h) {
+    if (frozen_fg_depth && (frozen_fg_depth->width != w || frozen_fg_depth->height != h ||
+                            frozen_fg_depth->format != format)) {
+        // Keep the old source alive until its draw-queue copy completes, including
+        // when resolution changes before it reaches the presentation thread.
+        scheduler.DeferOperation([old = std::move(frozen_fg_depth)] {});
+    }
+    if (!FrameGeneration::FreezeDepth(instance.GetDevice(), instance.GetAllocator(), command,
+                                      depth, format, w, h, frozen_fg_depth)) {
+        BbSettings::Get().frame_generation_problem = "FG could not preserve scene depth. The real frame is kept.";
+        return {};
+    }
+    return *frozen_fg_depth->view;
+}
+
 bool TemporalUpscaler::OnFrameStart() {
     completed_fg_source=fg_source;
     fg_source={};
@@ -1103,8 +1120,10 @@ void TemporalUpscaler::Run() {
     }
     last_frame = now;
     if (BbSettings::Get().frame_generation != BbSettings::FrameGenerationOff) {
-        fg_source={input_depth_view,vk::Image(motion_image),*motion_view,w,h,jitter,
-                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,true};
+        const auto stable_depth = FreezeFrameGenerationDepth(cmdbuf,input_depth,depth_format,w,h);
+        fg_source={stable_depth,vk::Image(motion_image),*motion_view,w,h,jitter,
+                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,bool(stable_depth)};
+        fg_source.depth_owner = frozen_fg_depth;
         camera_motion.FrameGenerationCamera(fg_source);
     }
 
@@ -1658,8 +1677,10 @@ void TemporalUpscaler::RunScaled() {
     }
     last_frame = now;
     if (BbSettings::Get().frame_generation != BbSettings::FrameGenerationOff) {
-        fg_source={depth_view,vk::Image(motion_image),*motion_view,w,h,jitter,
-                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,true};
+        const auto stable_depth = FreezeFrameGenerationDepth(cmdbuf,depth_image,depth_format,w,h);
+        fg_source={stable_depth,vk::Image(motion_image),*motion_view,w,h,jitter,
+                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,bool(stable_depth)};
+        fg_source.depth_owner = frozen_fg_depth;
         camera_motion.FrameGenerationCamera(fg_source);
     }
 

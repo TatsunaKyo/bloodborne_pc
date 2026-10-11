@@ -1,8 +1,11 @@
 diff --git a/upstream/ffx-1.1.4/sdk/src/backends/vk/ffx_vk.cpp b/upstream/ffx-1.1.4/sdk/src/backends/vk/ffx_vk.cpp
 --- a/upstream/ffx-1.1.4/sdk/src/backends/vk/ffx_vk.cpp
 +++ b/upstream/ffx-1.1.4/sdk/src/backends/vk/ffx_vk.cpp
-@@ -26,3 +26,4 @@
+@@ -23,6 +23,7 @@
+ #include <FidelityFX/host/ffx_interface.h>
+ #include <FidelityFX/host/ffx_util.h>
+ #include <FidelityFX/host/ffx_assert.h>
++#include <mutex>
  #include <FidelityFX/host/backends/vk/ffx_vk.h>
  #include <ffx_shader_blobs.h>
  #include <ffx_breadcrumbs_list.h>
-+#include <mutex>

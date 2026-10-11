@@ -42,9 +42,13 @@ FrameGeneration::Image::~Image() {
     if (image) vmaDestroyImage(allocator,VkImage(image),allocation);
 }
 bool FrameGeneration::Image::Create(VmaAllocator allocator_, vk::Format format, u32 w, u32 h) {
+    return Create(allocator_, format, w, h, usage);
+}
+bool FrameGeneration::Image::Create(VmaAllocator allocator_, vk::Format format, u32 w, u32 h,
+                                    vk::ImageUsageFlags image_usage) {
     allocator=allocator_;
     const vk::ImageCreateInfo info{.imageType=vk::ImageType::e2D,.format=format,.extent={w,h,1},
-        .mipLevels=1,.arrayLayers=1,.samples=vk::SampleCountFlagBits::e1,.usage=usage};
+        .mipLevels=1,.arrayLayers=1,.samples=vk::SampleCountFlagBits::e1,.usage=image_usage};
     const VkImageCreateInfo raw=info;
     const VmaAllocationCreateInfo allocation_info{
         .flags=VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,.usage=VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
@@ -52,6 +56,51 @@ bool FrameGeneration::Image::Create(VmaAllocator allocator_, vk::Format format, 
     if (vmaCreateImage(allocator,&raw,&allocation_info,&handle,&allocation,nullptr)!=VK_SUCCESS)
         return false;
     image=handle;
+    return true;
+}
+
+bool FrameGeneration::FreezeDepth(vk::Device device, VmaAllocator allocator, vk::CommandBuffer command,
+                                  vk::Image source, vk::Format format, u32 w, u32 h,
+                                  std::shared_ptr<FrameGenerationDepthCopy>& copy) {
+    if (!source || !w || !h || (format != vk::Format::eD32Sfloat &&
+        format != vk::Format::eD32SfloatS8Uint && format != vk::Format::eR32Sfloat)) return false;
+    const bool depth_format = format != vk::Format::eR32Sfloat;
+    const vk::ImageAspectFlags copied_aspect = depth_format ? vk::ImageAspectFlagBits::eDepth
+                                                          : vk::ImageAspectFlagBits::eColor;
+    const auto all_aspects = copied_aspect | (format == vk::Format::eD32SfloatS8Uint
+        ? vk::ImageAspectFlagBits::eStencil : vk::ImageAspectFlags{});
+    const bool fresh = !copy || copy->width != w || copy->height != h || copy->format != format;
+    if (fresh) {
+        auto next = std::make_shared<FrameGenerationDepthCopy>();
+        if (!next->depth.Create(allocator, format, w, h, vk::ImageUsageFlagBits::eSampled |
+            vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst)) return false;
+        auto view = device.createImageViewUnique({.image=vk::Image(next->depth),
+            .viewType=vk::ImageViewType::e2D,.format=format,
+            .subresourceRange={copied_aspect,0,1,0,1}});
+        if (view.result != vk::Result::eSuccess) return false;
+        next->view = std::move(view.value); next->format=format; next->width=w; next->height=h;
+        copy = std::move(next);
+    }
+    const vk::MemoryBarrier2 source_ready{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask=vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask=vk::PipelineStageFlagBits2::eTransfer,.dstAccessMask=vk::AccessFlagBits2::eTransferRead};
+    const vk::ImageMemoryBarrier2 before{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eTransfer,.dstAccessMask=vk::AccessFlagBits2::eTransferWrite,
+            .oldLayout=fresh ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
+            .newLayout=vk::ImageLayout::eGeneral,
+            .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            .image=vk::Image(copy->depth),.subresourceRange={all_aspects,0,1,0,1}};
+    command.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&source_ready,
+                             .imageMemoryBarrierCount=1,.pImageMemoryBarriers=&before});
+    const vk::ImageCopy region{.srcSubresource={copied_aspect,0,0,1},
+        .dstSubresource={copied_aspect,0,0,1},.extent={w,h,1}};
+    command.copyImage(source,vk::ImageLayout::eGeneral,vk::Image(copy->depth),vk::ImageLayout::eGeneral,region);
+    const vk::MemoryBarrier2 after{.srcStageMask=vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask=vk::AccessFlagBits2::eTransferRead|vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite};
+    command.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&after});
     return true;
 }
 FrameGeneration::FrameGeneration(vk::PhysicalDevice physical_, vk::Device device_,

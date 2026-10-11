@@ -1031,19 +1031,39 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }();
         bool gated = !all_motion;
         u64 palette = 0;
+        u64 model_batch = 0;
+        bool model_batch_valid = true;
+        bool model_batch_seen = vs.pgm_hash != Motion::ModelBatchShader;
         for (u32 buffer_index=0; buffer_index<vs.buffers.size(); ++buffer_index) {
             const auto& resource = vs.buffers[buffer_index];
             if (resource.IsSpecial()) continue;
             const auto buffer = resource.GetSharp(vs);
             const u32 size = buffer.GetSize();
             if (!buffer.Valid() || buffer.GetStride() != 16) continue;
+            const VAddr address = buffer.base_address;
+            const RingBinding* ring = num_ring_stages ? FindRingBinding(vs,buffer_index) : nullptr;
+            if (Motion::HasModelBatch(vs.pgm_hash, size)) {
+                model_batch_seen = true;
+                std::optional<u64> identity;
+                if (ring && ring->size == size) {
+                    identity = Motion::ModelBatchIdentity({
+                        reinterpret_cast<const std::byte*>(constant_ring->Data(ring->offset)), size});
+                } else if (!ring && memory->IsValidGpuMapping(address, 0) &&
+                           memory->ClampRangeSize(address, size) == size &&
+                           !buffer_cache.IsRegionGpuModified(address, size)) {
+                    identity = Motion::ModelBatchIdentity({
+                        reinterpret_cast<const std::byte*>(address), size});
+                }
+                if (identity) model_batch = XXH3_64bits_withSeed(&*identity, sizeof(*identity), model_batch);
+                else model_batch_valid = false;
+                continue;
+            }
             const auto role = Motion::ClassifyBuffer(size);
             if (role == Motion::BufferRole::Skeleton) {
                 gated = false;
-                break;
+                if (vs.pgm_hash != Motion::ModelBatchShader) break;
+                continue;
             }
-            const VAddr address = buffer.base_address;
-            const RingBinding* ring = num_ring_stages ? FindRingBinding(vs,buffer_index) : nullptr;
             if (role == Motion::BufferRole::SmallSkeleton && ring) {
                 palette = XXH3_64bits_withSeed(constant_ring->Data(ring->offset),ring->size,palette);
             } else if (role == Motion::BufferRole::SmallSkeleton &&
@@ -1054,13 +1074,14 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             }
         }
         push_data.motion_param = 0;
-        if (!gated || object_motion->Moving({.shader = vs.pgm_hash,
+        if (model_batch_seen && model_batch_valid && (!gated || object_motion->Moving({.shader = vs.pgm_hash,
                                              .geometry = motion_geometry,
                                              .indices = index_address,
+                                             .model_batch = model_batch,
                                              .index_count = regs.num_indices,
                                              .instances = regs.num_instances.NumInstances(),
                                              .first_instance = first_instance},
-                                            palette)) {
+                                            palette))) {
             Motion::VertexRange range{base_vertex, regs.num_indices};
             u64 topology = 0;
             if (is_indexed) {
@@ -1094,6 +1115,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 .geometry = motion_geometry,
                 .indices = index_address,
                 .topology = topology,
+                .model_batch = model_batch,
                 .index_count = regs.num_indices,
                 .instances = regs.num_instances.NumInstances(),
                 .first_instance = first_instance,

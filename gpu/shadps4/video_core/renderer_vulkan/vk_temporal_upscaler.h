@@ -147,6 +147,9 @@ private:
 
     void Run();
     void RunScaled();
+    vk::ImageView FreezeFrameGenerationDepth(vk::CommandBuffer command, vk::Image depth,
+                                            vk::Format format, u32 width, u32 height);
+    std::shared_ptr<FrameGenerationDepthCopy> frozen_fg_depth;
     void RunUiOnly(VideoCore::ImageId color, VideoCore::ImageId depth);
     void EnsureUiResources(u32 width, u32 height, vk::Format color, vk::Format depth);
     void PrepareUiDepth(VideoCore::ImageId depth);

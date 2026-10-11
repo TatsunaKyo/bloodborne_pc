@@ -1,7 +1,7 @@
 ![Bloodborne: The Crowned Workshop — TatsunaKyo](docs/assets/crowned-workshop-header.png)
 
 # Bloodborne: The Crowned Workshop
-**Current build: v1.6, revision 18 (diagnostic preview).** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 18 notes](docs/releases/windows-v1.6-tatsunakyo.18.md) · [Development roadmap](docs/tatsunakyo-next.md)
+**Current build: v1.6, revision 19 (preview).** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 19 notes](docs/releases/windows-v1.6-tatsunakyo.19.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, features and cheats, a configurable overlay and settings you can change during play. This project would NOT be possible without the aforementioned work and people involved.
 
@@ -110,7 +110,7 @@ I've also worked on reducing unnecessary CPU and driver overhead: repeated camer
 
 In Revision 13 I corrected stale camera and mesh data in the temporal path after assets were reported flashing across the screen. Camera and small-skeleton tracking now use the same constant snapshot as the draw. I check index contents before reusing cached bounds, so a reused allocation cannot silently inherit another mesh's history. I also reject vectors that would overflow the half-float motion texture. These changes apply to reconstruction as well as FG; I am keeping the reported flashing issue open until I have a gameplay comparison of the affected scenes.
 
-I still see assets appearing in front of me and far away in the Hunter's Dream on Revision 17. The normal and serial renderer paths both show the problem on my Windows 11 / RTX 5070 Ti setup. The vertex-table and CPU-copy ordering corrections remain in place, but that comparison shows there is more to investigate. Revision 18 is a [diagnostic preview](docs/releases/windows-v1.6-tatsunakyo.18.md): I added an F8 capture that keeps the scene entering DLSS, its output, depth and motion together, so I can see where the unwanted objects first appear.
+I narrowed the Hunter's Dream flashing down to NVIDIA Frame Generation on my Windows 11 / RTX 5070 Ti. My Revision 18 capture showed trees receiving movement vectors of more than 2,400 input pixels in some frames, while the scene and DLSS output looked normal. In [Revision 19](docs/releases/windows-v1.6-tatsunakyo.19.md), I changed how those tree batches keep their motion history: sharing a mesh is no longer enough to reuse another batch's positions. I also preserve the scene depth before the game's later UI passes can reuse that buffer. I am keeping this as a preview until I check the same view again with FG enabled; the capture and the reproduced code defects give me a much more specific test this time.
 
 In Revision 14 I tracked down why the FPS limit kept landing below the number I selected: every small delay from the Windows timer was being added to the next frame. I now keep the pacing schedule through those small delays, while starting a fresh interval after a real stall. That keeps the protection against frames rushing through after a hitch without continuously lowering the cap. The real-frame limit and FG-output limit still work together.
 

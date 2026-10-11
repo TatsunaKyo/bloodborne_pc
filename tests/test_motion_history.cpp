@@ -112,6 +112,93 @@ int main() {
            ClassifyBuffer(384) == BufferRole::SmallSkeleton);
     assert(ClassifyBuffer(656) == BufferRole::Skeleton && ClassifyBuffer(64) == BufferRole::Other);
 
+    // Hunter's Dream foliage uses 8/32 model records in one indexed draw. Culling
+    // can replace or reorder those trees without changing mesh/topology/firstInstance.
+    // The old key therefore reads another tree's positions. Match the ordered
+    // world transforms, preserving history when only camera/material fields change.
+    constexpr uint64_t tree_shader = ModelBatchShader;
+    uint32_t batch_cases = 0;
+    for (const uint32_t models : {1u, 2u, 4u, 8u, 16u, 32u}) {
+        assert(HasModelBatch(tree_shader, models * 416));
+        assert(!HasModelBatch(123, models * 416));
+        std::vector<std::byte> records(models * 416);
+        for (uint32_t i = 0; i < models; ++i) {
+            const std::array<float,12> world{
+                .295833f, 0, .634416f, 1.82819f + 4 * i,
+                0, .7f, 0, -8.66246f,
+                -.634416f, 0, .295833f, -38.765f - 2 * i};
+            std::memcpy(records.data() + i * 416, world.data(), sizeof(world));
+        }
+        const auto id = ModelBatchIdentity(records);
+        assert(id && *id != 0);
+        auto camera_changed = records;
+        for (uint32_t i = 0; i < models; ++i)
+            std::fill(camera_changed.begin() + i * 416 + 48,
+                      camera_changed.begin() + (i + 1) * 416, std::byte{0x5a});
+        assert(ModelBatchIdentity(camera_changed) == id);
+        Draw batch{.shader=tree_shader,.geometry=2,.indices=3,.topology=4,
+            .index_count=30,.instances=models,.vertices={0,3}};
+        History old_key(1024);
+        const auto old_positions = old_key.Prepare(batch);
+        old_key.NextFrame();
+        assert(old_key.Prepare(batch).load == old_positions.store); // old defect reproduced
+
+        batch.model_batch = *id;
+        History matched(1024);
+        auto positions = matched.Prepare(batch);
+        matched.NextFrame();
+        assert(matched.Prepare(batch).load == positions.store);
+        for (uint32_t changed_instance = 0; changed_instance < models; ++changed_instance) {
+            auto changed_records = records;
+            float translation;
+            const auto offset = changed_instance * 416 + 3 * sizeof(float);
+            std::memcpy(&translation, changed_records.data() + offset, sizeof(float));
+            translation += 20; // a different tree now occupies the same slot
+            std::memcpy(changed_records.data() + offset, &translation, sizeof(float));
+            const auto changed_id = ModelBatchIdentity(changed_records);
+            assert(changed_id && changed_id != id);
+            History replaced(1024);
+            replaced.Prepare(batch);
+            replaced.NextFrame();
+            auto replacement = batch;
+            replacement.model_batch = *changed_id;
+            assert(!replaced.Prepare(replacement).load);
+            ++batch_cases;
+        }
+        for (uint32_t other = 1; other < models; ++other) {
+            auto reordered = records;
+            std::swap_ranges(reordered.begin(), reordered.begin()+416,
+                             reordered.begin()+other*416);
+            const auto reordered_id = ModelBatchIdentity(reordered);
+            assert(reordered_id && reordered_id != id);
+            History reordered_history(1024);
+            reordered_history.Prepare(batch);
+            reordered_history.NextFrame();
+            auto reordered_draw = batch;
+            reordered_draw.model_batch = *reordered_id;
+            const auto new_positions = reordered_history.Prepare(reordered_draw);
+            assert(new_positions.store && !new_positions.load);
+            reordered_history.NextFrame();
+            assert(reordered_history.Prepare(reordered_draw).load == new_positions.store);
+            ++batch_cases;
+        }
+        const History::GateKey batch_gate{.shader=tree_shader,.model_batch=*id};
+        History gate(1024);
+        assert(!gate.Moving(batch_gate, 1));
+        gate.NextFrame();
+        assert(gate.Moving(batch_gate, 2)); // same trees, updated wind palette
+        auto reordered_gate=batch_gate;
+        reordered_gate.model_batch=*ModelBatchIdentity(camera_changed);
+        assert(reordered_gate.model_batch==batch_gate.model_batch);
+        auto invalid=records;
+        const float nan=std::numeric_limits<float>::quiet_NaN();
+        std::memcpy(invalid.data(),&nan,sizeof(nan));
+        assert(!ModelBatchIdentity(invalid));
+    }
+    assert(HasModelBatch(tree_shader,416) && !HasModelBatch(tree_shader,3*416));
+    assert(!HasModelBatch(tree_shader,64*416) && !ModelBatchIdentity({}));
+    std::printf("Instanced foliage: old mesh-only key reproduced; %u reordered/replaced batch cases rejected, stable world records retained\n",batch_cases);
+
     // An allocation reused on the very next draw must invalidate both the
     // cached bounds and topology, including changes inside unchanged bounds.
     IndexRangeCache ranges;

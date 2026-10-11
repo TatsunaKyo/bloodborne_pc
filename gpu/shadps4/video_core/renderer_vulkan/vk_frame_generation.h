@@ -14,6 +14,8 @@ VK_DEFINE_HANDLE(VmaAllocator)
 struct FfxVkFsr3_3_1_6FrameGenerationContext;
 namespace Vulkan {
 
+struct FrameGenerationDepthCopy;
+
 // Immutable camera values captured before the display pass advances camera history.
 struct FrameGenerationSource {
     vk::ImageView depth_view;
@@ -26,6 +28,7 @@ struct FrameGenerationSource {
     bool reset{}, valid{};
     std::array<float,12> view{}, previous_view{}, previous_inverse_view{};
     std::array<float,4> projection{}, previous_projection{};
+    std::shared_ptr<const FrameGenerationDepthCopy> depth_owner;
 };
 
 class FrameGeneration {
@@ -46,6 +49,8 @@ public:
         Image(const Image&) = delete;
         Image& operator=(const Image&) = delete;
         bool Create(VmaAllocator allocator, vk::Format format, u32 width, u32 height);
+        bool Create(VmaAllocator allocator, vk::Format format, u32 width, u32 height,
+                    vk::ImageUsageFlags image_usage);
         operator vk::Image() const { return image; }
     };
     struct Snapshot {
@@ -64,6 +69,11 @@ public:
     void Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSource& source,
                  vk::ImageView color_view, u32 width, u32 height, vk::Format format,
                  std::shared_ptr<Snapshot>& snapshot);
+    // Freeze the scene depth at reconstruction time. The game's later UI passes
+    // can reuse its depth buffer before the final presentation snapshot is made.
+    static bool FreezeDepth(vk::Device device, VmaAllocator allocator, vk::CommandBuffer command,
+                            vk::Image source, vk::Format format, u32 width, u32 height,
+                            std::shared_ptr<FrameGenerationDepthCopy>& copy);
     // Present queue: record the real FI/OF prepare and dispatch. False still
     // permits a history-seeding dispatch, but suppresses the first generated frame.
     bool Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Snapshot>& snapshot);
@@ -91,5 +101,12 @@ private:
     };
     std::deque<Pending> pending;
     Pending recording;
+};
+
+struct FrameGenerationDepthCopy {
+    FrameGeneration::Image depth;
+    vk::UniqueImageView view;
+    vk::Format format{};
+    u32 width{}, height{};
 };
 } // namespace Vulkan
