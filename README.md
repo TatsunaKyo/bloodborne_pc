@@ -76,7 +76,7 @@ I added FG so you can get more display updates while keeping the game's real-fra
 | FSR Frame Generation | Analytical FSR 3.1.6, adding one intermediate frame for x2 output. |
 | NVIDIA DLSS FG / MFG | Streamline 2.14.1 with production DLSS-G 310.9.1; fixed x2–x6 choices, according to the GPU and driver. |
 | NVIDIA Reflex | Off, On or On + Boost, usable independently of FG and the upscaler. NVIDIA FG enables Reflex automatically. |
-| AMD Anti-Lag 2 | On a supported Radeon GPU, it uses the driver's Vulkan interface to pace the CPU before game input is sampled. I match that input marker to its real presentation frame, including when FSR FG adds an intermediate frame. The existing FPS controls keep ownership of the limits. |
+| AMD Anti-Lag 2 | On a supported Radeon GPU, it uses the driver's Vulkan interface to pace the CPU before game input is sampled, matching that input marker to its real presentation frame, including when FSR FG adds an intermediate frame. |
 
 HDR mattered to me, so I kept **SDR and HDR10** support in both FG paths. I also made Reflex a separate choice because you should be able to use it without switching FG on. Boost remains optional.
 
