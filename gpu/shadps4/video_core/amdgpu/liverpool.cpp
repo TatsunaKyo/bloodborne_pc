@@ -422,9 +422,12 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
             break;
         }
         case PM4ItOpcode::DumpConstRam: {
-            // bbport: earlier draws on the recording thread may still read constants here.
+            // A recorded draw can still have vertex/index reads queued on the Vulkan
+            // recording thread or copy workers. Draining only the draw pipe does not
+            // complete those reads before this dump overwrites their guest source.
             if (rasterizer) {
                 rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonConstRam);
+                rasterizer->WaitHostCopies();
             }
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
             memcpy(dump_const->Address<void*>(),

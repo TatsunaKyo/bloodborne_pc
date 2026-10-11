@@ -101,3 +101,5 @@ Online: shadp2p by Wozzardman (https://github.com/Wozzardman/shadp2p), shadNet b
 The full project and community-patch credits are in README.md. Original copyrights and licenses remain intact; third-party runtime licenses are included with the package.
 
 Revision 11: I changed the real-frame limiter so a late frame does not trigger a burst of queued frames. The VideoOut and FSR FG waits now use the existing Windows high-resolution timer. The real-frame and generated-output caps remain separate. I want to improve the uneven pacing reported with FG; please compare the same scene and settings with Revision 10.
+
+Revision 15 brings the full Crowned Workshop design into the launcher and completes queued vertex/index copies before ConstRam overwrites their source. The updated development plan is in docs/tatsunakyo-next.md. I am keeping the flashing report open for the affected-scene comparison.

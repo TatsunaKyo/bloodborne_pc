@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                         # size too, without pushing navigation or the menu hint out.
                         side_rect = rectangle(obj.side)
                         for label in (obj.brand_title, obj.brand_author, obj.brand_origin,
-                                      obj.brand_version, obj.side_note, *obj.nav.values()):
+                                      obj.brand_version, obj.brand_mark, obj.side_note, *obj.nav.values()):
                             bounds = rectangle(label)
                             assert label.winfo_ismapped(), (language, scale, size, label.cget('text'))
                             assert bounds[0] >= side_rect[0] and bounds[0]+bounds[2] <= side_rect[0]+side_rect[2]
@@ -74,6 +74,18 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                             assert label.winfo_height() >= face.metrics('linespace') * len(str(label.cget('text')).splitlines())
                         assert obj.brand_author.cget('text') == 'by TatsunaKyo'
                         assert obj.brand_title.cget('text').replace('\n',' ') == 'BLOODBORNE: THE CROWNED WORKSHOP'
+                        # Check live hero typography at compact/high-DPI sizes, including
+                        # vertical separation from the game-folder hint and actual artwork.
+                        hero_rect = rectangle(obj.banner)
+                        text_boxes = [obj.banner.bbox(item) for item in obj.banner.find_withtag('workshop-type')]
+                        assert len(obj.banner.find_withtag('workshop-art')) == 1
+                        for box in text_boxes:
+                            assert box[0] >= 0 and box[1] >= 0 and box[2] <= hero_rect[2] and box[3] <= hero_rect[3], (language,scale,size,box,hero_rect)
+                        for i, box in enumerate(text_boxes):
+                            a = (box[0], box[1], box[2]-box[0], box[3]-box[1])
+                            for other in text_boxes[i+1:]:
+                                b = (other[0],other[1],other[2]-other[0],other[3]-other[1])
+                                assert not overlaps(a,b), (language,scale,size,box,other)
                         quick = obj.quick_dlss_row.master
                         controls = [w for w in quick.winfo_children()
                                     if w.winfo_class() == 'TCombobox' and w.winfo_ismapped()]
@@ -106,6 +118,13 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                                         'font':text_font.actual(), 'font_metrics':text_font.metrics(),
                                         'root_rectangle':rectangle(root), 'link_rectangle':rectangle(obj.overlay_link)})
                     # Clicking the link returns to the overlay group even after scrolling.
+                    root.focus_force()
+                    obj.nav['graphics'].focus_set()
+                    root.update()
+                    assert root.focus_get() == obj.nav['graphics']
+                    obj.nav['graphics'].event_generate('<Return>')
+                    root.update()
+                    assert obj.current_page == 'graphics'
                     obj.show('display')
                     obj.pages['display'].scroll(100)
                     obj.show('play')
@@ -119,13 +138,13 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                         from PIL import ImageGrab
                         bounds=rectangle(root)
                         ImageGrab.grab(bbox=(bounds[0],bounds[1],bounds[0]+bounds[2],bounds[1]+bounds[3]),
-                                       xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-play-revision14.png')
+                                       xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-play-revision15.png')
             finally:
                 for callback in root.tk.call('after', 'info'):
                     root.after_cancel(callback)
                 root.destroy()
     tk.Tk = original_tk
 
-output = source.parents[1] / 'out/verification/launcher-geometry-revision14.json'
+output = source.parents[1] / 'out/verification/launcher-geometry-revision15.json'
 output.write_text(json.dumps({'cases':results, 'checks':'real Tk widgets: complete sidebar identity, visible navigation, aligned columns, distinct rows, conditional controls and overlay link'},indent=2)+'\n')
 print(f'PASS: {len(results)} real Tk layouts in English/Russian at 100/125/150/175/200% scaling; readable sidebar identity, visible navigation, no overlapping dropdowns, matching columns, correct conditional labels and working overlay link.')

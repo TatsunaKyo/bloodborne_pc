@@ -22,3 +22,7 @@ Art direction and project identity: TatsunaKyo. The workshop paintings were crea
 ## README feature diagrams
 
 I used the same dark panels, warm brass lettering and crowned TK mark for the feature overviews. Each image sits beside the explanation it introduces; the diagrams keep the broad idea readable before the tables and details. All eleven have editable SVG sources and PNG exports in `docs/assets/features/`. Run `python tools/export_feature_infographics.py` to regenerate them with CairoSVG and Pillow. The export also creates a mobile-width proof sheet for checking the type.
+
+## Launcher
+
+Revision 15 uses the workshop painting on Play, live DPI-aware lettering, the vector TK mark, slate panels and brass accents across navigation, controls, headings and the Play button. I retained the native Tk controls and existing settings behavior while changing the layout and atmosphere. `launcher/bbport_launcher_win.py` is the editable layout source; `crowned-workshop-launcher.png` shows the compiled launcher. The hero also has a compact form for the minimum window size.

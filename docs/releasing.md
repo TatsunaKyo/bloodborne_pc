@@ -1,3 +1,9 @@
+## Revision 15
+
+I rebuilt the workshop launcher and native components together. Use the package's `BUILD-IDENTITY.json` source commit, the full ZIP checksum and `tools/prepare_release.py` to open the prepared Revision 15 release form. Upload the complete ZIP and its `.sha256` file, then publish when ready. The roadmap and release notes are part of the same source revision.
+
+Earlier release instructions remain below as an archive.
+
 # Publishing TatsunaKyo revisions
 
 ## Revision 14

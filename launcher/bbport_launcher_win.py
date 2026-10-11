@@ -31,6 +31,9 @@ import zipfile
 FROZEN = getattr(sys, 'frozen', False)
 PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORT_DIR / 'scripts'))
+if FROZEN:
+    # The packaged CPython 3.14 Pillow modules live beside the bundled runtime.
+    sys.path.insert(0, str(PORT_DIR / '_internal'))
 DATA_DIR = Path(os.environ.get('BB_DATA_DIR', PORT_DIR))
 # Co-op test build: its own settings, and no updates (a public release would replace it).
 COOP_TEST = False
@@ -40,7 +43,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.14'
+VERSION = '1.6-tatsunakyo.15'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -606,8 +609,8 @@ def read_game_output(process, settings, diagnostic, emit):
 # ---------------------------------------------------------------------------------------------
 # The window.
 
-BG, PANEL, CARD, LINE = '#0e0c0b', '#151210', '#1c1815', '#2e2722'
-TEXT, MUTED, GOLD, BLOOD, BLOOD_HI = '#e9e2d6', '#9a8f80', '#c8a96a', '#7c1717', '#9e2222'
+BG, PANEL, CARD, LINE = '#0c0f12', '#14181c', '#1d2227', '#414039'
+TEXT, MUTED, GOLD, BLOOD, BLOOD_HI = '#efe6d8', '#afa69a', '#d6c1a1', '#51332e', '#71483e'
 
 
 class Launcher:
@@ -710,6 +713,9 @@ class Launcher:
         s.configure('.', background=PANEL, foreground=TEXT, fieldbackground=CARD, bordercolor=LINE,
                     lightcolor=LINE, darkcolor=LINE, troughcolor=CARD, focuscolor=GOLD, font=base)
         s.configure('TFrame', background=PANEL)
+        s.configure('Workshop.TFrame', background=CARD, borderwidth=1, relief='solid')
+        s.configure('Workshop.TLabel', background=CARD, foreground=TEXT)
+        s.configure('WorkshopSection.TLabel', background=CARD, foreground=GOLD, font=('Georgia', 13))
         s.configure('TLabel', background=PANEL, foreground=TEXT)
         s.configure('Muted.TLabel', background=PANEL, foreground=MUTED, font=('Segoe UI', 9))
         s.configure('Section.TLabel', background=PANEL, foreground=GOLD, font=('Georgia', 13))
@@ -723,10 +729,10 @@ class Launcher:
         s.configure('TSpinbox', foreground=TEXT, arrowcolor=GOLD, insertcolor=TEXT, padding=4)
         s.configure('TButton', background=CARD, foreground=TEXT, padding=(12, 6), borderwidth=1)
         s.map('TButton', background=[('active', LINE), ('disabled', PANEL)], foreground=[('disabled', MUTED)])
-        s.configure('Play.TButton', background=BLOOD, foreground='#f4ece0', font=('Georgia', 15, 'bold'),
-                    padding=(36, 10), borderwidth=0)
-        s.map('Play.TButton', background=[('active', BLOOD_HI), ('disabled', '#3a2420')],
-              foreground=[('disabled', '#8a7a70')])
+        s.configure('Play.TButton', background=GOLD, foreground=BG, font=('Georgia', 15, 'bold'),
+                    padding=(36, 10), borderwidth=1)
+        s.map('Play.TButton', background=[('active', '#e6d6bc'), ('disabled', CARD)],
+              foreground=[('disabled', MUTED)])
         s.configure('Horizontal.TProgressbar', background=GOLD, troughcolor=CARD, bordercolor=LINE)
         s.configure('Vertical.TScrollbar', background=CARD, arrowcolor=GOLD, troughcolor=PANEL, bordercolor=PANEL)
 
@@ -788,7 +794,9 @@ class Launcher:
         return box
 
     def frame_generation_choice(self, parent, width=38):
-        box = self.choice(parent, 'frame_generation', 'menu', FRAME_GENERATORS, width=width)
+        choices = [(key, ('NVIDIA DLSS FG / MFG', 'NVIDIA DLSS FG / MFG') if key == 'nvidia' else labels)
+                   for key, labels in FRAME_GENERATORS] if width < 30 else FRAME_GENERATORS
+        box = self.choice(parent, 'frame_generation', 'menu', choices, width=width)
         upscaler = self.var('upscaler', 'ini')
         def availability(*_args):
             box.configure(state='readonly' if upscaler.get() != 'off' else 'disabled')
@@ -944,7 +952,10 @@ class Launcher:
         head = ttk.Frame(outer, padding=(28, 22, 28, 6))
         head.pack(fill='x')
         ttk.Label(head, text=title, background=PANEL, foreground=TEXT, font=('Georgia', 20)).pack(anchor='w')
-        ttk.Label(head, text=subtitle, style='Muted.TLabel').pack(anchor='w')
+        subtitle_label = ttk.Label(head, text=subtitle, style='Muted.TLabel', justify='left')
+        subtitle_label.pack(anchor='w')
+        head.bind('<Configure>', lambda e: subtitle_label.configure(wraplength=max(self.px(100), e.width-self.px(56))))
+        tk.Frame(outer, bg=LINE, height=1).pack(fill='x', padx=self.px(28), pady=(self.px(10), self.px(10)))
         canvas = tk.Canvas(outer, bg=PANEL, highlightthickness=0, bd=0)
         bar = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
         inner = ttk.Frame(canvas, padding=(28, 0, 28, 24))
@@ -971,7 +982,7 @@ class Launcher:
         self.brand_title = tk.Label(side, text='BLOODBORNE:\nTHE CROWNED\nWORKSHOP',
                                    bg=BG, fg=GOLD, font=('Georgia', 13),
                                    anchor='w', justify='left', wraplength=brand_width, bd=0, padx=0)
-        self.brand_title.pack(fill='x', padx=self.px(18), pady=(self.px(14), self.px(4)))
+        self.brand_title.pack(fill='x', padx=self.px(18), pady=(self.px(12), self.px(4)))
         self.brand_author = tk.Label(side, text='by TatsunaKyo', bg=BG, fg=TEXT,
                                     font=('Segoe UI', 10), anchor='w', bd=0, padx=0)
         self.brand_author.pack(fill='x', padx=self.px(18))
@@ -982,7 +993,11 @@ class Launcher:
         self.brand_version = tk.Label(side, text=f'v{VERSION}' + ('\n' + _('co-op test build') if COOP_TEST else ''),
                                      bg=BG, fg=GOLD, font=('Segoe UI', 9),
                                      anchor='w', justify='left', wraplength=brand_width, bd=0, padx=0)
-        self.brand_version.pack(fill='x', padx=self.px(18), pady=(self.px(3), self.px(12)))
+        self.brand_version.pack(fill='x', padx=self.px(18), pady=(self.px(3), self.px(8)))
+        self.brand_mark = self.tk.Canvas(side, width=self.px(44), height=self.px(44), bg=BG, bd=0, highlightthickness=0)
+        self.brand_mark.pack(anchor='w', padx=self.px(18), pady=(0, self.px(6)))
+        self.draw_emblem(self.brand_mark, self.px(22), self.px(22), self.px(36))
+        tk.Frame(side, bg=LINE, height=1).pack(fill='x', padx=self.px(18), pady=(0, self.px(6)))
         self.nav, self.current_page = {}, None
         for name, title in (('play', _('Play', 'Играть')), ('graphics', _('Graphics', 'Графика')),
                             ('display', _('Display & FPS', 'Экран и FPS')), ('game', _('Game & effects', 'Игра и эффекты')),
@@ -990,12 +1005,14 @@ class Launcher:
                             ('mods', _('Mods & patches', 'Моды и патчи')),
                             ('advanced', _('Advanced', 'Дополнительно')),
                             ('log', _('Log', 'Журнал'))):
-            item = tk.Label(side, text='    ' + title, bg=BG, fg=TEXT, anchor='w', font=('Segoe UI', 11),
-                            pady=self.px(7), cursor='hand2')
+            item = tk.Label(side, text='  ' + title, bg=BG, fg=MUTED, anchor='w', font=('Segoe UI', 11),
+                            padx=self.px(12), pady=self.px(5), cursor='hand2', takefocus=True)
             item.pack(fill='x')
             item.bind('<Button-1>', lambda _e, n=name: self.show(n))
-            item.bind('<Enter>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg='#1a1613'))
-            item.bind('<Leave>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg=BG))
+            item.bind('<Return>', lambda _e, n=name: self.show(n))
+            item.bind('<space>', lambda _e, n=name: self.show(n))
+            item.bind('<Enter>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg=CARD, fg=TEXT))
+            item.bind('<Leave>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg=BG, fg=MUTED))
             self.nav[name] = item
         tk.Frame(side, bg=BG).pack(fill='both', expand=True)
         self.update_box = None
@@ -1006,11 +1023,12 @@ class Launcher:
 
         right = tk.Frame(self.root, bg=PANEL)
         right.pack(side='left', fill='both', expand=True)
-        bar = tk.Frame(right, bg=BG, height=72)
+        bar = tk.Frame(right, bg=BG, height=self.px(72), highlightthickness=1, highlightbackground=LINE)
         bar.pack(fill='x', side='bottom')
         bar.pack_propagate(False)
         self.status = tk.Label(bar, text='', bg=BG, fg=MUTED, font=('Segoe UI', 10), anchor='w', justify='left')
-        self.status.pack(side='left', padx=24)
+        self.status.pack(side='left', padx=self.px(20))
+        bar.bind('<Configure>', lambda e: self.status.configure(wraplength=max(self.px(120), e.width-self.px(360))))
         self.play_button = ttk.Button(bar, text=_('PLAY', 'ИГРАТЬ'), style='Play.TButton', command=self.play)
         self.play_button.pack(side='right', padx=(10, 24), pady=11)
         self.stop_button = ttk.Button(bar, text=_('Stop', 'Остановить'), command=self.stop, state='disabled')
@@ -1043,7 +1061,8 @@ class Launcher:
         self.pages[name].pack(fill='both', expand=True)
         self.current_page = name
         for n, item in self.nav.items():
-            item.configure(bg=PANEL if n == name else BG, fg=GOLD if n == name else TEXT)
+            item.configure(bg=CARD if n == name else BG, fg=GOLD if n == name else MUTED,
+                           text=('│ ' if n == name else '  ') + item.cget('text')[2:])
         if name == 'mods':
             self.refresh_lists()
         elif name == 'graphics':
@@ -1063,19 +1082,21 @@ class Launcher:
         self.banner = tk.Canvas(page, height=self.px(290), bg=BG, highlightthickness=0, bd=0)
         self.banner.pack(fill='x')
         self.banner.bind('<Configure>', lambda _e: self.draw_banner())
-        body = ttk.Frame(page, padding=(28, 12, 28, 8))
+        body = ttk.Frame(page, padding=(self.px(20), self.px(12), self.px(20), self.px(8)))
         body.pack(fill='both', expand=True)
-        body.columnconfigure(0, weight=3)
-        body.columnconfigure(1, weight=2)
-        info = ttk.Frame(body)
-        info.grid(row=0, column=0, sticky='nw', padx=(0, 24))
-        ttk.Label(info, text=_('Ready check', 'Проверка'), style='Section.TLabel').pack(anchor='w', pady=(0, 6))
+        body.columnconfigure(0, weight=1)
+        body.columnconfigure(1, weight=0)
+        info = ttk.Frame(body, style='Workshop.TFrame', padding=self.px(12))
+        info.grid(row=0, column=0, sticky='new', padx=(0, self.px(12)))
+        ttk.Label(info, text=_('Your workshop', 'Ваша мастерская'), style='WorkshopSection.TLabel').pack(anchor='w', pady=(0, 6))
         self.checks = {}
         for key in ('game', 'saves', 'gpu', 'fsr4'):
-            self.checks[key] = ttk.Label(info, text='', justify='left', wraplength=self.px(440))
+            self.checks[key] = ttk.Label(info, text='', style='Workshop.TLabel', justify='left', wraplength=self.px(440))
             self.checks[key].pack(anchor='w', pady=3)
-        quick = ttk.Frame(body)
-        quick.grid(row=0, column=1, sticky='nw')
+        quick_card = ttk.Frame(body, style='Workshop.TFrame', padding=self.px(12))
+        quick_card.grid(row=0, column=1, sticky='new')
+        quick = ttk.Frame(quick_card)
+        quick.pack(fill='x')
         ttk.Label(quick, text=_('Quick settings', 'Основное'), style='Section.TLabel').grid(
             row=0, column=0, columnspan=2, sticky='w', pady=(0, 2))
         self.row(quick, _('Frame rate', 'Частота кадров'), self.choice(quick, 'fps_mode', 'app', FPS_MODES, 26))
@@ -1129,60 +1150,69 @@ class Launcher:
         def fit_play(_event=None):
             # Leave space for the quick settings at narrow widths and high DPI.
             width = max(self.px(140), min(self.px(440),
-                        body.winfo_width() - quick.winfo_reqwidth() - 80))
+                        body.winfo_width() - quick_card.winfo_reqwidth() - self.px(44)))
             for label in self.checks.values():
                 if int(label.cget('wraplength')) != width:
                     label.configure(wraplength=width)
-            required = max(quick.winfo_reqheight(), info.winfo_reqheight()) + 20
+            required = max(quick_card.winfo_reqheight(), info.winfo_reqheight()) + self.px(22)
             height = max(self.px(90), min(self.px(290), page.winfo_height() - required))
             if int(self.banner.cget('height')) != height:
                 self.banner.configure(height=height)
-        for widget in (page, body, quick, info):
+        for widget in (page, body, quick_card, quick, info):
             widget.bind('<Configure>', fit_play)
         for key in ('fps_mode', 'upscaler', 'output_res'):
             self.vars[key].trace_add('write', lambda *_a: self.refresh_status())
 
+    def draw_emblem(self, canvas, x, y, size):
+        """The editable crowned TK mark, drawn as vectors at the current DPI."""
+        scale = size / 256
+        def line(points, **kw):
+            canvas.create_line(*[value for a,b in points for value in (x+(a-128)*scale,y+(b-128)*scale)],
+                               fill=GOLD, width=max(1, self.px(1.3)), **kw)
+        for points in (((54,74),(47,34),(90,54),(128,18),(166,54),(209,34),(202,74)),
+                       ((58,87),(198,87)), ((47,218),(47,153),(76,119),(128,101),(180,119),(209,153),(209,218)),
+                       ((75,137),(137,137)), ((106,137),(106,216)),
+                       ((151,137),(151,216)), ((186,137),(151,174),(189,216)),
+                       ((40,237),(216,237))):
+            line(points)
+
     def draw_banner(self):
-        """The cover art of the selected dump (sce_sys/pic1.png) under the title."""
-        tk, c = self.tk, self.banner
+        """Workshop artwork and live typography, independent of the game dump's cover."""
+        c = self.banner
         c.delete('all')
-        w, h = max(c.winfo_width(), 400), int(c['height'])
-        art = Path(self.var('game_dir', 'app').get() or '.') / 'sce_sys' / 'pic1.png'
-        if self.banner_source != art:
-            self.banner_source, self.banner_image, self.banner_size = art, None, None
+        w, h = max(c.winfo_width(), self.px(400)), int(c['height'])
+        art = PORT_DIR / 'docs/assets/crowned-workshop-art-moon.png'
+        key = (str(art), w, h)
+        if self.banner_source != key:
+            self.banner_source, self.banner_image = key, None
             try:
-                self.banner_image = tk.PhotoImage(file=str(art))
-            except (tk.TclError, OSError):
+                from PIL import Image, ImageTk, ImageOps
+                with Image.open(art) as painting:
+                    # Keep the hunter/window on the right and a quiet field for lettering.
+                    image = ImageOps.fit(painting.convert('RGB'), (w, h),
+                                        method=Image.Resampling.LANCZOS, centering=(.75, .42))
+                    self.banner_image = ImageTk.PhotoImage(image)
+            except (ImportError, OSError, self.tk.TclError):
                 pass
         if self.banner_image:
-            if self.banner_size != w:
-                self.banner_size, self.banner_scaled = w, self.scaled_art(art, w)
-            # The logo sits in the upper half of the cover: show that part.
-            c.create_image(w // 2, int(h * 0.62), image=self.banner_scaled)
-            for i, stipple in enumerate(('gray12', 'gray25', 'gray50', 'gray75')):
-                c.create_rectangle(0, h - 120 + i * 24, w, h - 96 + i * 24, fill=PANEL, outline='', stipple=stipple)
-            c.create_rectangle(0, h - 24, w, h, fill=PANEL, outline='')
-        else:
-            c.create_text(w // 2, h // 2 - 20, text=_('Choose your game folder (Game & effects)',
-                                                       'Выберите папку игры («Игра и эффекты»)'),
-                          fill=MUTED, font=('Segoe UI', 11))
-        if not self.banner_image:
-            c.create_text(30, h - 70, text='Bloodborne', anchor='w', fill='#f2ead9', font=('Georgia', 36))
+            c.create_image(0, 0, image=self.banner_image, anchor='nw', tags='workshop-art')
+        compact = h < self.px(160)
+        x = self.px(26)
+        if not compact:
+            self.draw_emblem(c, x+self.px(18), self.px(33), self.px(38))
+            c.create_text(x+self.px(51), self.px(33), text='TatsunaKyo', anchor='w',
+                          fill=GOLD, font=('Georgia', 11, 'italic'), tags='workshop-type')
+        title_y = self.px(8) if compact else self.px(75)
+        c.create_text(x, title_y, text='BLOODBORNE', anchor='nw', fill=TEXT,
+                      font=('Georgia', 17 if compact else 26), tags='workshop-type')
+        c.create_text(x, title_y+self.px(31 if compact else 43), text='The Crowned Workshop',
+                      anchor='nw', fill=GOLD, font=('Georgia', 12 if compact else 18), tags='workshop-type')
+        c.create_line(x, h-self.px(29), w-self.px(26), h-self.px(29), fill=LINE)
         info = game_info(self.var('game_dir', 'app').get())
-        sub = (_('CUSA03173 · game version {}', 'CUSA03173 · версия игры {}').format(info[1]) if info
-               else _('Game folder not set', 'Папка игры не выбрана'))
-        c.create_text(33, h - 30, text=sub, anchor='w', fill=GOLD, font=('Segoe UI', 11))
-
-    def scaled_art(self, path, width):
-        """The cover art scaled to `width`: Pillow (smooth) or Tk's integer subsampling."""
-        try:
-            from PIL import Image, ImageTk
-            with Image.open(path) as image:
-                height = round(image.height * width / image.width)
-                return ImageTk.PhotoImage(image.convert('RGB').resize((width, height), Image.LANCZOS))
-        except (ImportError, OSError):
-            factor = max(1, round(self.banner_image.width() / max(width, 1)))
-            return self.banner_image.subsample(factor) if factor > 1 else self.banner_image
+        sub = (_('Game version {} · ready', 'Версия игры {} · готова').format(info[1]) if info
+               else _('Choose your game folder in Game & effects', 'Выберите папку игры в «Игра и эффекты»'))
+        c.create_text(x, h-self.px(15), text=sub, anchor='w', fill=TEXT,
+                      font=('Segoe UI', 9), tags='workshop-type')
 
     def build_graphics(self):
         ttk = self.ttk

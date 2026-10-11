@@ -1,7 +1,7 @@
 ![Bloodborne: The Crowned Workshop — TatsunaKyo](docs/assets/crowned-workshop-header.png)
 
 # Bloodborne: The Crowned Workshop
-**Current revision: v1.6, revision 14.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 14 notes](docs/releases/windows-v1.6-tatsunakyo.14.md) · [Development roadmap](docs/tatsunakyo-next.md)
+**Current revision: v1.6, revision 15.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 15 notes](docs/releases/windows-v1.6-tatsunakyo.15.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, features and cheats, a configurable overlay and settings you can change during play. This project would NOT be possible without the aforementioned work and people involved.
 
@@ -111,7 +111,7 @@ I've also worked on reducing unnecessary CPU and driver overhead: repeated camer
 
 In Revision 13 I corrected stale camera and mesh data in the temporal path after assets were reported flashing across the screen. Camera and small-skeleton tracking now use the same constant snapshot as the draw. I check index contents before reusing cached bounds, so a reused allocation cannot silently inherit another mesh's history. I also reject vectors that would overflow the half-float motion texture. These changes apply to reconstruction as well as FG; I am keeping the reported flashing issue open until I have a gameplay comparison of the affected scenes.
 
-The flashes still occurred in my Revision 13 testing, so I checked another unsafe case: repeated mesh instances could exchange their draw order and inherit each other's motion history. Revision 14 falls back to camera motion when those instances cannot be distinguished safely. I also corrected the missing pinhole offset and resource extents reported by NVIDIA FG in the session log. I am keeping this issue open while comparing the affected scenes.
+The assets still flashed in my Revision 14 gameplay tests. I found another problem before temporal reconstruction: some vertex/index copies could remain queued while the game replaced their source constants. Revision 15 completes those reads before the replacement. The regression reproduces corrupted geometry inputs with the old command branch and preserves them with the corrected branch. I am keeping the scene report open until I check this build in the affected areas.
 
 In Revision 14 I tracked down why the FPS limit kept landing below the number I selected: every small delay from the Windows timer was being added to the next frame. I now keep the pacing schedule through those small delays, while starting a fresh interval after a real stall. That keeps the protection against frames rushing through after a hitch without continuously lowering the cap. The real-frame limit and FG-output limit still work together.
 
@@ -177,11 +177,15 @@ I also corrected the checkboxes that ignored clicks. Settings are shared through
 
 I was planning to work on adding the other languages for the in-game menu but it proved to be a bit more difficult than I initially thought, or rather — it's a bit time consuming and I want to make sure that I work on more fundamental QoL improvements first. I do plan to add it down the line though.
 
-### A cleaner launcher
+### My workshop in the launcher
 
 ![The Crowned Workshop launcher: quick choices and detailed graphics settings](docs/assets/features/launcher.png)
 
-The sidebar now reads **BLOODBORNE: THE CROWNED WORKSHOP**, with my name, the current version and a credit to Super Medo's original Windows port. I kept the updater pointed at this fork. I also corrected the Play layout: the conditional DLSS/FG controls line up with the other settings, and the NVIDIA multiplier has its own row above Output. Small windows and higher DPI reduce the banner to leave space for the controls.
+I redesigned the launcher around the same workshop as the banner: the hunter, lantern and pale-red moon on Play, my crowned TK emblem, slate panels, warm brass type, a clear active navigation row and a matching Play button. The original game's cover is no longer the launcher background. Settings pages share the same palette and heading rules. The sidebar keeps **BLOODBORNE: THE CROWNED WORKSHOP**, my name, the current version and Super Medo's original port credit.
+
+Play still has the quick graphics choices, with conditional DLSS/XeSS controls and a separate NVIDIA multiplier above Output. The artwork and type resize with the window; the small layout keeps the settings visible. I checked the compiled launcher at 100–200% scaling in English and Russian.
+
+![The redesigned Crowned Workshop launcher](docs/assets/crowned-workshop-launcher.png)
 
 ### Optional developer diagnostics and data profiling
 

@@ -1,80 +1,87 @@
-# Development roadmap — TatsunaKyo revision
+# Where I am taking The Crowned Workshop
 
-Audit date: **10 October 2026**. Code baseline: [Revision 10, `f84ca08107e77ac7441124835cbb1a38cd386aed`](https://github.com/TatsunaKyo/bloodborne_pc/commit/f84ca08107e77ac7441124835cbb1a38cd386aed).
+Updated **11 October 2026**, against the `windows` branch after Revision 14. Revision 15 is rebuilt and ready for the affected-scene comparison. I went through the renderer, presentation code, launcher, input runtime, save mounting and cheat hooks again so this page reflects what is actually there today.
 
-I finished, rebuilt and delivered Revision 10, with its source published. It includes the shared camera-history resets and renderer changes described in [Quality and performance](quality-and-performance.md). Here I have checked each proposed feature against that code and set the order for the next work. The proposed additions are not in the existing ZIP. I am keeping the in-game menu in English and Russian for now; I have postponed further translations while I work on stability and quality of life.
+The first versions gave the fork its upscalers, Frame Generation and PC controls. I now want to get the remaining problems under control before adding another long list of options. The flashing assets are still present in my Revision 14 gameplay tests. The shooting crash is also open. A control appearing in the menu is not enough for me to call that work finished.
 
-My first priority is more reliable play: fix the shooting crash, protect saves and improve frame delivery. I want those foundations in place before adding another wave of cheats. I continue testing gameplay on my Windows 11 / RTX 5070 Ti PC, with AMD and Intel results recorded separately. See [Testing and known issues](testing.md).
+## Current work and release order
 
-## What exists and what needs work
-
-“Partial” means that useful code exists, but the requested behavior is incomplete. An existing setting or an automated fixture does not close a reported gameplay bug.
-
-| Area | Current implementation | Next work | Priority |
+| Revision / stage | What I am doing | Current state | What completes it |
 |---|---|---|---|
-| Shooting with several cheats enabled | Open crash report. Damage/reduction and item/ammunition hooks exist; diagnostics are opt-in. | Check the combined firing path, object lifetimes and hook context. Cover ordinary shots, Blood Bullets, empty ammunition and repeated firing. | P0 stability |
-| Character creation preview | Inherited upstream issue; no dedicated preview fix found. Relaxed readbacks already address a different FaceGen problem. | Follow the preview's render targets, readbacks and UI composition separately from the gameplay camera. | P0 compatibility |
-| AMD world-loading crashes | Partial compatibility work, including a BC6H storage-usage fallback. World-load stability remains open. | Separate object-motion device loss, unsupported formats, memory exhaustion and stuck draws. Preserve evidence for each GPU/driver. | P0 compatibility |
-| Save Manager | Save mounting, configurable user directory and launcher save detection exist. No integrated backup/restore manager was found. | Verified pre-launch snapshots and restore first; named profiles and coordinated live snapshots afterwards. | P0 save protection |
-| Frame pacing | Revision 11 fixes overdue-deadline bursts and reuses Windows high-resolution waits. Real-frame/FG-output caps remain separate; Revision 13 exposes the real cap in-game. | Compare actual displayed cadence and latency; review remaining NVIDIA scheduling and FSR presentation stalls. | P0 pacing |
-| Continuous-running stamina | Revision 9 added continuous-drain guards; the automated hook fixture covers repeated updates. | Confirm sustained running in the reported gameplay states and keep the issue open until it passes. | P0 existing cheat |
-| Full key/controller remapping | Keyboard fallback and SDL3 gamepads exist; bindings are fixed in `runtime_pad.c`. | Add persistent bindings, conflict detection, device selection and sensible defaults. | P1 input |
-| Mouse camera and sensitivity | Mouse input in the port menu exists; gameplay camera mouse look does not. | Relative mouse input first. Direct camera integration is a separate step from emulating the right stick. | P1 input |
-| Xbox/PlayStation controllers and prompts | SDL maps supported pads, axes, vibration and touch input. Game prompts still use the game's PlayStation interface. | Keep controller support; add appropriate prompt assets and device switching rather than treating this as a new controller backend. | P1 input |
-| Ultrawide resolutions | Community XML already contains 21:9 and 32:9 patches. Scene/output resizing and native UI composition exist. | Integrate aspect-aware presets, FOV, HUD anchors, lock-on bars, menus and cinematic handling together. | P1 display |
-| Adjustable FOV/HUD | Camera-distance and text-scale patches provide limited starting points. They do not supply an adjustable FOV or HUD editor. | Bound FOV changes; provide HUD scale/safe area before free placement. Test projection and temporal history together. | P1 display |
-| Shader compilation and stutter | Disk cache, warm-up, profile compatibility checks and temporary-file writes exist. | Validate damaged entries and recover from rejected pipelines; then assess safe background compilation/preloading. | P1 renderer |
-| Temporal resets | Shared camera-cut, loading-gap and feature-recreation resets are implemented in Revision 10. | Validate transitions in gameplay; improve particle/transparency motion coverage separately. | Existing + P1 quality |
-| Game HUD excluded from FG | Native UI rendering exists, but FG still receives the final game HUD. | Capture a matching HUDless scene and UI contribution; preserve HDR and resource ownership. | P1 FG quality |
-| FSR FG, NVIDIA FG/MFG, Reflex, XeSS SR | Included. FSR FG is analytical 3.1.6; NVIDIA uses Streamline 2.14.1. SDR/HDR10 are supported. | Keep these paths working through pacing and HUD changes. Reflex remains usable without FG. | Preserve |
-| Dynamic MFG, XeSS FG, AMD ML FG, FG presets A/B | Follow-up work, with API/backend constraints. | Keep the separate feasibility work below; do not expose ineffective settings. | P3 backend/vendor work |
+| **15 — rendering, launcher and this roadmap** | Complete delayed vertex/index reads before ConstRam replaces their source; give the whole launcher the workshop identity; bring this inventory up to date. | Implemented and rebuilt; compiled launcher and delayed-read checks pass. The delayed-read regression reproduces corrupted snapshots with the previous code and passes with the correction. | Full Windows rebuild, compiled launcher layout/popup checks and a gameplay comparison of the affected flashing scenes. Keep the visual report open until that comparison passes. |
+| **16 — existing gameplay bugs** | Investigate firing with damage/reduction and kept ammunition together; recheck sustained running stamina and Echoes awards. | Next. The seven runtime cheats already exist, but these reports are unresolved. | Actual hook-context and lifetime checks, repeated firing/Blood Bullets/empty ammunition, sustained running and save/reload award checks on my Windows setup. |
+| **17 — Save Manager, first version** | Verified backups before launch, manual snapshots while closed, restore with rollback and retention. | Audited and scoped; no backup manager is shipped yet. | Interrupted copies, failed restore, locked files, disk-full and custom-path tests, followed by successful game loads from restored saves. |
+| **P1 — frame delivery and image quality** | Tail frametimes, damaged shader-cache recovery, HUDless FG inputs and more reliable particle/transparent motion. | Scheduling/history fixes exist; remaining work is split into separate changes below. | Compare real and displayed cadence, HDR/SDR, FG off/on, resize and focus changes without adding extra latency. |
+| **P1 — PC input and ultrawide** | Remapping and relative mouse input first; aspect-aware HUD/FOV and cinematic policy afterwards. | Existing pad/keyboard and community aspect patches are useful foundations. | Reconnect/release/menu-capture tests and real 21:9/32:9 gameplay checks. |
+| **P2 — new cheats and training tools** | Durability, regeneration, status and Rally first; progression and timing changes after save protection. | Reviewed individually below; no new feature in this group is being presented as finished. | Verified 1.09 hooks, reversible disabled states and gameplay/save round trips for the affected mechanics. |
+| **P3 — vendor/backend extensions** | Dynamic MFG, XeSS FG/XeLL, AMD ML FG and FG model presets. | Feasibility work; blocked or incomplete public integration paths. | Supported vendor API and target-hardware results while preserving Vulkan and HDR compatibility. |
 
-The seven added runtime cheats remain player damage, incoming-damage reduction, Echoes gained, movement speed, infinite stamina, consumables/ammunition kept and no fall damage. Original startup cheats remain available too. Their existence is not a reason to ignore the firing crash or the outstanding stamina check.
+I am keeping each revision small enough to compare with the previous one. Revision 14 stays available with its original checksum. English and Russian remain the in-game menu languages; I have postponed the additional translations.
 
-## P0: frame pacing and latency
+## What is already available
 
-The first scheduling issue I found is in `VideoOutDriver::PresentThread`, in `gpu/shadps4/core/libraries/videoout/driver.cpp`. In Revision 10, after a delayed flip, the deadline advances with `max(next_flip + period, now - period)`. That can leave it in the past and let queued requests through in a short burst.
+| Feature | Implementation I checked | What still needs attention |
+|---|---|---|
+| DLSS, FSR and XeSS upscaling | `vk_temporal_upscaler.cpp`, `vk_xess.cpp`, provider adapters and scene sizing. XeSS has seven independent quality choices; Play shows its dropdown only for XeSS and DLSS's model dropdown only for DLSS. | More Intel/Radeon gameplay coverage and remaining visual artifacts. |
+| FSR FG and NVIDIA FG/MFG | Analytical FSR 3.1.6 and Streamline 2.14.1; HDR10/SDR paths, input fences and supported fixed multipliers. | HUD separation and displayed-frame cadence. Dynamic MFG is a separate feature. |
+| Reflex and AMD Anti-Lag 2 | NVIDIA input/simulation/render markers; `VK_AMD_anti_lag` capability checks with matching real-frame input/present IDs. Both are independent of the selected upscaler. | Radeon gameplay confirmation. AMD Anti-Lag does not supply a latency number for the overlay. |
+| Real/FG frame limits | Shared real-FPS setting in both interfaces, editable numeric fields/sliders, independent optional output limit and background 30/60 modes. | Revision 14 corrects recurring timer drift; remaining hitches and latency need scene comparisons. |
+| Borderless and background behavior | Windowed/borderless/exclusive modes and cooperative pause/refocus in VideoOut/runtime. | Keep HDR, VRR and focus transitions in every presentation regression. |
+| Custom performance overlay | Optional preset letter, input/output sizes, FG mode/output FPS and supported latency telemetry; compact layout and whole-overlay switch. | Game HUD is still part of FG's input image. |
+| Temporal history safeguards | Camera snapshots/cut/loading/resize resets; immediate index-content checks; finite-vector guards; repeated-instance rejection. | Revision 14 still flashes in gameplay. These checks do not finish that report. |
+| Seven live cheats | Damage, incoming-damage reduction, Echoes gained, movement, stamina, kept consumables/ammunition and no fall damage in `runtime_cheats.c`. | Shooting combination, running stamina and Echoes multiplier reports. Existing startup cheats also remain available. |
+| Diagnostics | Opt-in session logs, performance counters and Windows crash capture, under Advanced → Diagnostics. | Add evidence where it can distinguish a failure; keep normal launches free of profiling overhead. |
+| Workshop identity | Original workshop paintings, crowned TK emblem, editable banner and eleven README infographics. Revision 15 brings the same identity into the launcher layout. | Verify the new launcher at minimum size and every supported DPI rather than only changing its title. |
 
-A model of that exact recurrence at 90 FPS, after a 50 ms stall and with 1 ms of present-call work per request, gives submission times of **50, 51, 52 and 61.111 ms**. The first two gaps are 1 ms, while the nominal period is 11.111 ms. That helped me identify a catch-up case worth fixing in the scheduler. I still need to check the result on the Windows gameplay setup, since there may be other causes of uneven delivery as well.
+## P0 — rendering and compatibility
 
-I have put the first correction in a separate Revision 11 build. The next deadline is one full interval after the later of the previous deadline and the actual submission. The same queued-frame fixture now gives **50, 61.111, 72.222 and 83.333 ms**. Tests cover queued requests, changing caps, long stalls, uncapped mode, pause/refocus and stopping while paused. I kept the guest's vblank notifications and simulation timing separate from generated presents. I still want gameplay comparisons before closing the wider pacing issue.
+### Flashing assets: the next correction
 
-Other concrete checks:
+Revision 13 and 14 addressed unsafe temporal inputs, but the objects still appeared and disappeared in my tests. I found an independent ordering problem in `Liverpool::ProcessCeUpdate`, in `gpu/shadps4/video_core/amdgpu/liverpool.cpp`: `DumpConstRam` drained the draw-recording stage before replacing guest memory, while a draw's actual vertex/index copy could still be waiting on the Vulkan recording thread or copy workers. Those copies could then read the replacement data.
 
-- **FSR FG:** I reused `compat_sleep_ns`, the runtime's high-resolution waitable timer, for the VideoOut waits and FSR FG half-frame gap in Revision 11. The interpolation completion wait and protection of the source resources remain in place. Reviewing the whole display timeline, including GPU and WSI work, is a separate follow-up.
-- **NVIDIA FG/MFG:** Streamline owns generated-frame pacing. Keep the game's real-frame cap and optional total-output cap distinct. Review where the game is delayed relative to `slReflexSleep`; do not insert another sleep between SDK-generated frames or pass a real-frame FPS value as an output cap.
-- **Queue overlap:** current NVIDIA options block the presenting client queue. The public guide allows experiments with `eBlockNoClientQueues`, but requires input-completion fence protection. Those fences already exist here and must remain correct through resize, disabling FG and resource reuse. This is an experiment, not a safe default switch based on GPU utilization alone.
-- **FG off:** review swapchain recreation when NVIDIA generation is disabled, as required by the SDK to avoid residual presentation overhead. A settings toggle and a complete SDK/swapchain transition are different operations.
-- **Measurement:** distinguish real-frame completion, CPU present calls and actual display changes. NVIDIA recommends display-change timing for FG pacing. Vulkan presentation-timing extensions are optional, and support must be queried; `VK_GOOGLE_display_timing` also treats VRR as fixed refresh. Preserve a compatible fallback.
+Revision 15 calls the existing host-copy completion path before the dump. It keeps the constant ring, threaded recording and upscalers enabled. The regression compiles the actual command branch and covers direct, recorder and worker copies with and without the draw pipeline: the old branch corrupts 2,048 of 3,072 snapshots; the new branch preserves all of them. I still need the same gameplay scene to confirm how much of the visible flashing this resolves.
 
-Test 60, 75, 90 and 120 real-FPS settings, several optional output caps, FG off/FSR/NVIDIA x2 and supported MFG modes, SDR/HDR10, borderless, VRR and focus changes. Compare tail frametimes and latency, not just average FPS. More queued frames or a forced 120 output cap can make delivery look smoother while increasing delay or reducing the real-frame rate.
+Upstream's [issue 44](https://github.com/deadinside28/bloodborne_pc/issues/44) also investigates ConstRam/vertex dependencies, with useful reports from NVIDIA and AMD users. This fork's existing unconditional draw drain means its missing host-copy completion needs its own correction; transplanting the newer upstream read-tracker patch would not be enough.
 
-An aggregate 20% CPU load or 85% GPU utilization does not identify spare render capacity: a busy game thread, resource wait, submission dependency or presentation delay can leave the remaining hardware idle. Code inspection can remove redundant work, as Revision 10 does; proving which wait dominates a particular scene requires timing evidence. Keep those diagnostics optional.
+### Shooting and existing cheats
 
-## P0: crashes and save protection
+The damage/reduction hook reads an attack context shared by melee/projectiles, while item use, ammunition use and equipped-ammunition use have separate hooks. I will check those paths together, including object ownership, missing/dead player state, unloaded targets and repeated firing. Blood Bullets and empty ammunition belong in that regression too. New damage or one-hit-kill options wait for this fix.
 
-### Shooting and AMD compatibility
+The stamina hook already handles several drains. The outstanding test is sustained sprinting through the reported states, including stop/start, low stamina and combat transitions. Echoes multiplication needs checks of genuine positive awards, recovered Echoes, spending and load/respawn; I do not want repeated multiplication of an existing balance.
 
-The shared damage/reduction hook reads the attack context and updates both applied damage and bookkeeping. Item use, ammunition use and equipped-ammunition use take separate paths. The firing regression should exercise these together, including projectile ownership, player/NPC classification, loading/unloading and repeated shots. A generic “multiply every damage value” hook would broaden the risk. Extend the existing ABI/state-preservation fixture, then check the affected combinations on the Windows gameplay setup.
+### AMD loading and character creation
 
-For AMD, the native port's [issue 39](https://github.com/deadinside28/bloodborne_pc/issues/39) is more relevant than an old emulator-only crash report. It distinguishes object-motion device loss, texture pressure, pipeline-cache failures and driver faults. Some proposed fixes already exist in this baseline: `image.cpp` retries unsupported speculative storage usage, cache writes use temporary files, and GPU assertion failures stop the port. In particular, the report's theory that release assertions disappear does **not** match our always-active `ASSERT_MSG` and `gpu/shim/common/assert.cpp`.
+`image.cpp` already retries speculative unsupported storage usage, and the assertion path remains active in release builds. [Native-port issue 39](https://github.com/deadinside28/bloodborne_pc/issues/39) distinguishes object-motion device loss, memory pressure and driver failure; those should remain separate investigations. Dirty tiled GPU images must not be discarded merely to lower the VRAM counter.
 
-Remaining code concerns include unsupported format combinations after the retry, tiled GPU-written images that the texture collector cannot safely download/evict, and recovery from bad serialized pipeline entries. Do not free dirty tiled images just to lower the memory counter. [Issue 56](https://github.com/deadinside28/bloodborne_pc/issues/56) records a separate RADV/Linux stuck-draw case; it provides a shader-investigation reference, not confirmation of the same cause on Windows AMD.
+The character-creation preview has no dedicated fix in this baseline. I will trace its targets/readbacks/UI independently of gameplay camera motion. Existing FaceGen readback handling does not establish that the preview works.
 
-### Save Manager rollout
+## P0 — Save Manager
 
-`runtime_savedata.c` mounts game files and stores companion metadata and SaveDataMemory. It does not provide automatic verified backups. The launcher detects `SPRJ*` directories and accepts another user directory; mod profiles are not save profiles. The startup sound fix also modifies a byte in `userdata0010`, so a pre-launch snapshot must happen before that runtime work.
+`runtime_savedata.c` already mounts the original save structure, and the launcher finds saves/custom user directories. Neither provides verified backups, restore or save profiles. Startup's sound correction also changes `userdata0010`, so a pre-launch snapshot must run before the game process starts.
 
-1. **Closed-game backups and restore:** snapshot the actual user/title save paths, companion `.sce_sys` directories and applicable `<title>.memory` data. Respect custom directories and regional title IDs. Keep archives outside the live save tree. Copy into a staging location, record a manifest with relative paths, sizes and SHA-256 hashes, verify it, then publish the completed snapshot.
-2. **Safe restore:** refuse while the game or a save writer is active. Verify and stage the chosen backup, preserve the current save as a rollback snapshot and use a recoverable replacement procedure with a journal. Multiple directory renames are not one atomic transaction. Handle interruption, locked files and low disk space without deleting the last good copy.
-3. **Automatic protection:** keep pre-launch snapshots and separate post-exit snapshots, with retention rules that never replace the last known usable save with a crash-session copy. Hash verification detects damaged backup bytes; it cannot prove that the game originally wrote a semantically valid save.
-4. **Profiles and live changes:** switch named save profiles before launch. Snapshots before enabling invasive cheats during play need coordination with all game save writes. Pausing rendering or observing stable timestamps alone does not establish a consistent multi-file snapshot. Defer that live integration until the runtime can acknowledge a safe save boundary.
+The first version will copy the complete selected user/title save tree, including companion `.sce_sys` directories and `<title>.memory`, without editing its contents. I will stage each snapshot outside the live tree, record relative paths/sizes/SHA-256 hashes and verify the result before listing it as usable. Restore will require a closed game, validate the archive, preserve a rollback copy and reject traversal, missing files and mismatched title/profile data. Retention will operate only on complete verified backups.
 
-I want the first version to preserve the existing save format byte for byte. Save editors are useful format references, but I am keeping balance editing, region conversion and automatic repair outside the backup manager's initial scope.
+Named profiles can follow that first version. Live snapshots before enabling invasive cheats need an acknowledged safe boundary from the actual save writer; paused rendering or stable timestamps cannot provide it. I am postponing live snapshots, region conversion, balance editing and automatic save repair.
 
-## Cheats: inventory, behavior and feasibility
+## P1 — frame pacing, cache and temporal quality
 
-These additions are planned. None of the requested fourteen features is implemented as a new selectable runtime cheat in Revision 10. Adjustable Rally has an existing no-decay starting point. One-hit kill and Insight also have community references, but those are not installed features in this fork.
+The current scheduler fixes both the burst after a long stall and the cumulative timer delay that put a 75 cap near 73.4 FPS in my logs. Production tests cover queued frames, stalls, timer jitter, changing caps, uncapped mode and pause/refocus. Remaining work is the complete display timeline: GPU completion, WSI, Streamline's generated cadence and FSR interpolation/presentation waits.
+
+I will preserve real-frame/FG-output cap separation and Reflex's timing. Streamline queue parallelism is a separate experiment requiring the existing input-completion fences; simply releasing queues or inserting another sleep can change latency or resource ownership. Disabling NVIDIA FG also needs the SDK's proper swapchain transition. A smoother 120-FPS output alone does not settle those cases.
+
+Shader caching already includes persistent storage, warm-up/profile checks and temporary-file writes. The next small improvement is bounded malformed-entry rejection and recovery from a rejected pipeline, followed by safe preloading. The launcher cache-clear button is a workaround, not automatic recovery. Required draws must remain visible while compilation occurs.
+
+The game HUD currently reaches FG. I want owned HUDless color plus the matching UI contribution, with correct HDR encoding and resource lifetimes. [AwesomeObserver's native implementation](https://github.com/AwesomeObserver/bloodborne_pc/tree/405f9fe6a13aaa9e5265dfd7d72c99188706d101) provides a useful starting point, but its HDR behavior and fixed multiplier differ from this fork. Particles/transparency and disocclusion checks follow separately; I do not want constant history resets that remove the benefit of temporal accumulation.
+
+## P1 — input and ultrawide
+
+SDL3 controller axes/buttons/vibration/touch and a fixed keyboard fallback already exist in `runtime_pad.c`. Full remapping, configurable sensitivity and native gameplay mouse camera control do not. I will start with a persistent action map, release/reconnect behavior and relative mouse capture that cleanly releases on Alt-Tab and menu entry. [Upstream PR 108](https://github.com/deadinside28/bloodborne_pc/pull/108) is a reference for stick-emulated mouse look; direct camera integration remains a distinct task. Controller-specific glyphs need appropriate assets and device detection.
+
+The community XML already contains 21:9 and 32:9 patches. That is useful, but the port's normal resolution template is still 16:9. The integrated feature needs camera projection/FOV, HUD safe area/anchors, lock-on indicators, menus and a cinematic aspect policy, with upscalers/FG/HDR tested together. I will start with HUD scaling and safe areas before unrestricted placement.
+
+## P2 — proposed cheats
+
+I checked all fourteen proposals against the runtime hooks and existing patches. The table below describes new work; none of these additions is being shipped in Revision 15. Difficulty estimates can change once the exact 1.09 hook and object lifetime are verified.
 
 | Proposed cheat | Existing basis | Intended behavior and main dependency | Estimated work / order |
 |---|---|---|---|
@@ -93,61 +100,29 @@ These additions are planned. None of the requested fourteen features is implemen
 | Easier firearm parry / Adjustable Parry Window | No runtime parry-window control; Bloodborne animation definitions identify parry-possible states. | One shared leveled control: Off, x2, x4, x8, x16 for the eligible vulnerability window. A narrower x0.5 option can serve difficulty customization. Keep non-parryable attacks excluded. | High; one coherent training feature |
 | Increased dodge invulnerability | No runtime dodge-window hook; Bloodborne animation definitions identify invincibility states. | Bounded levels during genuine dodges, restoring normal state afterwards. Use game time, not output/FG frames. Permanent invulnerability is a separate behavior. | High; training tools |
 
-I would combine easier firearm parries and Adjustable Parry Window into one leveled control. I want it to widen the timing window while keeping non-parryable attacks excluded. Higher factors must stay within the eligible attack animation, so a factor may saturate at that bound. I need to verify how vulnerability enters and exits before selecting the hook. Enlarging the visceral follow-up window would be a separate setting.
 
-New runtime features must follow the existing installation contract in `src/runtime_cheats.c` and `gpu/bbcheats.h`: verify the 1.09 image and instructions, reject conflicts, install the complete hook group before game threads start, preserve both game and host ABI state, and provide a cheap disabled path. Validate player/enemy identity and object lifetime at the actual hook context. A matching offset does not prove those preconditions.
+Easier firearm parries and Adjustable Parry Window will share one leveled control: Off/x2/x4/x8/x16, with an optional narrower x0.5 setting for custom difficulty. It must remain bounded by the eligible attack animation and preserve non-parryable attacks. The visceral follow-up window is a different mechanic. Dodge invulnerability must follow game time and genuine dodge states, never generated frames.
 
-Economy, death and progression cheats need save round trips and duplicate-award checks as well as trampoline tests. Mutually exclusive Echoes death/recovery policies should be explicit. Settings belong in the existing Cheats pages in both interfaces, with live/restart behavior stated accurately. All new cheats default off; values that persist in saves must be documented.
+All additions belong in the existing Cheats pages. I will follow the current signature/ABI/hook-group contract, keep a cheap disabled path and reject overlapping patches. Progression/economy changes need duplicate-award and save round-trip tests. Keep-Echoes and automatic-recovery policies must not leave duplicate collectible balances behind. Save protection comes before those changes.
 
-## P1: input, ultrawide and image quality
+## P3 — vendor extensions
 
-For input, start with a configurable action map rather than another hard-coded keyboard layout. Cover held/released actions, controller reconnects, diagonals, mouse buttons, wheel and menu capture. Relative mouse input needs sensitivity, inversion and clean release on Alt-Tab. The native port's [PR 108](https://github.com/deadinside28/bloodborne_pc/pull/108) is a useful implementation reference, but its mouse movement is converted to the right stick and its reported test platform is CachyOS. It does not establish direct camera control or Windows gameplay coverage. Controller glyphs require assets and correct game/UI device detection as well as input mapping.
-
-For ultrawide, the existing XML has 2560x1080, 3440x1440 and 5120x2160 patches, plus 3840x1080 and 5120x1440. Normal resolution generation currently uses a 16:9 template and changes scene/UI dimensions; adding those sizes to a dropdown would not satisfy the full request. Coordinate camera projection, viewport, HUD anchors, lock-on indicators, menus and cinematic aspect policy. Test 21:9 and 32:9 with HDR, upscaling, FG and resize. Keep a usable safe area before adding unrestricted HUD placement.
-
-For temporal quality, retain Revision 10's resets and improve motion coverage for transparent objects/particles without resetting accumulation on every normal camera movement. HUD separation is a particularly useful FG improvement. AwesomeObserver's native fork contains owned scene snapshots and HUD coverage/composition work worth adapting. Its documented FG path falls back to real frames for HDR, supports fixed x2 and lacks our MFG/Reflex combination. Preserve this fork's HDR decoding/encoding, Streamline tags, matching output extents and completion-fence ownership. A scene/backbuffer difference mask also needs testing on translucent UI; it is not automatically the game's original alpha.
-
-Shader cache recovery should build on the existing cache rather than introduce a second one. Validate blob sizes/versions and recover from rejected entries without deleting saves or clearing every healthy cache after any exit code. AwesomeObserver also has a damaged-pipeline recovery reference. Background compilation must use captured shader state safely and keep required draws visible; skipping draws to hide compilation stalls would create another rendering bug.
-
-## Vendor/backend follow-up
-
-- **NVIDIA Dynamic MFG:** Streamline 2.14.1 documents D3D12-only support. Its Auto mode retains a fixed multiplier with conditional disablement; it is not Dynamic MFG. Recheck vendor support before planning an additional backend.
-- **Intel XeSS FG:** the public FG integration requires D3D12. XeSS Super Resolution already works through the current Vulkan adapter.
-- **Intel XeSS Low Latency (XeLL):** Intel's public integration requires D3D12 and a flip-model DXGI swapchain. It cannot be connected directly to the current Vulkan presentation path. Standalone XeLL supports Intel Arc; Intel also requires XeSS FG for its use on non-Intel hardware. I will revisit it with any future D3D12 work rather than add a switch that does nothing.
-- **AMD Anti-Lag 2:** included in Revision 13 through `VK_AMD_anti_lag`, with GPU/feature checks, an input marker before pad sampling and the matching real-presentation ID. FSR interpolated frames are excluded from simulation markers; VideoOut keeps the cap policy. It is optional and independent of the upscaler. Radeon gameplay coverage is the next check. Reflex remains the separate NVIDIA option.
-- **AMD ML FG:** analytical FSR 3.1.6 FG remains the shipped implementation. Review an actual supported ML API and its hardware/backend requirements before offering another mode.
-- **NVIDIA FG presets A/B:** investigate public driver profile settings independently of SR presets. `DLSSGOptions` has no A/B model field. Preserve existing profiles and prove that selection changes the FG model before exposing a control.
-
-Adding D3D12 or a cross-API presentation bridge is a separate architectural project with synchronization, memory-sharing, HDR and compatibility costs. It should not be slipped into a pacing patch.
-
-## Release order and small candidates
-
-| Milestone | Scope | Completion criteria |
+| Request | Current feasibility | Decision |
 |---|---|---|
-| P0 stability and pacing revision | Shooting regression, missed-deadline scheduling, Windows wait review, damaged-cache handling and actionable AMD/preview investigation. | Rebuilt launcher and native components; hook/scheduler/cache tests; Windows gameplay firing, stamina, pacing, HDR and focus checks. Keep unconfirmed hardware bugs open. |
-| P0 Save Manager | Closed-game snapshots, verified restore/rollback, custom paths and retention. | Interrupted-copy/restore, disk-full, locked-file, title/profile isolation and byte-identical save tests; successful game load after restore. |
-| P1 PC experience | Remapping/mouse, staged ultrawide/HUD, FG HUD separation and targeted shader/motion improvements. | Each feature lands independently with Windows input/display and SDR/HDR regression coverage. |
-| P2 cheats and training | Start with wear, regeneration, status, Insight and Rally; follow with economy/HP; then parry, dodge, buffs and AI tools. | Verified 1.09 hooks, reversible state, save round trips where relevant, and gameplay checks for the affected mechanic and combinations. |
-| P3 backend extensions | Dynamic MFG, XeSS FG and ML FG feasibility; driver-based FG A/B. | A supported public API, real hardware results and no regression to existing Vulkan/HDR behavior. |
+| NVIDIA Dynamic MFG | The shipped Streamline 2.14.1 guide exposes the dynamic path for D3D12. Fixed Vulkan MFG and Auto mode are not that dynamic path. | Recheck vendor Vulkan support before any new backend work; do not rename Auto as Dynamic. |
+| XeSS Frame Generation / XeLL | Intel's current public FG/low-latency integration uses D3D12; XeSS SR already has our Vulkan adapter. Standalone XeLL on non-Intel hardware is restricted by Intel's integration contract. | Keep SR and its independent quality menu; plan FG/XeLL with an actual supported backend. |
+| AMD ML Frame Generation | The shipped path is analytical FSR 3.1.6. An ML upscaler is not an ML FG integration. | Require the relevant public API/hardware/backend path before exposing a mode. |
+| NVIDIA FG model presets A/B | These are separate from SR presets E/F/J/K/M/L; `DLSSGOptions` does not provide an A/B model field. | Investigate supported driver-profile control, restore existing profiles and prove that the chosen model changes. |
 
-**Revision 10 stays closed.** I have added the complete inventory and restored omitted upstream issues to the testing page. The delivered launcher/components keep their existing checksums.
+I will keep HDR support as a requirement for any future FG path. A D3D12 backend or cross-API presentation bridge would be a separate architectural project with explicit synchronization, memory sharing and compatibility work.
 
-Revision 11 starts with the overdue-deadline correction and reuse of the existing Windows timer, with regression checks and a Windows rebuild. Targeted malformed-cache rejection and the firing crash are the next items. I am deferring queue-parallelism changes, live save snapshots and the new cheat wave until their dependencies are resolved. HUDless composition has a useful reference, but I need to handle its HDR and resource lifetimes as a separate feature.
+## References and credit
 
-Revision 12 adds the requested independent XeSS quality menu after the Revision 11 pacing build has been delivered. It keeps the seven modern XeSS ratios consistent across startup patches, live scene sizing and SDK initialization, with checks for popup selection, preference migration and SDR/HDR flags. I am keeping the broader stability work above open.
+I will retain the original licenses and author credits for any code I adapt. shadPS4 cheat addresses/code caves cannot be copied straight into this native runtime.
 
-Revision 13 adds Anti-Lag 2 and the shared real-FPS control, then addresses the flashing report in the shared temporal path: constant snapshots, immediate topology validation and finite FP16 vectors. I still want an affected-scene gameplay comparison before closing that report. The Crowned Workshop identity does not change the repository, executable names or save paths. The shooting crash and Save Manager remain the next P0 work.
+- [shadPS4 Bloodborne 1.09 cheats](https://github.com/shadps4-emu/ps4_cheats/blob/main/CHEATS/CUSA03173_01.09.json), credited to Shiningami + bloo: Insight and one-hit behavior references.
+- [Bloodborne Paramdex](https://github.com/soulsmods/Paramdex/tree/master/BB/Defs) and [DSAnimStudio Bloodborne TAE definitions](https://github.com/Meowmaritus/DSAnimStudio/blob/master/DSAnimStudioNETCore/Res/TAE.Template.BB.xml): wear, effects, Rally, drops, parry and invulnerability states; field names still need verification in the live runtime.
+- [Bloodborne save editor](https://github.com/Noxde/Bloodborne-save-editor) and [er-save-watcher](https://github.com/tvhdev/er-save-watcher): format and snapshot references, while keeping original save bytes intact here.
+- [Streamline 2.14.1 DLSS-G guide](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideDLSS_G.md), [Intel XeSS SDK](https://github.com/intel/xess), [XeLL guide](https://github.com/intel/xess/blob/main/doc/xell_developer_guide_english.md), [NVAPI settings](https://github.com/NVIDIA/nvapi/blob/main/NvApiDriverSettings.h) and [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan): provider and backend contracts.
 
-## Implementation references
-
-These are the references I used to plan the work, with their original authors credited. I will adapt and check any code I use against this port's own runtime and rendering pipeline.
-
-- [AwesomeObserver native fork at `405f9fe`](https://github.com/AwesomeObserver/bloodborne_pc/tree/405f9fe6a13aaa9e5265dfd7d72c99188706d101): HUD coverage, owned FG inputs, Windows timer use and cache recovery. Its native integration is closer to this port than emulator-specific loader code, but its FG/HDR interfaces differ.
-- [Official shadPS4 Bloodborne 1.09 cheats](https://github.com/shadps4-emu/ps4_cheats/blob/main/CHEATS/CUSA03173_01.09.json), credited to Shiningami + bloo: Insight and one-hit-kill behavior references. Fixed code caves, relocated addresses, balance-forcing logic and assumed object layouts must not be copied directly into this runtime.
-- [Bloodborne Paramdex definitions](https://github.com/soulsmods/Paramdex/tree/master/BB/Defs) and [DSAnimStudio's Bloodborne animation template](https://github.com/Meowmaritus/DSAnimStudio/blob/master/DSAnimStudioNETCore/Res/TAE.Template.BB.xml): weapon wear, effects, regain, drop tables and parry/invulnerability states. A named field is evidence to investigate, not proof of its live offset or safe mutation.
-- [Bloodborne save editor](https://github.com/Noxde/Bloodborne-save-editor) and [er-save-watcher](https://github.com/tvhdev/er-save-watcher): save-layout and checkpoint ideas. Start with whole-file preservation and runtime-specific save boundaries rather than transplanting an emulator path or continuous restore loop.
-- [Streamline 2.14.1 DLSS-G guide](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideDLSS_G.md), [manual Vulkan hooks](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideManualHooking.md), [NVAPI settings](https://github.com/NVIDIA/nvapi/blob/main/NvApiDriverSettings.h), [Intel XeSS](https://github.com/intel/xess) and [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan): provider contracts and backend limits.
-- [Windows high-resolution timers](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createwaitabletimerexw) and [Vulkan display timing](https://docs.vulkan.org/refpages/latest/refpages/source/VK_GOOGLE_display_timing.html): timing facilities, with platform/extension constraints.
-- [Intel XeLL integration guide](https://github.com/intel/xess/blob/main/doc/xell_developer_guide_english.md), [Intel's XeSS hardware/backend matrix](https://www.intel.com/content/www/us/en/developer/topic-technology/gamedev/xess.html) and [AMD Anti-Lag 2 integration guide](https://gpuopen.com/learn/integrating-amd-radeon-anti-lag-2-sdk-in-your-game/): low-latency APIs and current backend requirements.
-
-Maintained by TatsunaKyo. Original port, community patch and vendor credits remain intact. Any reused code must retain its license and attribution.
+Development and revision direction: TatsunaKyo. Gameplay baseline: my Windows 11 / RTX 5070 Ti PC. Other hardware reports are welcome; automated checks and their build environments remain recorded with each package.

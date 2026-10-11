@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-xess-popup-') as directory:
                         if language == 'en' and scale == 1.0 and page == 'play' and index == 0:
                             from PIL import ImageGrab
                             ImageGrab.grab(bbox=(0, 0, root.winfo_width(), root.winfo_height()),
-                                           xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-xess-popup-revision14.png')
+                                           xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-xess-popup-revision15.png')
                         root.tk.call(listbox, 'selection', 'clear', 0, 'end')
                         root.tk.call(listbox, 'selection', 'set', index)
                         root.tk.call(listbox, 'activate', index)
@@ -115,6 +115,6 @@ with tempfile.TemporaryDirectory(prefix='bbport-xess-popup-') as directory:
                     root.after_cancel(callback)
                 root.destroy()
 
-output = source.parents[1] / 'out/verification/launcher-xess-revision14.json'
+output = source.parents[1] / 'out/verification/launcher-xess-revision15.json'
 output.write_text(json.dumps({'cases': results, 'checks': 'actual popup input, all seven entries, both pages, conditional rows/hints, independent saved quality, concurrent game changes'}, indent=2)+'\n')
 print(f'PASS: {len(results)} real XeSS popup selections on Play/Graphics in English/Russian at 100/150/200%; migration, visibility and independent saved preferences pass.')

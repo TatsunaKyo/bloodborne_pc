@@ -1,3 +1,5 @@
+> For the current Windows fork, see [The Crowned Workshop development plan](tatsunakyo-next.md). This page preserves the upstream renderer plan.
+
 # Нативный порт Bloodborne: что сделано и что дальше
 
 Основной текст — состояние на 2026-09-26; ниже первым разделом — что изменилось к 30.09.
