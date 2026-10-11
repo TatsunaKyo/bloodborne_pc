@@ -9,6 +9,7 @@
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
 #include "bbport_background.h"
+#include "bbport_capture.h"
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -139,6 +140,11 @@ bool WindowSDL::PollEvents() {
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_EVENT_KEY_DOWN) {
+            // File triggers only. Vulkan commands stay on the renderer's command thread.
+            static BbCapture::GeometryKey capture;
+            if (capture.Press(event.key.scancode == SDL_SCANCODE_F8, event.key.repeat)) continue;
+        }
         if (text_active && (event.type == SDL_EVENT_TEXT_INPUT || event.type == SDL_EVENT_KEY_DOWN)) {
             std::scoped_lock lock{text_mutex};
             if (event.type == SDL_EVENT_TEXT_INPUT) {

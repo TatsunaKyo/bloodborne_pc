@@ -62,11 +62,15 @@ int DumpFrame() {
         return -1;
     }
     if (remaining == 0) {
-        if (++polls % 30 != 0 || std::remove(trigger) != 0) {
+        static const int poll_frames = [] {
+            const char* value = std::getenv("BB_DUMP_POLL_FRAMES");
+            return value ? std::clamp(std::atoi(value), 1, 30) : 30;
+        }();
+        if (++polls % poll_frames != 0 || std::remove(trigger) != 0) {
             return -1;
         }
         const char* frames = std::getenv("BB_DUMP_FRAMES");
-        remaining = frames ? std::max(1, std::atoi(frames)) : 8;
+        remaining = frames ? std::clamp(std::atoi(frames), 1, 32) : 8;
         index = 0;
     }
     --remaining;

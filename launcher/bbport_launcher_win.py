@@ -43,7 +43,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.17'
+VERSION = '1.6-tatsunakyo.18'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -524,7 +524,7 @@ def game_environment(s):
         env['BB_COMMUNITY_SERVER'] = community_address(s['online_community'])
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
-    if s.get('_geometry_diagnostic') == 'serial':
+    if s.get('_geometry_diagnostic') in ('serial', 'capture'):
         # One comparison run, after saved/extra environment settings. Do not persist
         # these overrides: the normal launch must retain the user's renderer choices.
         env.update(BB_DRAW_PIPE='0', BB_PREP_WORKERS='0', BB_VK_RECORD_THREAD='0', BB_COPY_THREADS='0')
@@ -532,7 +532,7 @@ def game_environment(s):
 
 
 def geometry_diagnostic_settings(settings, args):
-    for mode in ('normal', 'serial'):
+    for mode in ('normal', 'serial', 'capture'):
         if f'--geometry-diagnostic={mode}' in args:
             return {**settings, 'developer_profile': True, '_geometry_diagnostic': mode}
     return settings
@@ -570,8 +570,23 @@ class DiagnosticSession:
         if self.directory:
             env.update(BB_FRAME_STATS='1', BB_GPU_PROFILE='1',
                        BB_DIAGNOSTICS_DIR=str(self.directory.resolve()))
+            if self.metadata.get('geometry_diagnostic') == 'capture':
+                captures = self.directory / 'frames'
+                captures.mkdir()
+                env.update(BB_GEOMETRY_CAPTURE='1', BB_DUMP_FRAMES='8', BB_DUMP_POLL_FRAMES='1',
+                           BB_DUMP_TRIGGER=str((self.directory / 'capture.trigger').resolve()),
+                           BB_DUMP_DIR=str(captures.resolve()),
+                           BB_CAPTURE_TRIGGER=str((self.directory / 'passes.trigger').resolve()),
+                           BB_CAPTURE_DIR=str((self.directory / 'passes').resolve()))
+                (self.directory / 'passes').mkdir()
+                self.record('Frame capture ready: press F8 when assets flash, then close the game. '
+                            'This records eight scene-input/output frames before Frame Generation.\n')
+                self.metadata['frame_capture'] = {'key': 'F8', 'requested_frames': 8,
+                                                  'position': 'before_frame_generation'}
             keys = ('BB_DRAW_PIPE', 'BB_PREP_WORKERS', 'BB_VK_RECORD_THREAD', 'BB_COPY_THREADS',
-                    'BB_FRAME_STATS', 'BB_GPU_PROFILE', 'BB_PIPE_VERIFY')
+                    'BB_FRAME_STATS', 'BB_GPU_PROFILE', 'BB_PIPE_VERIFY', 'BB_GEOMETRY_CAPTURE',
+                    'BB_DUMP_FRAMES', 'BB_DUMP_POLL_FRAMES', 'BB_PIPELINE_CACHE',
+                    'BB_OBJECT_MOTION', 'BB_UPSCALER', 'BB_READBACKS')
             self.metadata['renderer_environment'] = {key: env[key] for key in keys if key in env}
             self.write_metadata()
             if self.metadata.get('geometry_diagnostic'):
@@ -597,6 +612,40 @@ class DiagnosticSession:
             self.record(f'Process exited with code {code}\n')
             self.write_metadata()
             self.log.close()
+            if self.metadata.get('geometry_diagnostic') == 'capture':
+                self.archive_capture()
+
+    def archive_capture(self):
+        """Bundle the private session's frames after the game has stopped."""
+        captures = self.directory / 'frames'
+        frames = sorted(captures.glob('*.raw'))
+        archive = self.directory / 'Flashing-assets-diagnostic.zip'
+        temporary = archive.with_suffix('.tmp')
+        try:
+            if not frames:
+                self.metadata['frame_capture']['status'] = 'no_frames'
+                print('No frames captured. Run Capture-Flashing-Assets.cmd and press F8 in the affected scene.', flush=True)
+                self.write_metadata()
+                return
+            inputs = {path.name.split('_')[0] for path in frames if '_input_' in path.name}
+            outputs = {path.name.split('_')[0] for path in frames if '_output_' in path.name}
+            pairs = len(inputs & outputs)
+            self.metadata['frame_capture'].update(
+                status='captured' if pairs == 8 else 'incomplete',
+                raw_files=len(frames), paired_frames=pairs)
+            self.write_metadata()
+            with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=1) as bundle:
+                for path in (self.directory / 'session.log', self.directory / 'session.json', *frames,
+                             *sorted((self.directory / 'passes').glob('*'))):
+                    if path.is_file():
+                        bundle.write(path, path.relative_to(self.directory))
+            temporary.replace(archive)
+            print(f'Flashing diagnostic saved: {archive}', flush=True)
+        except (OSError, zipfile.BadZipFile) as error:
+            temporary.unlink(missing_ok=True)
+            self.metadata['frame_capture'].update(status='archive_failed', error_type=type(error).__name__)
+            self.write_metadata()
+            print(f'Cannot package the capture ({error}); the individual files are in {self.directory}.', flush=True)
 
 
 def read_game_output(process, settings, diagnostic, emit):

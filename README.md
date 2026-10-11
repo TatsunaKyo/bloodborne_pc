@@ -1,7 +1,7 @@
 ![Bloodborne: The Crowned Workshop — TatsunaKyo](docs/assets/crowned-workshop-header.png)
 
 # Bloodborne: The Crowned Workshop
-**Current revision: v1.6, revision 17.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 17 notes](docs/releases/windows-v1.6-tatsunakyo.17.md) · [Development roadmap](docs/tatsunakyo-next.md)
+**Current release: v1.6, revision 17.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 17 notes](docs/releases/windows-v1.6-tatsunakyo.17.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, features and cheats, a configurable overlay and settings you can change during play. This project would NOT be possible without the aforementioned work and people involved.
 
@@ -110,7 +110,7 @@ I've also worked on reducing unnecessary CPU and driver overhead: repeated camer
 
 In Revision 13 I corrected stale camera and mesh data in the temporal path after assets were reported flashing across the screen. Camera and small-skeleton tracking now use the same constant snapshot as the draw. I check index contents before reusing cached bounds, so a reused allocation cannot silently inherit another mesh's history. I also reject vectors that would overflow the half-float motion texture. These changes apply to reconstruction as well as FG; I am keeping the reported flashing issue open until I have a gameplay comparison of the affected scenes.
 
-The earlier geometry-read fixes helped, but I still saw assets appearing in front of me and far away in the Hunter's Dream on Revision 16. I found two more paths to incorrect geometry: worker-prepared vertex inputs could be reused after their descriptor table changed, and CPU DMA could replace data while a previous draw was still copying it. In Revision 17 I check the actual vertex descriptors at selection and binding, and finish those reads before CPU DMA writes. The regressions reproduce both failures in Revision 16 and pass with these changes. I have also included optional normal/serial diagnostic starts so I can narrow down any remaining scene issue without changing saved launcher preferences. [Revision 17 notes](docs/releases/windows-v1.6-tatsunakyo.17.md) explain the comparison.
+I still see assets appearing in front of me and far away in the Hunter's Dream on Revision 17. The normal and serial renderer paths both show the problem on my Windows 11 / RTX 5070 Ti setup. The vertex-table and CPU-copy ordering corrections remain in place, but that comparison shows there is more to investigate. Revision 18 is a [diagnostic preview](docs/releases/windows-v1.6-tatsunakyo.18.md): I added an F8 capture that keeps the scene entering DLSS, its output, depth and motion together, so I can see where the unwanted objects first appear.
 
 In Revision 14 I tracked down why the FPS limit kept landing below the number I selected: every small delay from the Windows timer was being added to the next frame. I now keep the pacing schedule through those small delays, while starting a fresh interval after a real stall. That keeps the protection against frames rushing through after a hitch without continuously lowering the cap. The real-frame limit and FG-output limit still work together.
 
