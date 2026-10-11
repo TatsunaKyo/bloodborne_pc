@@ -76,6 +76,7 @@ I added FG so you can get more display updates while keeping the game's real-fra
 | FSR Frame Generation | Analytical FSR 3.1.6, adding one intermediate frame for x2 output. |
 | NVIDIA DLSS FG / MFG | Streamline 2.14.1 with production DLSS-G 310.9.1; fixed x2–x6 choices, according to the GPU and driver. |
 | NVIDIA Reflex | Off, On or On + Boost, usable independently of FG and the upscaler. NVIDIA FG enables Reflex automatically. |
+| AMD Anti-Lag 2 | On a supported Radeon GPU, it uses the driver's Vulkan interface to pace the CPU before game input is sampled. I match that input marker to its real presentation frame, including when FSR FG adds an intermediate frame. The existing FPS controls keep ownership of the limits. |
 
 HDR mattered to me, so I kept **SDR and HDR10** support in both FG paths. I also made Reflex a separate choice because you should be able to use it without switching FG on. Boost remains optional.
 
@@ -98,12 +99,6 @@ I've also worked on reducing unnecessary CPU and driver overhead: repeated camer
 In Revision 13 I corrected stale camera and mesh data in the temporal path after assets were reported flashing across the screen. Camera and small-skeleton tracking now use the same constant snapshot as the draw. I check index contents before reusing cached bounds, so a reused allocation cannot silently inherit another mesh's history. I also reject vectors that would overflow the half-float motion texture. These changes apply to reconstruction as well as FG; I am keeping the reported flashing issue open until I have a gameplay comparison of the affected scenes.
 
 In the separate [Revision 11 build](docs/releases/windows-v1.6-tatsunakyo.11.md), I changed the limiter so a late frame starts a fresh interval instead of letting queued frames rush through afterwards. I also reused the Windows high-resolution timer for the renderer's waits and the FSR FG gap. I want to improve the uneven pacing reported during play, especially with FG; comparing the same scene and settings with Revision 10 will help me check how much this first change improves it.
-
-### AMD Anti-Lag 2
-
-I added **AMD Anti-Lag 2** as an optional setting in Graphics and in the in-game menu. On a supported Radeon GPU, it uses the driver's Vulkan interface to pace the CPU before game input is sampled. I match that input marker to its real presentation frame, including when FSR FG adds an intermediate frame. The existing FPS controls keep ownership of the limits.
-
-The launcher checks the selected GPU and driver, and the in-game control is disabled when the device does not support `VK_AMD_anti_lag`. Anti-Lag is independent of the upscaler and FSR FG. Reflex stays a separate NVIDIA option. I would appreciate Radeon results for this addition; my own gameplay PC uses an RTX 5070 Ti.
 
 ### Borderless fullscreen and background behavior
 
