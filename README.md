@@ -10,8 +10,7 @@ I call this fork **The Crowned Workshop** because it has become my own place to 
 > [!CAUTION]
 > Remember that NO game files are included — you NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump. The game folder must contain `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09 and will NOT work on any other version of the game.
 
-
-<img width="1956" height="1331" alt="immagine" src="https://github.com/user-attachments/assets/77133653-0e06-4a9d-a0eb-5f4f9f84774b" />
+<img width="1949" height="1335" alt="immagine" src="https://github.com/user-attachments/assets/865171f3-30a2-41a2-b0d1-0d1e473fe416" />
 
 ## How to use it
 
