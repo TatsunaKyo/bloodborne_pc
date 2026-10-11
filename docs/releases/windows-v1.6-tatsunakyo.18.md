@@ -10,7 +10,7 @@ This preview adds a way to capture the actual scene entering DLSS and the output
 2. Start **Capture-Flashing-Assets.cmd**, load the Hunter's Dream and press **F8** while the assets are flashing.
 3. Keep playing for a few seconds, then close the game. The launcher creates **Flashing-assets-diagnostic.zip** in the latest session under `user/diagnostics`, or under the user folder selected in the launcher. Send that ZIP with a brief description of the view you captured.
 
-One F8 press records eight consecutive frames. Capturing needs temporary disk space and can cause a short hitch. It runs the same serial reference as the confirmed Revision 17 test and retains the selected DLSS preset, FG, HDR and other graphics settings. Launcher preferences and saves are preserved. Ordinary starts keep profiling and capture off.
+One F8 press records eight consecutive frames. Both the HDR scene path and output-resolution composition path support it. Capturing needs temporary disk space and can cause a short hitch. It runs the same serial reference as the confirmed Revision 17 test and retains the selected DLSS preset, FG, HDR and other graphics settings. Launcher preferences and saves are preserved. Ordinary starts keep profiling and capture off.
 
 The package retains the workshop launcher, compact in-game tabs, upscalers, Frame Generation, latency controls and the earlier source-data ordering fixes. **The Hunter's Dream flashing issue remains open.** This release is an investigation preview.
 

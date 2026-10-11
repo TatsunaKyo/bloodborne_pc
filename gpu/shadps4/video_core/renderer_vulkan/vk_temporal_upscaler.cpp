@@ -1200,6 +1200,19 @@ void TemporalUpscaler::Run() {
         if (BbSettings::Get().upscaler != BbSettings::UpscalerTaa) {
             ExtraSharpen(cmdbuf, vk::Image(output_image), false, ow, oh);
         }
+        // Capture the HDR scene before the blend below replaces its RGB with the
+        // reconstructed output. The scaled path has the matching LDR capture.
+        if (const int dump = DumpFrame(); dump >= 0) {
+            DumpImages(instance, scheduler, cmdbuf, dump,
+                       {{input_color, w, h, 8, "input", "rgba16f"},
+                        {vk::Image(motion_image), w, h, 4, "motion", "rg16f"},
+                        {vk::Image(output_image), ow, oh, 8, "output", "rgba16f"},
+                        {input_depth, w, h, 4, "depth", "f32", vk::ImageAspectFlagBits::eDepth}});
+            if (const auto object = camera_motion.ObjectMotionImage(w, h); object) {
+                DumpImages(instance, scheduler, cmdbuf, dump,
+                           {{object, w, h, 16, "objects", "rgba32f"}});
+            }
+        }
         // The result replaces the scene color's RGB (its alpha carries data for the post).
         own_barrier(vk::Image(output_image), vk::ImageLayout::eGeneral, all, rw,
                     vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,

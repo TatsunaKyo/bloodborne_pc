@@ -1,7 +1,7 @@
 ![Bloodborne: The Crowned Workshop — TatsunaKyo](docs/assets/crowned-workshop-header.png)
 
 # Bloodborne: The Crowned Workshop
-**Current release: v1.6, revision 17.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 17 notes](docs/releases/windows-v1.6-tatsunakyo.17.md) · [Development roadmap](docs/tatsunakyo-next.md)
+**Current build: v1.6, revision 18 (diagnostic preview).** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 18 notes](docs/releases/windows-v1.6-tatsunakyo.18.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, features and cheats, a configurable overlay and settings you can change during play. This project would NOT be possible without the aforementioned work and people involved.
 
