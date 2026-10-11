@@ -68,7 +68,7 @@ I preserve the input resolution when migrating an older XeSS setting: the old sh
 
 I do not currently own an Intel GPU, so I would especially appreciate XeSS results from people who can try it on Intel hardware. The package includes the vendor runtimes and their licenses, and the renderer logs a reason if a provider fails and falls back to FSR 3.1.
 
-### Frame Generation, Multi Frame Generation and Reflex
+### Frame Generation, Multi Frame Generation and NVIDIA Reflex & AMD Anti-Lag 2
 
 I added FG so you can get more display updates while keeping the game's real-frame limit separate. You can choose it directly on **Play**, in **Graphics**, or in the in-game menu. It works with the temporal upscalers, including native-resolution TAA; FSR FG can also be used with DLSS or XeSS.
 
@@ -79,7 +79,7 @@ I added FG so you can get more display updates while keeping the game's real-fra
 | NVIDIA Reflex | Off, On or On + Boost, usable independently of FG and the upscaler. NVIDIA FG enables Reflex automatically. |
 | AMD Anti-Lag 2 | On a supported Radeon GPU, it uses the driver's Vulkan interface to pace the CPU before game input is sampled, matching that input marker to its real presentation frame, including when FSR FG adds an intermediate frame. |
 
-HDR mattered to me, so I kept **SDR and HDR10** support in both FG paths. I also made Reflex a separate choice because you should be able to use it without switching FG on. Boost remains optional.
+HDR is non-negotiable to me, so I kept **SDR and HDR10** support in both FG paths. I also made Reflex a separate choice because you should be able to use it without necessarily switching FG on. I wanted to add support for XeSS Low Latency (XeLL) too, but Intel does not support Vulkan as of yet.
 
 The overlay uses NVIDIA's actual presentation count for output FPS. It also offers the confirmed FG provider/multiplier, so you can see whether generation is active rather than relying on the setting you selected. The [FG guide](docs/frame-generation.md) covers hardware requirements and the remaining HUD/backend work.
 
