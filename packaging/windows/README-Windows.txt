@@ -1,6 +1,6 @@
 Bloodborne for Windows — TatsunaKyo revision
 
-This is my Revision 12, based on Supermedo's Windows v1.6 port. I wanted an English in-game menu, easier window management and more control over upscaling, FG and the overlay. The full feature guide is in README.md; release notes and the development roadmap are in docs.
+This is my Revision 16, based on Supermedo's Windows v1.6 port. I wanted an English in-game menu, easier window management and more control over upscaling, FG and the overlay. The full feature guide is in README.md; release notes and the development roadmap are in docs.
 
 Releases: https://github.com/TatsunaKyo/bloodborne_pc/releases
 
@@ -103,3 +103,5 @@ The full project and community-patch credits are in README.md. Original copyrigh
 Revision 11: I changed the real-frame limiter so a late frame does not trigger a burst of queued frames. The VideoOut and FSR FG waits now use the existing Windows high-resolution timer. The real-frame and generated-output caps remain separate. I want to improve the uneven pacing reported with FG; please compare the same scene and settings with Revision 10.
 
 Revision 15 brings the full Crowned Workshop design into the launcher and completes queued vertex/index copies before ConstRam overwrites their source. The updated development plan is in docs/tatsunakyo-next.md. I am keeping the flashing report open for the affected-scene comparison.
+
+The in-game settings now have seven tabs: Image, Frames, Window, Overlay, Cheats, Effects and Advanced. FPS drag controls and exact entries share a row; Close and Apply/restart stay outside the scrolling page. Revision 16 also fixes the publication of a draw-thread geometry-copy batch after the remaining Hunter's Dream flashing report. See docs/releases/windows-v1.6-tatsunakyo.16.md for the checks and current state.

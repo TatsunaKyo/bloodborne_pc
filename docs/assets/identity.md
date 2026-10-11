@@ -26,3 +26,7 @@ I used the same dark panels, warm brass lettering and crowned TK mark for the fe
 ## Launcher
 
 Revision 15 uses the workshop painting on Play, live DPI-aware lettering, the vector TK mark, slate panels and brass accents across navigation, controls, headings and the Play button. I retained the native Tk controls and existing settings behavior while changing the layout and atmosphere. `launcher/bbport_launcher_win.py` is the editable layout source; `crowned-workshop-launcher.png` shows the compiled launcher. The hero also has a compact form for the minimum window size.
+
+## In-game menu
+
+Revision 16 carries the slate panels, warm brass accents and crowned TK mark into the in-game settings. Seven tabs keep related controls together, with a pinned footer and responsive effects grid. The editable implementation is `gpu/shim/bbport_overlay.cpp`; `crowned-workshop-menu.png` is a layout preview exported from the actual ImGui widgets. `tests/test_overlay_controls.py --capture-dir out/verification/menu16-capture` and `tools/render_menu_preview.py` regenerate the previews.

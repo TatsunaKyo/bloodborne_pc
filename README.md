@@ -1,7 +1,7 @@
 ![Bloodborne: The Crowned Workshop — TatsunaKyo](docs/assets/crowned-workshop-header.png)
 
 # Bloodborne: The Crowned Workshop
-**Current revision: v1.6, revision 15.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 15 notes](docs/releases/windows-v1.6-tatsunakyo.15.md) · [Development roadmap](docs/tatsunakyo-next.md)
+**Current revision: v1.6, revision 16.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Revision 16 notes](docs/releases/windows-v1.6-tatsunakyo.16.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The goal is to make the game more comfortable to play on a modern Windows PC: better window controls, more graphics choices, features and cheats, a configurable overlay and settings you can change during play. This project would NOT be possible without the aforementioned work and people involved.
 
@@ -110,7 +110,7 @@ I've also worked on reducing unnecessary CPU and driver overhead: repeated camer
 
 In Revision 13 I corrected stale camera and mesh data in the temporal path after assets were reported flashing across the screen. Camera and small-skeleton tracking now use the same constant snapshot as the draw. I check index contents before reusing cached bounds, so a reused allocation cannot silently inherit another mesh's history. I also reject vectors that would overflow the half-float motion texture. These changes apply to reconstruction as well as FG; I am keeping the reported flashing issue open until I have a gameplay comparison of the affected scenes.
 
-The assets still flashed in my Revision 14 gameplay tests. I found another problem before temporal reconstruction: some vertex/index copies could remain queued while the game replaced their source constants. Revision 15 completes those reads before the replacement. The regression reproduces corrupted geometry inputs with the old command branch and preserves them with the corrected branch. I am keeping the scene report open until I check this build in the affected areas.
+The assets still flashed in my Revision 14 gameplay tests. I found another problem before temporal reconstruction: some vertex/index copies could remain queued while the game replaced their source constants. Revision 15 completes those reads before the replacement, and things improved on my PC, but the Hunter's Dream was still affected. In Revision 16 I also flush the draw thread's private copy batch before its queue is marked drained, so those reads are visible to the completion wait. The regression reproduces the old failure and preserves all 384 original snapshots with the correction. The Hunter's Dream remains the first scene I want to compare on this build.
 
 In Revision 14 I tracked down why the FPS limit kept landing below the number I selected: every small delay from the Windows timer was being added to the next frame. I now keep the pacing schedule through those small delays, while starting a fresh interval after a real stall. That keeps the protection against frames rushing through after a hitch without continuously lowering the cap. The real-frame limit and FG-output limit still work together.
 
@@ -173,6 +173,10 @@ The new cheats start off. I verify the 1.09 instructions and player binding befo
 I made the **L3+R3 / Insert** menu available in English and set it as the default. You can switch between **English and Russian** immediately, independently of the launcher and game languages. The launcher still offers its original 13 languages.
 
 I also corrected the checkboxes that ignored clicks. Settings are shared through `bbport.menu.ini`, so saving from the launcher preserves the choices you made during play.
+
+In Revision 16 I rebuilt the menu around **seven tabs: Image, Frames, Window, Overlay, Cheats, Effects and Advanced**. You can go straight to the settings you need, and the close/restart controls stay in place. I moved reconstruction diagnostics into Advanced, put the FPS slider and numeric entry on the same row, and arranged the game effects in two columns when the window is wide enough. The slate panels, brass accents and crowned TK mark carry the workshop identity into the game too.
+
+![The Crowned Workshop in-game menu](docs/assets/crowned-workshop-menu.png)
 
 I was planning to work on adding the other languages for the in-game menu but it proved to be a bit more difficult than I initially thought, or rather — it's a bit time consuming and I want to make sure that I work on more fundamental QoL improvements first. I do plan to add it down the line though.
 

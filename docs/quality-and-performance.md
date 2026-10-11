@@ -39,4 +39,10 @@ For the main gameplay configuration and open regression checks, see [Testing and
 
 ## ConstRam and geometry reads
 
-The flashing remained in my Revision 14 tests. In Revision 15 I found that draining the draw queue before `DumpConstRam` did not complete the deferred vertex/index copies. The dump could overwrite their guest source while those reads were still queued on the Vulkan recorder or copy workers. I added the existing host-copy completion wait before that overwrite, preserving the constant ring and threaded path. The production-branch regression reproduces 2,048 damaged snapshots out of 3,072 with the previous code and zero with the correction. I still need the affected gameplay scenes to confirm the visible result. This fix is independent of the chosen upscaler and FG mode.
+The flashing remained in my Revision 14 tests. In Revision 15 I found that draining the draw queue before `DumpConstRam` did not complete the deferred vertex/index copies. The dump could overwrite their guest source while those reads were still queued on the Vulkan recorder or copy workers. I added the existing host-copy completion wait before that overwrite, preserving the constant ring and threaded path. The production-branch regression reproduces 2,048 damaged snapshots out of 3,072 with the previous code and zero with the correction. My Revision 15 test improved, but I still see flashing in the Hunter's Dream. This dependency is shared by the rendering paths.
+
+## Draw-thread copies in Revision 16
+
+I found that a draw could leave a small geometry copy in its thread's private batch. The command thread then drained the draw queue and waited for host copies, but that wait could not see the unpublished batch. I now hand over those copies at the end of a queued burst, before marking the draw work drained. The existing completion wait can finish them before the guest replaces their source data.
+
+The test uses the actual queue and copy pool: all 384 old cases copied replacement data, and the corrected path preserves the original data in all 384. The copies stay batched, and the threaded renderer, constant ring and upscalers remain enabled. The Hunter's Dream is my first gameplay comparison for this build.

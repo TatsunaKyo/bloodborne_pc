@@ -9,6 +9,7 @@ import os
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--compiler', default=os.environ.get('CXX','clang++'))
+parser.add_argument('--capture-dir', help='Export real ImGui draw data for menu previews')
 args=parser.parse_args()
 root=Path(__file__).resolve().parents[1]
 source = (root / 'gpu/shim/bbport_overlay.cpp').read_text()
@@ -36,6 +37,7 @@ menu=source[source.index('// Marks the settings dirty'):source.index('// The gam
 fps=source[source.index('void FpsCounter()'):source.index('} // namespace\n\nvoid SavePendingSettings')]
 # Instrument only the scratch copy to record the real controls' positions and IDs.
 menu=menu.replace('ImGui::BeginCombo(', 'TrackedCombo(').replace('ImGui::Selectable(', 'TrackedSelectable(').replace('ImGui::Checkbox(', 'TrackedCheckbox(').replace('ImGui::SliderFloat(', 'TrackedSlider(').replace('ImGui::SliderInt(', 'TrackedSliderInt(')
+menu=menu.replace('ImGui::BeginTabItem(', 'TrackedTab(').replace('ImGui::Button(', 'TrackedButton(')
 menu=menu.replace('ImGui::DragInt(', 'TrackedDragInt(').replace('ImGui::InputInt(', 'TrackedInputInt(')
 prefix=r'''#include <algorithm>
 #include <atomic>
@@ -61,15 +63,30 @@ int restart_calls=0;
 extern "C" void runtime_restart() { ++restart_calls; }
 ImRect language_rect, russian_rect, english_rect, window_rect, borderless_rect, windowed_rect, vsync_rect;
 ImRect dlss_rect, preset_m_rect, preset_k_rect, osd_rect, osd_preset_rect, resolution_rect, background_rect, pause_rect, run_rect;
-std::map<std::string,ImRect> controls;
+std::map<std::string,ImRect> controls, tabs, buttons;
+std::string selected_tab;
+std::map<std::string,ImGuiWindow*> control_windows;
 std::map<std::string,ImGuiID> control_ids;
 std::map<std::string,ImRect> selectables;
 ImGuiID language_id=0;
 bool saw_russian=false, saw_english=false;
+bool TrackedTab(const char* label) {
+    bool result=ImGui::BeginTabItem(label);
+    if (const char* key=std::strstr(label,"###")) {
+        tabs[key+3]=GImGui->LastItemData.Rect;
+        if (result) selected_tab=key+3;
+    }
+    return result;
+}
+bool TrackedButton(const char* label) {
+    bool result=ImGui::Button(label);
+    if (const char* key=std::strstr(label,"###")) buttons[key+3]=GImGui->LastItemData.Rect;
+    return result;
+}
 bool TrackedCombo(const char* label,const char* preview) {
     bool result=ImGui::BeginCombo(label,preview);
     if (const char* key=std::strstr(label,"###")) {
-        controls[key+3]=GImGui->LastItemData.Rect; control_ids[key+3]=GImGui->LastItemData.ID;
+        controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID;
     }
     if (std::strstr(label,"###menu_language")) {
         language_rect=GImGui->LastItemData.Rect;
@@ -96,7 +113,7 @@ bool TrackedSelectable(const char* label,bool selected) {
 bool TrackedCheckbox(const char* label,bool* value) {
     const bool result=ImGui::Checkbox(label,value);
     const char* key=std::strstr(label,"###");
-    if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_ids[key+3]=GImGui->LastItemData.ID; }
+    if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID; }
     if (std::strstr(label,"###borderless_vsync")) vsync_rect=GImGui->LastItemData.Rect;
     if (std::strstr(label,"###show_fps")) osd_rect=GImGui->LastItemData.Rect;
     if (std::strstr(label,"###show_dlss_preset")) osd_preset_rect=GImGui->LastItemData.Rect;
@@ -106,29 +123,30 @@ bool TrackedCheckbox(const char* label,bool* value) {
 bool TrackedSlider(const char* label,float* value,float lo,float hi,const char* format) {
     bool result=ImGui::SliderFloat(label,value,lo,hi,format);
     const char* key=std::strstr(label,"###");
-    if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_ids[key+3]=GImGui->LastItemData.ID; }
+    if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID; }
     return result;
 }
 bool TrackedSliderInt(const char* label,int* value,int lo,int hi,const char* format) {
     bool result=ImGui::SliderInt(label,value,lo,hi,format);
     const char* key=std::strstr(label,"###");
-    if (key) {controls[key+3]=GImGui->LastItemData.Rect;control_ids[key+3]=GImGui->LastItemData.ID;}
+    if (key) {controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow;control_ids[key+3]=GImGui->LastItemData.ID;}
     return result;
 }
 bool TrackedDragInt(const char* label,int* value,float speed,int lo,int hi,const char* format,ImGuiSliderFlags flags) {
     const bool result=ImGui::DragInt(label,value,speed,lo,hi,format,flags);
-    controls[std::strstr(label,"###")+3]=GImGui->LastItemData.Rect;
+    controls[std::strstr(label,"###")+3]=GImGui->LastItemData.Rect; control_windows[std::strstr(label,"###")+3]=GImGui->CurrentWindow;
     return result;
 }
 bool TrackedInputInt(const char* label,int* value,int step,int fast,ImGuiInputTextFlags flags) {
     const bool result=ImGui::InputInt(label,value,step,fast,flags);
-    controls[std::strstr(label,"###")+3]=GImGui->LastItemData.Rect;
+    controls[std::strstr(label,"###")+3]=GImGui->LastItemData.Rect; control_windows[std::strstr(label,"###")+3]=GImGui->CurrentWindow;
     return result;
 }
 '''
 id_checks='\n'.join('    assert(ImHashStr('+a+') == ImHashStr('+b+'));' for a,b in pairs if '###' in decode(a))
 main=r'''
 void Frame(bool log=false) {
+    controls.clear(); control_windows.clear(); buttons.clear(); tabs.clear();
     ImGui::NewFrame();
     if (log) ImGui::LogToBuffer();
     Menu();
@@ -137,8 +155,8 @@ void Frame(bool log=false) {
         const std::string content=GImGui->LogBuffer.c_str();
         assert(content.find("###")==std::string::npos);
         const bool ru=BbSettings::Get().menu_language==BbSettings::MenuRussian;
-        assert(content.find(ru ? "Временной апскейлер" : "Temporal upscaler")!=std::string::npos);
-        assert(content.find(ru ? "Хроматическая аберрация" : "Chromatic aberration")!=std::string::npos);
+        assert(content.find(ru ? "Картинка" : "Image")!=std::string::npos);
+        assert(content.find(ru ? "Эффекты" : "Effects")!=std::string::npos);
         ImGui::LogFinish();
     }
     ImGui::Render();
@@ -166,8 +184,14 @@ std::string OsdFrame() {
 
 void Reveal(const char* key) {
     Frame(); Frame();
-    auto* window=ImGui::FindWindowByName("###bbport_settings");
+    if (!controls.contains(key)) {
+        for (const char* tab : {"image","frames","window","overlay","cheats","effects","advanced"}) {
+            assert(tabs.contains(tab)); Click(tabs.at(tab).GetCenter()); Frame(); Frame();
+            if (controls.contains(key)) break;
+        }
+    }
     assert(controls.contains(key));
+    auto* window=control_windows.at(key);
     const auto rect=controls.at(key);
     ImGui::SetScrollFromPosY(window,rect.GetCenter().y-window->Pos.y,0.5f);
     Frame(); Frame();
@@ -188,7 +212,7 @@ void TestSlider(const char* key,std::atomic<float>& value,float lo,float hi) {
     Reveal(key);
     auto rect=controls.at(key);
     // The slider itself is its first item-width pixels, before the label.
-    const float width=ImGui::FindWindowByName("###bbport_settings")->DC.ItemWidth;
+    const float width=control_windows.at(key)->DC.ItemWidth;
     Click({rect.Min.x+width*0.80f,rect.GetCenter().y});
     assert(value>lo+(hi-lo)*0.60f && value<hi);
     const float selected=value;
@@ -294,7 +318,7 @@ void TestNvidiaControls() {
     assert(s.generated_fps_limit==130);
     Reveal("generated_fps_entry");rect=controls.at("generated_fps_entry");
     const auto drag_rect=controls.at("generated_fps_limit");
-    assert(rect.Min.x>=drag_rect.Max.x && rect.Max.x<=ImGui::FindWindowByName("###bbport_settings")->WorkRect.Max.x+1);
+    assert(rect.Min.x>=drag_rect.Max.x && rect.Max.x<=control_windows.at("generated_fps_entry")->WorkRect.Max.x+1);
     Click({rect.Min.x+15,rect.GetCenter().y});
     auto& io=ImGui::GetIO();
     io.AddKeyEvent(ImGuiMod_Ctrl,true);io.AddKeyEvent(ImGuiKey_A,true);Frame();
@@ -343,7 +367,7 @@ void TestNavigation(ImGuiKey key) {
     s.jitter=false;
     io.AddMousePosEvent(-100,-100);
     Reveal("jitter");
-    auto* window=ImGui::FindWindowByName("###bbport_settings");
+    auto* window=control_windows.at("jitter");
     auto rect=controls.at("jitter"); rect.Translate(ImVec2(-window->Pos.x,-window->Pos.y));
     ImGui::FocusWindow(window);
     ImGui::SetNavID(control_ids.at("jitter"),ImGuiNavLayer_Main,window->NavRootFocusScopeId,rect);
@@ -352,6 +376,122 @@ void TestNavigation(ImGuiKey key) {
     io.AddKeyEvent(key,true); Frame();
     io.AddKeyEvent(key,false); Frame();
     assert(s.jitter);
+}
+
+void ChooseTab(const char* key) {
+    Frame(); Frame();
+    assert(tabs.contains(key));
+    if (selected_tab!=key) Click(tabs.at(key).GetCenter());
+    Frame(); Frame();
+    assert(selected_tab==key);
+}
+void CaptureMenu(const std::filesystem::path& directory,const char* name) {
+    auto* data=ImGui::GetDrawData();
+    assert(data && data->Valid);
+    unsigned char* atlas; int width,height;
+    ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&atlas,&width,&height);
+    {
+        std::ofstream raw(directory/(std::string(name)+".atlas"),std::ios::binary);
+        raw.write(reinterpret_cast<const char*>(atlas),width*height*4);
+    }
+    auto* window=ImGui::FindWindowByName("###bbport_settings");
+    std::ofstream out(directory/(std::string(name)+".json"));
+    out<<"{\"display\":["<<data->DisplaySize.x<<","<<data->DisplaySize.y<<"],\"atlas\":["<<width<<","<<height
+       <<"],\"window\":["<<window->Pos.x<<","<<window->Pos.y<<","<<window->Size.x<<","<<window->Size.y<<"],\"lists\":[";
+    bool first=true;
+    for (const ImDrawList* list : data->CmdLists) {
+        if (!first) out<<","; first=false;
+        out<<"{\"vertices\":[";
+        for (int i=0;i<list->VtxBuffer.Size;++i) {
+            const auto& v=list->VtxBuffer[i]; if(i)out<<",";
+            out<<"["<<v.pos.x<<","<<v.pos.y<<","<<v.uv.x<<","<<v.uv.y<<","<<v.col<<"]";
+        }
+        out<<"],\"indices\":[";
+        for (int i=0;i<list->IdxBuffer.Size;++i) {if(i)out<<",";out<<list->IdxBuffer[i];}
+        out<<"],\"commands\":[";
+        for (int i=0;i<list->CmdBuffer.Size;++i) {
+            const auto& cmd=list->CmdBuffer[i]; if(i)out<<",";
+            assert(!cmd.UserCallback && cmd.GetTexID()==1);
+            out<<"{\"clip\":["<<cmd.ClipRect.x<<","<<cmd.ClipRect.y<<","<<cmd.ClipRect.z<<","<<cmd.ClipRect.w
+               <<"],\"offset\":"<<cmd.IdxOffset<<",\"count\":"<<cmd.ElemCount<<",\"base\":"<<cmd.VtxOffset<<"}";
+        }
+        out<<"]}";
+    }
+    out<<"]}\n";
+}
+void CheckMenuLayout() {
+    auto& s=BbSettings::Get();auto& io=ImGui::GetIO();int cases=0;
+    s.fsr4_problem=s.dlss_problem=s.xess_problem=s.frame_generation_problem=nullptr;
+    s.fsr4_supported=s.fsr411_supported=s.dlss_supported=s.xess_supported=true;
+    s.nvidia_fg_supported=s.reflex_supported=s.amd_antilag_supported=true;
+    s.nvidia_max_generated=5;s.limit_generated_fps=true;s.real_fps_limit=75;
+    for (int language : {BbSettings::MenuEnglish,BbSettings::MenuRussian})
+    for (float scale : {1.0f,1.25f,1.5f,1.75f,2.0f})
+    for (ImVec2 size : {ImVec2(960,540),ImVec2(1280,720),ImVec2(1920,1080),ImVec2(3840,2160)})
+    for (int upscaler=0;upscaler<BbSettings::UpscalerCount;++upscaler) {
+        base_scale=scale;ImGui::GetStyle().FontScaleMain=scale;io.DisplaySize=size;
+        s.menu_language=language;s.upscaler=upscaler;
+        s.frame_generation=upscaler%3;
+        for (const char* tab : {"image","frames","window","overlay","cheats","effects","advanced"}) {
+            ChooseTab(tab);
+            auto* window=ImGui::FindWindowByName("###bbport_settings");
+            assert(window && window->Active && window->ScrollMax.y<=1);
+            assert(window->Pos.x>=0 && window->Pos.y>=0);
+            assert(window->Pos.x+window->Size.x<=size.x+1 && window->Pos.y+window->Size.y<=size.y+1);
+            assert(tabs.size()==7);
+            for (const auto& [key,rect] : tabs) {
+                assert(rect.Min.x>=window->WorkRect.Min.x-1 && rect.Max.x<=window->WorkRect.Max.x+1);
+            }
+            assert(buttons.contains("close"));
+            for (const auto& [key,rect] : buttons) {
+                assert(rect.Min.y>=window->InnerRect.Min.y && rect.Max.y<=window->InnerRect.Max.y+1);
+            }
+            for (const auto& [key,rect] : controls) {
+                auto* child=control_windows.at(key);
+                if (rect.Max.x>child->WorkRect.Max.x+1) {
+                    std::fprintf(stderr,"Clipped %s on %s lang %d scale %.2f size %.0fx%.0f: %.1f > %.1f\n",
+                        key.c_str(),tab,language,scale,size.x,size.y,rect.Max.x,child->WorkRect.Max.x);
+                    assert(false);
+                }
+            }
+            ++cases;
+        }
+    }
+    std::printf("PASS: %d tab layouts, both languages, 100/125/150/175/200%%, 540p/720p/1080p/2160p; "
+                "seven visible tabs, contained controls, no parent scrolling and pinned footer.\n",cases);
+    base_scale=1;ImGui::GetStyle().FontScaleMain=1;io.DisplaySize={1280,720};
+    s.menu_language=BbSettings::MenuEnglish;s.upscaler=BbSettings::UpscalerDlss;
+    s.frame_generation=BbSettings::FrameGenerationNvidia;s.nvidia_generated_frames=1;
+    s.frame_generation_active=0;s.nvidia_real_fps=s.nvidia_output_fps=-1;
+    s.fsr4_problem=s.dlss_problem=s.xess_problem=s.frame_generation_problem=nullptr;
+    s.dlss_preset=s.dlss_active_preset=12;s.preset=BbSettings::Performance;s.output_res=3;
+    s.active_render_width=1920;s.active_render_height=1080;
+    s.active_output_width=3840;s.active_output_height=2160;
+    s.real_fps_limit=75;s.generated_fps_limit=130;s.live_resolution=1;
+    s.sharpness=0.25f;s.reactive_scale=1;s.reactive_threshold=0.2f;s.reactive_max=0.9f;
+    s.startup_object_motion=s.object_motion;s.startup_model_lod=s.model_lod;s.startup_live_resolution=s.live_resolution;
+    for(int e=0;e<BbSettings::EffectCount;++e)s.startup_effects[e]=s.effects[e].load();
+    if (const char* path=std::getenv("BB_MENU_CAPTURE_DIR")) {
+        std::filesystem::path directory(path);std::filesystem::create_directories(directory);
+        for (const char* tab : {"image","frames","window","overlay","cheats","effects","advanced"}) {
+            ChooseTab(tab);
+            auto* child=control_windows.begin()->second;
+            ImGui::SetScrollY(child,0);Frame();Frame();
+            CaptureMenu(directory,tab);
+        }
+    }
+    ChooseTab("effects");
+    auto* parent=ImGui::FindWindowByName("###bbport_settings");
+    // Resizing must preserve the selected tab and keep the close button on screen.
+    ImGui::SetWindowSize(parent,{580,400});Frame();Frame();
+    assert(selected_tab=="effects" && parent->Size.x==580 && parent->Size.y==400 && parent->ScrollMax.y<=1);
+    assert(buttons.at("close").Max.y<=parent->InnerRect.Max.y+1);
+    // The footer remains reachable after scrolling the active child all the way down.
+    auto* child=control_windows.begin()->second;
+    ImGui::SetScrollY(child,child->ScrollMax.y);Frame();Frame();
+    const ImRect close=buttons.at("close");Click(close.GetCenter());
+    assert(!menu_open && !dirty);
+    SetOpen(true);
 }
 
 int main(int argc,char** argv) {
@@ -392,6 +532,7 @@ int main(int argc,char** argv) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     auto& io=ImGui::GetIO();
+    WorkshopTheme(ImGui::GetStyle());
     io.IniFilename=nullptr;
     io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard|ImGuiConfigFlags_NavEnableGamepad;
     io.BackendFlags|=ImGuiBackendFlags_HasGamepad;
@@ -406,9 +547,10 @@ int main(int argc,char** argv) {
     Frame(); Frame(true);
     ImGuiWindow* window=ImGui::FindWindowByName("###bbport_settings");
     assert(window);
+    Reveal("menu_language");
     const ImGuiID stable_language_id=language_id;
     // Drive the actual dropdown using ImGui input events in both directions.
-    Click(language_rect.GetCenter());
+    Reveal("menu_language"); Click(language_rect.GetCenter());
     Frame(); Frame();
     assert(saw_russian && saw_english);
     Frame(); Frame();
@@ -424,22 +566,22 @@ int main(int argc,char** argv) {
     assert(s.menu_language==BbSettings::MenuRussian);
     SetOpen(true);
     Frame();
-    Click(language_rect.GetCenter());
+    Reveal("menu_language"); Click(language_rect.GetCenter());
     Frame(); Frame();
     Click(english_rect.GetCenter());
     Frame(true);
     assert(s.menu_language==BbSettings::MenuEnglish);
     assert(language_id==stable_language_id);
     // Select borderless and V-sync through the real controls without a restart.
-    Click(window_rect.GetCenter()); Frame(); Frame();
+    Reveal("window_mode"); Click(window_rect.GetCenter()); Frame(); Frame();
     Click(borderless_rect.GetCenter()); Frame(true);
     assert(s.window_mode==BbSettings::Borderless);
-    Click(vsync_rect.GetCenter()); Frame(true);
+    Reveal("borderless_vsync"); Click(vsync_rect.GetCenter()); Frame(true);
     assert(s.borderless_vsync);
     SetOpen(false); BbSettings::Load();
     assert(s.window_mode==BbSettings::Borderless && s.borderless_vsync);
     SetOpen(true); Frame();
-    Click(window_rect.GetCenter()); Frame(); Frame();
+    Reveal("window_mode"); Click(window_rect.GetCenter()); Frame(); Frame();
     Click(windowed_rect.GetCenter()); Frame(true);
     assert(s.window_mode==BbSettings::Windowed);
     // Select the actual DLSS preset controls without changing quality or resolution.
@@ -451,7 +593,7 @@ int main(int argc,char** argv) {
     s.show_dlss_preset=false;
     const int quality=s.preset, output=s.output_res;
     Frame(); Frame();
-    Click(dlss_rect.GetCenter()); Frame(); Frame();
+    Reveal("dlss_preset"); Click(dlss_rect.GetCenter()); Frame(); Frame();
     Click(preset_m_rect.GetCenter()); Frame(true);
     assert(s.dlss_preset==13 && s.preset==quality && s.output_res==output);
     auto osd=OsdFrame();
@@ -460,7 +602,7 @@ int main(int argc,char** argv) {
     const float original_height=ImGui::FindWindowByName("##fps")->Size.y;
     const auto original_rows=std::count(osd.begin(),osd.end(),'\n');
     Frame(); Frame();
-    Click(osd_preset_rect.GetCenter()); Frame(true);
+    Reveal("show_dlss_preset"); Click(osd_preset_rect.GetCenter()); Frame(true);
     assert(s.show_dlss_preset && s.show_fps && s.dlss_preset==13);
     osd=OsdFrame(); OsdFrame();
     assert(osd.find("DLSS (->M)")!=std::string::npos);
@@ -483,24 +625,24 @@ int main(int argc,char** argv) {
     }
     s.dlss_preset=s.dlss_active_preset=13;
     Frame(); Frame();
-    Click(osd_preset_rect.GetCenter()); Frame(true);
+    Reveal("show_dlss_preset"); Click(osd_preset_rect.GetCenter()); Frame(true);
     assert(!s.show_dlss_preset && s.dlss_preset==13 && s.show_fps);
     assert(OsdFrame().find("DLSS (")==std::string::npos);
     Frame(); Frame();
-    Click(osd_preset_rect.GetCenter()); Frame(true);
+    Reveal("show_dlss_preset"); Click(osd_preset_rect.GetCenter()); Frame(true);
     assert(s.show_dlss_preset);
     Frame(); Frame();
-    Click(osd_rect.GetCenter()); Frame(true);
+    Reveal("show_fps"); Click(osd_rect.GetCenter()); Frame(true);
     assert(!s.show_fps);
     assert(OsdFrame().empty());
     SetOpen(false); BbSettings::Load();
     assert(!s.show_fps && s.dlss_preset==13 && s.show_dlss_preset);
     SetOpen(true); Frame(); Frame();
     assert(ImGui::FindWindowByName("###bbport_settings")->Active);
-    Click(osd_rect.GetCenter()); Frame(true);
+    Reveal("show_fps"); Click(osd_rect.GetCenter()); Frame(true);
     assert(s.show_fps && !OsdFrame().empty());
     Frame(); Frame();
-    Click(dlss_rect.GetCenter()); Frame(); Frame();
+    Reveal("dlss_preset"); Click(dlss_rect.GetCenter()); Frame(); Frame();
     Click(preset_k_rect.GetCenter()); Frame(true);
     assert(s.dlss_preset==11 && s.preset==quality && s.output_res==output);
     SetOpen(false); BbSettings::Load();
@@ -508,17 +650,17 @@ int main(int argc,char** argv) {
     SetOpen(true);
     // Real ImGui controls save the supervisor's policy immediately.
     Frame(); Frame();
-    Click(background_rect.GetCenter()); Frame(); Frame();
+    Reveal("background_mode"); Click(background_rect.GetCenter()); Frame(); Frame();
     Click(pause_rect.GetCenter()); Frame();
     assert(s.background_mode==BbSettings::BackgroundPause);
     s.background_mode=BbSettings::BackgroundRun;
     BbSettings::Load();
     assert(s.background_mode==BbSettings::BackgroundPause);
-    Click(background_rect.GetCenter()); Frame(); Frame();
+    Reveal("background_mode"); Click(background_rect.GetCenter()); Frame(); Frame();
     Click(run_rect.GetCenter()); Frame();
     assert(s.background_mode==BbSettings::BackgroundRun);
     Frame(); Frame();
-    Click(resolution_rect.GetCenter()); Frame();
+    Reveal("show_resolution"); Click(resolution_rect.GetCenter()); Frame();
     assert(s.show_resolution);
     SetOpen(false); BbSettings::Load();
     assert(s.show_resolution);
@@ -629,6 +771,7 @@ int main(int argc,char** argv) {
         TestNavigation(ImGuiKey_GamepadFaceDown);
     }
 
+    CheckMenuLayout();
     assert(restart_calls==0);
     ImGui::DestroyContext();
     std::puts("PASS: actual ImGui real-FPS mode/drag/exact entry/save, fixed-timing restriction and supported/unsupported Anti-Lag controls; all seven XeSS quality modes independently of DLSS/FSR; conditional quality controls; basic/compact DLSS OSD; all seven active DLSS model hints and pending changes stay on one row with the original window height; shared settings survive saves; both languages/all upscalers tested; no restart from OSD choices.");
@@ -640,5 +783,8 @@ main=main.replace('    IMGUI_CHECKVERSION();', id_checks+'\n    IMGUI_CHECKVERSI
 
 command=shlex.split(args.compiler)+['-std=c++20','-O1','-pthread','-Igpu','-Igpu/shim','-Igpu/third_party/imgui',str(scratch/'overlay_smoke.cpp'),'gpu/shim/bbport_settings.cpp']+[str(p.relative_to(root)) for p in (root/'gpu/third_party/imgui').glob('imgui*.cpp') if p.name!='imgui_demo.cpp']+['-o',str(scratch/'overlay-test')]
 subprocess.run(command,cwd=root,check=True)
-subprocess.run([str(scratch/'overlay-test'),str(scratch/'config.ini')],cwd=root,check=True)
+env=dict(os.environ)
+if args.capture_dir:
+    env['BB_MENU_CAPTURE_DIR']=str(Path(args.capture_dir).resolve())
+subprocess.run([str(scratch/'overlay-test'),str(scratch/'config.ini')],cwd=root,env=env,check=True)
 temporary.cleanup()

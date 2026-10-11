@@ -1,5 +1,6 @@
 """Keep fork updates on the revision channel, including the compiled Windows launcher."""
 import importlib.util
+import ast
 import io
 import json
 import queue
@@ -24,12 +25,18 @@ else:
     spec.loader.exec_module(launcher)
 
 
+source_version = next(n.value.value for n in ast.parse(source.read_text()).body
+                      if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'VERSION' for t in n.targets))
+future_revision = int(source_version.rsplit('.', 1)[1]) + 1
+future_version = source_version.rsplit('.', 1)[0] + '.' + str(future_revision)
+
 class ForkUpdates(unittest.TestCase):
-    def release(self, tag='windows-v1.6-tatsunakyo.16', assets=None):
+    def release(self, tag=None, assets=None):
+        tag = tag or 'windows-v' + future_version
         return {'tag_name': tag, 'html_url': 'https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/' + tag,
                 'assets': assets if assets is not None else [
                     {'name': 'source.zip', 'browser_download_url': 'https://example.invalid/source.zip'},
-                    {'name': 'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-16.zip',
+                    {'name': f'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-{future_revision}.zip',
                      'browser_download_url': 'https://example.invalid/windows.zip'}]}
 
     def latest(self, release):
@@ -54,11 +61,11 @@ class ForkUpdates(unittest.TestCase):
         return calls
 
     def test_channel_and_exact_windows_asset(self):
-        self.assertEqual(launcher.VERSION, '1.6-tatsunakyo.15')
+        self.assertEqual(launcher.VERSION, source_version)
         self.assertEqual(launcher.RELEASES_PAGE, 'https://github.com/TatsunaKyo/bloodborne_pc/releases/latest')
         version, url, page = self.latest(self.release())
-        self.assertEqual((version, url), ('1.6-tatsunakyo.16', 'https://example.invalid/windows.zip'))
-        self.assertTrue(page.endswith('/windows-v1.6-tatsunakyo.16'))
+        self.assertEqual((version, url), (future_version, 'https://example.invalid/windows.zip'))
+        self.assertTrue(page.endswith('/windows-v' + future_version))
 
     def test_source_zip_is_not_installed(self):
         self.assertIsNone(self.latest(self.release(assets=[
@@ -73,6 +80,7 @@ class ForkUpdates(unittest.TestCase):
         self.assertEqual(self.check(self.release('windows-v1.7'), manual=True)[0][0], 'error')
 
     def test_revision_comparison_and_offer(self):
+        self.assertEqual(self.check(self.release('windows-v' + source_version)), [])
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.15')), [])
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.13')), [])
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.12')), [])

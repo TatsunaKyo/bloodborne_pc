@@ -13,6 +13,7 @@
 
 #include <cstdlib>
 #include "bbport_threads.h"
+#include "bbport_copy.h"
 
 #include <array>
 #include <atomic>
@@ -202,6 +203,12 @@ private:
             handler(context, reinterpret_cast<const u8*>(header + 1), header->payload);
             busy_cycles.fetch_add(__rdtsc() - start, std::memory_order_relaxed);
             at += header->size;
+            // A drained draw queue must not hide guest reads in stage B's thread-local
+            // copy batch. Publish them before stage A can replace their source memory.
+            // Flush once at the end of a queued burst, keeping copies batched per burst.
+            if (at == published.load(std::memory_order_acquire)) {
+                BbCopy::FlushBatch();
+            }
             consumed.store(at, std::memory_order_release);
         }
     }

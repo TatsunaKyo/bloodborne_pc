@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "bbport_overlay.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
 #include <string>
 
@@ -139,9 +141,34 @@ void Store(std::atomic<T>& target, T value, bool changed) {
     }
 }
 
+std::string WrappedCaption(const char* label, float width) {
+    const char* id = std::strstr(label, "###");
+    const std::string caption(label, id ? id : label + std::strlen(label));
+    std::string result, line;
+    for (size_t first = 0; first < caption.size();) {
+        const size_t end = caption.find(' ', first);
+        const std::string word = caption.substr(first, end == std::string::npos ? end : end - first);
+        const std::string next = line.empty() ? word : line + " " + word;
+        if (!line.empty() && ImGui::CalcTextSize(next.c_str()).x > width) {
+            result += line + "\n";
+            line = word;
+        } else {
+            line = next;
+        }
+        if (end == std::string::npos) break;
+        first = end + 1;
+    }
+    result += line;
+    if (id) result += id; // wrapping a caption must not change the saved/navigation ID
+    return result;
+}
+
 void Checkbox(const char* label, std::atomic<bool>& value) {
     bool v = value;
-    const bool changed = ImGui::Checkbox(label, &v);
+    const float width = std::max(80.0f, ImGui::GetContentRegionAvail().x -
+        ImGui::GetFrameHeight() - ImGui::GetStyle().ItemInnerSpacing.x - 36.0f);
+    const auto caption = WrappedCaption(label, width);
+    const bool changed = ImGui::Checkbox(caption.c_str(), &v);
     Store(value, v, changed);
 }
 
@@ -152,8 +179,13 @@ void Slider(const char* label, std::atomic<float>& value, float lo, float hi) {
 }
 
 void Hint(const char* text) {
-    ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
+    const float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+    if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x +
+        ImGui::CalcTextSize("(?)").x <= right) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+    }
+    // A full-width field keeps its own hover tooltip instead of clipping a help marker.
     if (ImGui::BeginItemTooltip()) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
         ImGui::TextUnformatted(text);
@@ -170,110 +202,58 @@ float DisplayFps() {
     return frame_ms_avg>0.0f ? 1000.0f/frame_ms_avg : 0.0f;
 }
 
-void Menu() {
+
+void WorkshopTheme(ImGuiStyle& style) {
+    style.WindowRounding = 8.0f;
+    style.ChildRounding = 4.0f;
+    style.PopupRounding = 6.0f;
+    style.FrameRounding = 3.0f;
+    style.GrabRounding = 3.0f;
+    style.TabRounding = 4.0f;
+    style.WindowBorderSize = 1.0f;
+    const ImVec4 brass(0.84f, 0.76f, 0.63f, 1.0f);
+    const ImVec4 slate(0.11f, 0.13f, 0.15f, 1.0f);
+    const ImVec4 hover(0.23f, 0.24f, 0.25f, 1.0f);
+    style.Colors[ImGuiCol_Text] = ImVec4(0.94f, 0.90f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.63f, 0.62f, 0.58f, 1.0f);
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.047f, 0.059f, 0.071f, 0.96f);
+    style.Colors[ImGuiCol_ChildBg] = ImVec4(0.078f, 0.094f, 0.11f, 0.72f);
+    style.Colors[ImGuiCol_PopupBg] = ImVec4(0.078f, 0.094f, 0.11f, 0.99f);
+    style.Colors[ImGuiCol_Border] = ImVec4(0.25f, 0.25f, 0.22f, 0.9f);
+    style.Colors[ImGuiCol_FrameBg] = slate;
+    style.Colors[ImGuiCol_FrameBgHovered] = hover;
+    style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.31f, 0.29f, 0.25f, 1.0f);
+    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.055f, 0.067f, 0.078f, 1.0f);
+    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.094f, 0.11f, 0.125f, 1.0f);
+    style.Colors[ImGuiCol_CheckMark] = brass;
+    style.Colors[ImGuiCol_SliderGrab] = brass;
+    style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.94f, 0.85f, 0.7f, 1.0f);
+    style.Colors[ImGuiCol_Button] = slate;
+    style.Colors[ImGuiCol_ButtonHovered] = hover;
+    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.34f, 0.31f, 0.25f, 1.0f);
+    style.Colors[ImGuiCol_Header] = ImVec4(0.25f, 0.23f, 0.19f, 1.0f);
+    style.Colors[ImGuiCol_HeaderHovered] = hover;
+    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.34f, 0.31f, 0.25f, 1.0f);
+    style.Colors[ImGuiCol_Tab] = slate;
+    style.Colors[ImGuiCol_TabHovered] = hover;
+    style.Colors[ImGuiCol_TabSelected] = ImVec4(0.25f, 0.23f, 0.19f, 1.0f);
+    style.Colors[ImGuiCol_TabSelectedOverline] = brass;
+    style.Colors[ImGuiCol_Separator] = ImVec4(0.3f, 0.28f, 0.23f, 1.0f);
+    style.Colors[ImGuiCol_NavCursor] = brass;
+}
+
+void Section(const char* label) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.84f, 0.76f, 0.63f, 1.0f));
+    ImGui::SeparatorText(label);
+    ImGui::PopStyleColor();
+}
+
+float MenuScale() {
+    return ImGui::GetFontSize() / 18.0f;
+}
+void ImageSettings() {
     auto& s = BbSettings::Get();
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 40.0f * base_scale,
-                                   viewport->WorkPos.y + 40.0f * base_scale),
-                            ImGuiCond_Appearing);
-    ImGui::SetNextWindowSize(ImVec2(620.0f * base_scale, 0.0f), ImGuiCond_Appearing);
-    bool keep_open = true;
-    // Keep window and widget IDs independent of the displayed language (### suffixes).
-    if (!ImGui::Begin(Text("Bloodborne — settings  (Insert / L3+R3)###bbport_settings",
-                           "Bloodborne — настройки  (Insert / L3+R3)###bbport_settings"), &keep_open,
-                      ImGuiWindowFlags_NoCollapse)) {
-        ImGui::End();
-        return;
-    }
-    ImGui::Text(Text("%.0f FPS  (%.1f ms)", "%.0f FPS  (%.1f мс)"),
-                DisplayFps(), DisplayFps()>0.0f ? 1000.0f/DisplayFps() : 0.0f);
-    if (s.frame_generation==BbSettings::FrameGenerationNvidia && s.frame_generation_active>1 && s.nvidia_real_fps>0.0f)
-        ImGui::Text(Text("Real frames: %.0f FPS", "Реальные кадры: %.0f FPS"),s.nvidia_real_fps.load());
-
-    static const char* languages[] = {"English", "Русский"};
-    int language = s.menu_language;
-    if (ImGui::BeginCombo(Text("Menu language###menu_language", "Язык меню###menu_language"),
-                          languages[language])) {
-        for (int i = 0; i < BbSettings::MenuLanguageCount; ++i) {
-            if (ImGui::Selectable(languages[i], i == language)) {
-                Store(s.menu_language, i, true);
-            }
-        }
-        ImGui::EndCombo();
-    }
-
-    Checkbox(Text("Show performance overlay###show_fps", "Показывать статистику###show_fps"), s.show_fps);
-    Hint(Text("FPS, frame time and upscaler in the top-right corner. "
-              "Hide it without disabling this settings menu.",
-              "FPS, время кадра и апскейлер в правом верхнем углу. "
-              "Отключение не скрывает это меню настроек."));
-    Checkbox(Text("Show DLSS preset in overlay###show_dlss_preset",
-                  "Показывать пресет DLSS в статистике###show_dlss_preset"), s.show_dlss_preset);
-    Hint(Text("Add the preset letter on the same line. K>M means K is active and M is pending. "
-              "Turn this off to keep the original overlay.",
-              "Буква пресета в той же строке. K>M: K активен, M ожидает применения. "
-              "Выключите для исходной статистики."));
-    Checkbox(Text("Show input/output resolution in overlay###show_resolution",
-                  "Показывать разрешение входа/выхода###show_resolution"), s.show_resolution);
-    Hint(Text("Add the current render and output sizes on the same OSD line.",
-              "Текущее разрешение рендера и вывода в той же строке статистики."));
-    Checkbox(Text("Show Frame Generation in overlay###show_frame_generation",
-                  "Показывать генерацию кадров в статистике###show_frame_generation"),s.show_frame_generation);
-    Checkbox(Text("Show PC latency in overlay###show_latency",
-                  "Показывать задержку ПК в статистике###show_latency"),s.show_latency);
-    Hint(Text("Reflex measures simulation start to GPU completion. N/A means there is no valid driver sample. Monitor and input-device latency are not included.",
-              "Reflex измеряет время от начала симуляции до завершения GPU. N/A: нет данных драйвера. Задержка монитора и устройства ввода не учитывается."));
-    const char* background_modes[] = {
-        Text("Keep running###background_run", "Продолжать работу###background_run"),
-        Text("Pause game and rendering###background_pause", "Приостановить игру и рендер###background_pause"),
-        "30 FPS", "60 FPS",
-    };
-    int background = s.background_mode;
-    if (ImGui::BeginCombo(Text("When in background###background_mode", "В фоне###background_mode"),
-                          background_modes[background])) {
-        for (int i = 0; i < 4; ++i) {
-            if (ImGui::Selectable(background_modes[i], i == background)) {
-                Store(s.background_mode, i, true);
-                // Save before focus can be lost, rather than waiting for menu close.
-                BbSettings::Save();
-                dirty = false;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    Hint(Text("When the window loses focus: keep running, pause the entire game on Windows, "
-              "or cap background rendering. Your foreground frame cap is kept.",
-              "При потере фокуса: продолжать, приостановить всю игру в Windows "
-              "или ограничить FPS в фоне. Основной лимит FPS сохраняется."));
-
-    const char* window_modes[] = {
-        Text("Launcher setting###window_launcher", "Настройка лаунчера###window_launcher"),
-        Text("Windowed###window_windowed", "Оконный###window_windowed"),
-        Text("Borderless fullscreen (low latency)###window_borderless",
-             "Без рамки на весь экран (низкая задержка)###window_borderless"),
-        Text("Fullscreen (driver default)###window_fullscreen",
-             "Полный экран (настройка драйвера)###window_fullscreen"),
-    };
-    int window_mode = s.window_mode.load() + 1;
-    if (ImGui::BeginCombo(Text("Window mode###window_mode", "Режим окна###window_mode"),
-                          window_modes[window_mode])) {
-        for (int i = 0; i < 4; ++i) {
-            if (ImGui::Selectable(window_modes[i], i == window_mode)) {
-                Store(s.window_mode, i - 1, true);
-            }
-        }
-        ImGui::EndCombo();
-    }
-    if (s.window_mode == BbSettings::Borderless) {
-        Checkbox(Text("V-sync in borderless###borderless_vsync",
-                      "V-sync без рамки###borderless_vsync"), s.borderless_vsync);
-        Hint(Text("Off: Immediate presentation for minimum queueing; tearing is possible. "
-                  "On: Mailbox if supported, otherwise FIFO. Driver and Windows settings affect latency.",
-                  "Выкл: Immediate с минимальной очередью; возможны разрывы. "
-                  "Вкл: Mailbox, если поддерживается, иначе FIFO. Задержка зависит от Windows и драйвера."));
-    }
-
-    ImGui::SeparatorText(Text("Temporal upscaler", "Временной апскейлер"));
+    Section(Text("Temporal upscaler", "Временной апскейлер"));
     const char* upscalers[] = {
         Text("Off###upscaler_off", "Выкл###upscaler_off"),
         "FSR 3.1", "FSR 4 (INT8)", "FSR 4.1.1 (INT8)",
@@ -344,111 +324,7 @@ void Menu() {
                   "Проверка при гостинге: сеть FSR 4 нормирует цвет по экспозиции и по ней "
                   "решает, когда отбросить прошлые кадры. Меняются сразу, без перезапуска."));
     }
-    ImGui::BeginDisabled(!s.variable_frame_time);
-    const int real_cap = s.real_fps_limit;
-    const char* cap_modes[] = {Text("Launcher / display policy", "Настройка запуска / монитора"),
-                              Text("Custom cap", "Свой лимит"), Text("No cap", "Без ограничения")};
-    const int cap_mode = real_cap < 0 ? 0 : real_cap == 0 ? 2 : 1;
-    if (ImGui::BeginCombo(Text("Real game FPS###real_fps_mode", "Реальные FPS игры###real_fps_mode"),cap_modes[cap_mode])) {
-        for (int i=0; i<3; ++i) {
-            const std::string name = std::string(cap_modes[i])+"###real_fps_mode_"+std::to_string(i);
-            if (ImGui::Selectable(name.c_str(),i==cap_mode)) Store(s.real_fps_limit,i==0 ? -1 : i==2 ? 0 : 75,true);
-        }
-        ImGui::EndCombo();
-    }
-    if (s.real_fps_limit > 0) {
-        static int real_limit = 75;
-        static bool editing_real_limit = false;
-        if (!editing_real_limit) real_limit=s.real_fps_limit;
-        ImGui::TextUnformatted(Text("Real FPS cap", "Лимит реальных FPS"));
-        ImGui::SetNextItemWidth(std::max(80.0f,ImGui::GetContentRegionAvail().x-156.0f*base_scale));
-        if (ImGui::DragInt("###real_fps_limit",&real_limit,1.0f,30,120,"%d FPS",ImGuiSliderFlags_AlwaysClamp))
-            Store(s.real_fps_limit,real_limit,true);
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(148.0f*base_scale);
-        if (ImGui::InputInt("###real_fps_entry",&real_limit,1,10,ImGuiInputTextFlags_EnterReturnsTrue) ||
-            ImGui::IsItemDeactivatedAfterEdit())
-            Store(s.real_fps_limit,std::clamp(real_limit,30,120),true);
-        editing_real_limit=ImGui::IsItemActive();
-    }
-    ImGui::EndDisabled();
-    Hint(s.variable_frame_time ?
-        Text("Counts real game frames; FG can add frames above this cap. Changes are shared with the launcher. Keep real FPS at or below 120 for the game's timing.",
-             "Лимит реальных кадров; FG может добавлять кадры сверх него. Общая настройка с лаунчером. Для тайминга игры рекомендуется не выше 120 FPS.") :
-        Text("Choose Unlocked under Display & FPS in the launcher to change game FPS live. This session uses a fixed game-timing patch.",
-             "Выберите Unlocked в разделе Display & FPS лаунчера для изменения FPS в игре. В этой сессии используется фиксированный тайминг."));
     const bool upscaler_on = s.upscaler != BbSettings::UpscalerOff;
-    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG"};
-    const int fg=std::clamp(s.frame_generation.load(),0,2);
-    if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
-        for (int i=0;i<3;++i) {
-            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported)));
-            if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
-            ImGui::EndDisabled();
-        }
-        ImGui::EndCombo();
-    }
-    if (s.frame_generation==BbSettings::FrameGenerationNvidia) {
-        const int selected=s.nvidia_generated_frames;
-        const std::string preview=std::to_string(selected+1)+"x";
-        if (ImGui::BeginCombo(Text("NVIDIA FG multiplier###nvidia_generated_frames","Множитель NVIDIA FG###nvidia_generated_frames"),preview.c_str())) {
-            for (int i=1;i<=5;++i) {
-                ImGui::BeginDisabled(i>s.nvidia_max_generated);
-                const std::string name=std::to_string(i+1)+"x";
-                if (ImGui::Selectable(name.c_str(),i==selected)) Store(s.nvidia_generated_frames,i,true);
-                ImGui::EndDisabled();
-            }
-            ImGui::EndCombo();
-        }
-        if (const char* problem=s.frame_generation_problem.load()) ImGui::TextWrapped("%s",problem);
-        else if (s.frame_generation_active>1) ImGui::Text(Text("NVIDIA FG active: %dx","NVIDIA FG активна: %dx"),s.frame_generation_active.load());
-        else ImGui::TextUnformatted(Text("NVIDIA FG: waiting for valid scene frames","NVIDIA FG: ожидание кадров сцены"));
-    }
-    const char* reflex_modes[]={Text("Off","Выключено"),Text("On","Включено"),"On + Boost"};
-    const int reflex=std::clamp(s.reflex.load(),0,2);
-    ImGui::BeginDisabled(!s.reflex_supported);
-    if (ImGui::BeginCombo("NVIDIA Reflex###reflex",reflex_modes[reflex])) {
-        for(int i=0;i<3;++i) if(ImGui::Selectable(reflex_modes[i],i==reflex)) Store(s.reflex,i,true);
-        ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
-    Hint(Text("Reflex works independently of NVIDIA FG. NVIDIA FG enables Reflex automatically; Boost is optional. Unsupported choices are disabled.",
-              "Reflex работает независимо от NVIDIA FG. Генерация NVIDIA включает Reflex автоматически; Boost необязателен. Неподдерживаемые настройки недоступны."));
-    ImGui::BeginDisabled(!s.amd_antilag_supported);
-    Checkbox("AMD Anti-Lag 2###amd_antilag",s.amd_antilag);
-    ImGui::EndDisabled();
-    Hint(s.amd_antilag_supported ?
-        Text("Reduces input latency through the Radeon Vulkan driver. Works independently of the upscaler and FSR FG.",
-             "Снижает задержку ввода через драйвер Radeon Vulkan. Работает независимо от апскейлера и FSR FG.") :
-        Text("AMD Anti-Lag 2 needs a Radeon GPU and a driver with VK_AMD_anti_lag support.",
-             "AMD Anti-Lag 2 требует Radeon и драйвер с поддержкой VK_AMD_anti_lag."));
-    Hint(Text("FSR FG adds one interpolated frame between real frames, in SDR or HDR10. The normal FPS limit counts real frames: 75 can produce 150 with FG 2x. Background FPS caps disable generation.",
-              "FSR FG добавляет промежуточный кадр в SDR или HDR10. Обычный лимит относится к реальным кадрам: 75 даёт до 150 с FG 2x. При лимите FPS в фоне генерация отключается."));
-    Checkbox(Text("Limit total FPS with Frame Generation###limit_generated_fps",
-                  "Лимит общих FPS с генерацией кадров###limit_generated_fps"),s.limit_generated_fps);
-    ImGui::BeginDisabled(!s.limit_generated_fps);
-    static int generated_limit=144;
-    static bool editing_generated_limit=false;
-    if (!editing_generated_limit) generated_limit=s.generated_fps_limit;
-    ImGui::TextUnformatted(Text("Total FPS cap","Общий лимит FPS"));
-    ImGui::SetNextItemWidth(std::max(80.0f,ImGui::GetContentRegionAvail().x-156.0f*base_scale));
-    if (ImGui::DragInt("###generated_fps_limit",
-                      &generated_limit,1.0f,30,1000,"%d FPS",ImGuiSliderFlags_AlwaysClamp))
-        Store(s.generated_fps_limit,generated_limit,true);
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(148.0f * base_scale);
-    if (ImGui::InputInt("###generated_fps_entry",&generated_limit,1,10,ImGuiInputTextFlags_EnterReturnsTrue) ||
-        ImGui::IsItemDeactivatedAfterEdit())
-        Store(s.generated_fps_limit,std::clamp(generated_limit,30,1000),true);
-    editing_generated_limit=ImGui::IsItemActive();
-    ImGui::EndDisabled();
-    Hint(Text("Optional. This cap includes generated frames and can reduce the real frame rate. Generated frames do not advance game logic or physics.",
-              "Этот необязательный лимит включает промежуточные кадры и может снизить реальные FPS. Генерация не меняет физику и логику игры."));
-    if (s.frame_generation==BbSettings::FrameGenerationFsr) {
-        if (const char* problem=s.frame_generation_problem.load()) ImGui::TextWrapped("%s",problem);
-        else ImGui::TextUnformatted(s.frame_generation_active==2 ? Text("FSR FG active: 2x","FSR FG активна: 2x") :
-                                  Text("FSR FG: waiting for valid scene frames","FSR FG: ожидание кадров сцены"));
-    }
     const bool taa = s.upscaler == BbSettings::UpscalerTaa;
     if (s.upscaler == BbSettings::UpscalerDlss) {
         const int selected = s.dlss_preset.load();
@@ -543,64 +419,8 @@ void Menu() {
                   "разрешении вывода. Пресет применяется со следующего кадра без перезапуска "
                   "игры."));
     }
-    Checkbox(Text("Sharpening (RCAS)###sharpen", "Резкость (RCAS)###sharpen"), s.sharpen);
-    ImGui::BeginDisabled(!s.sharpen);
-    Slider(Text("Sharpness###sharpness", "Сила резкости###sharpness"), s.sharpness, 0.0f, 2.0f);
-    Hint(Text("Up to 1: the upscaler's own sharpening (RCAS). Above 1: adds another RCAS pass. "
-              "Ctrl+click the slider to enter an exact value.",
-              "До 1 — резкость самого апскейлера (RCAS). Выше 1 добавляется ещё один проход RCAS."
-              " Ctrl+клик по ползунку — ввести точное значение."));
-    ImGui::EndDisabled();
-    Checkbox(Text("Subpixel jitter###jitter", "Субпиксельный сдвиг (jitter)###jitter"), s.jitter);
-    Hint(Text("Each frame shifts the scene by a fraction of a pixel, letting the upscaler combine"
-              " several frames to recover more detail. Without jitter, only history-based "
-              "smoothing remains.",
-              "Каждый кадр сцена сдвигается на долю пикселя, и апскейлер собирает из нескольких "
-              "кадров больше деталей. Без него получается только сглаживание по истории."));
-
-    ImGui::SeparatorText(Text("Reactive mask", "Маска реактивности"));
-    ImGui::BeginDisabled(taa);
-    Checkbox(Text("Enable mask###reactive", "Включить маску###reactive"), s.reactive);
-    Hint(Text("Marks transparent effects (particles, haze) so the upscaler relies less on "
-              "previous frames. Reduces trails behind effects, but brings back shimmering beneath"
-              " them.",
-              "Помечает прозрачные эффекты (частицы, дымку), чтобы апскейлер меньше опирался на "
-              "прошлые кадры. Меньше шлейфов за эффектами, но под ними возвращается дрожание."));
-    ImGui::BeginDisabled(!s.reactive);
-    Slider(Text("Scale###reactive_scale", "Масштаб###reactive_scale"), s.reactive_scale, 0.0f, 4.0f);
-    Slider(Text("Threshold###reactive_threshold", "Порог###reactive_threshold"), s.reactive_threshold, 0.0f, 1.0f);
-    Slider(Text("Maximum###reactive_max", "Максимум###reactive_max"), s.reactive_max, 0.0f, 1.0f);
-    bool show_mask = s.debug_view == BbSettings::DebugReactive;
-    if (ImGui::Checkbox(Text("Show mask (debug)###show_reactive",
-                             "Показать маску (отладка)###show_reactive"), &show_mask)) {
-        s.debug_view = show_mask ? BbSettings::DebugReactive : BbSettings::DebugNone;
-    }
-    ImGui::EndDisabled();
-    ImGui::EndDisabled();
-    Checkbox(Text("Character motion vectors###object_motion",
-                  "Векторы движения персонажей###object_motion"), s.object_motion);
-    Hint(Text("Accurate vectors for animated objects: clothing and weapons break up less during "
-              "motion. Static scenes do not receive an extra pass. Changes take effect after "
-              "restarting the game.",
-              "Точные векторы для анимированных объектов: одежда и оружие меньше рассыпаются при "
-              "движении. Статичная сцена не получает дополнительный проход. Изменение применяется"
-              " после перезапуска игры."));
-    bool show_motion = s.debug_view == BbSettings::DebugMotion;
-    if (ImGui::Checkbox(Text("Show motion vectors (debug)###show_motion",
-                             "Показать векторы движения (отладка)###show_motion"), &show_motion)) {
-        s.debug_view = show_motion ? BbSettings::DebugMotion : BbSettings::DebugNone;
-    }
-    Hint(Text("Red/green: horizontal/vertical motion (8 pixels = full brightness). Blue: the "
-              "pixel has an accurate object vector, rather than only camera motion. A moving "
-              "object with no blue and no red/green is treated as stationary by the upscaler, "
-              "causing trails.",
-              "Красный/зелёный: движение по горизонтали/вертикали (8 пикселей = полная яркость). "
-              "Синий: пиксель получил точный вектор объекта, а не только движение камеры. "
-              "Движущийся предмет без синего и без красного/зелёного апскейлер считает "
-              "неподвижным, отсюда шлейф."));
     ImGui::EndDisabled(); // upscaler off
-
-    ImGui::SeparatorText(Text("Output resolution", "Разрешение вывода"));
+    Section(Text("Output resolution", "Разрешение вывода"));
     static const char* outputs[] = {"1280 x 720", "1920 x 1080", "2560 x 1440", "3840 x 2160"};
     int output = s.output_res;
     if (ImGui::BeginCombo(Text("Output resolution###output_res", "Разрешение вывода###output_res"), outputs[output])) {
@@ -649,7 +469,218 @@ void Menu() {
               "игры остаётся в 1080p — на Steam Deck и старых видеокартах это заметно медленнее. "
               "Выключена: всё рисуется в разрешении пресета, смена — через перезапуск. Авто "
               "включает её на мощных дискретных видеокартах. Применяется после перезапуска игры."));
-    ImGui::SeparatorText(Text("Cheats", "Читы"));
+}
+
+void FrameSettings() {
+    auto& s = BbSettings::Get();
+    Section(Text("Frame limits and latency", "Лимиты кадров и задержка"));
+    ImGui::BeginDisabled(!s.variable_frame_time);
+    const int real_cap = s.real_fps_limit;
+    const char* cap_modes[] = {Text("Launcher / display policy", "Настройка запуска / монитора"),
+                              Text("Custom cap", "Свой лимит"), Text("No cap", "Без ограничения")};
+    const int cap_mode = real_cap < 0 ? 0 : real_cap == 0 ? 2 : 1;
+    if (ImGui::BeginCombo(Text("Real game FPS###real_fps_mode", "Реальные FPS игры###real_fps_mode"),cap_modes[cap_mode])) {
+        for (int i=0; i<3; ++i) {
+            const std::string name = std::string(cap_modes[i])+"###real_fps_mode_"+std::to_string(i);
+            if (ImGui::Selectable(name.c_str(),i==cap_mode)) Store(s.real_fps_limit,i==0 ? -1 : i==2 ? 0 : 75,true);
+        }
+        ImGui::EndCombo();
+    }
+    if (s.real_fps_limit > 0) {
+        static int real_limit = 75;
+        static bool editing_real_limit = false;
+        if (!editing_real_limit) real_limit=s.real_fps_limit;
+        ImGui::TextUnformatted(Text("Real FPS cap", "Лимит реальных FPS"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x -
+            148.0f * MenuScale() - ImGui::GetStyle().ItemSpacing.x));
+        if (ImGui::DragInt("###real_fps_limit",&real_limit,1.0f,30,120,"%d FPS",ImGuiSliderFlags_AlwaysClamp))
+            Store(s.real_fps_limit,real_limit,true);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(148.0f*MenuScale());
+        if (ImGui::InputInt("###real_fps_entry",&real_limit,1,10,ImGuiInputTextFlags_EnterReturnsTrue) ||
+            ImGui::IsItemDeactivatedAfterEdit())
+            Store(s.real_fps_limit,std::clamp(real_limit,30,120),true);
+        editing_real_limit=ImGui::IsItemActive();
+    }
+    ImGui::EndDisabled();
+    Hint(s.variable_frame_time ?
+        Text("Counts real game frames; FG can add frames above this cap. Changes are shared with the launcher. Keep real FPS at or below 120 for the game's timing.",
+             "Лимит реальных кадров; FG может добавлять кадры сверх него. Общая настройка с лаунчером. Для тайминга игры рекомендуется не выше 120 FPS.") :
+        Text("Choose Unlocked under Display & FPS in the launcher to change game FPS live. This session uses a fixed game-timing patch.",
+             "Выберите Unlocked в разделе Display & FPS лаунчера для изменения FPS в игре. В этой сессии используется фиксированный тайминг."));
+    const bool upscaler_on = s.upscaler != BbSettings::UpscalerOff;
+    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG"};
+    const int fg=std::clamp(s.frame_generation.load(),0,2);
+    if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
+        for (int i=0;i<3;++i) {
+            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported)));
+            if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
+            ImGui::EndDisabled();
+        }
+        ImGui::EndCombo();
+    }
+    if (s.frame_generation==BbSettings::FrameGenerationNvidia) {
+        const int selected=s.nvidia_generated_frames;
+        const std::string preview=std::to_string(selected+1)+"x";
+        if (ImGui::BeginCombo(Text("NVIDIA FG multiplier###nvidia_generated_frames","Множитель NVIDIA FG###nvidia_generated_frames"),preview.c_str())) {
+            for (int i=1;i<=5;++i) {
+                ImGui::BeginDisabled(i>s.nvidia_max_generated);
+                const std::string name=std::to_string(i+1)+"x";
+                if (ImGui::Selectable(name.c_str(),i==selected)) Store(s.nvidia_generated_frames,i,true);
+                ImGui::EndDisabled();
+            }
+            ImGui::EndCombo();
+        }
+        if (const char* problem=s.frame_generation_problem.load()) ImGui::TextWrapped("%s",problem);
+        else if (s.frame_generation_active>1) ImGui::Text(Text("NVIDIA FG active: %dx","NVIDIA FG активна: %dx"),s.frame_generation_active.load());
+        else ImGui::TextUnformatted(Text("NVIDIA FG: waiting for valid scene frames","NVIDIA FG: ожидание кадров сцены"));
+    }
+    const char* reflex_modes[]={Text("Off","Выключено"),Text("On","Включено"),"On + Boost"};
+    const int reflex=std::clamp(s.reflex.load(),0,2);
+    ImGui::BeginDisabled(!s.reflex_supported);
+    if (ImGui::BeginCombo("NVIDIA Reflex###reflex",reflex_modes[reflex])) {
+        for(int i=0;i<3;++i) if(ImGui::Selectable(reflex_modes[i],i==reflex)) Store(s.reflex,i,true);
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    Hint(Text("Reflex works independently of NVIDIA FG. NVIDIA FG enables Reflex automatically; Boost is optional. Unsupported choices are disabled.",
+              "Reflex работает независимо от NVIDIA FG. Генерация NVIDIA включает Reflex автоматически; Boost необязателен. Неподдерживаемые настройки недоступны."));
+    ImGui::BeginDisabled(!s.amd_antilag_supported);
+    Checkbox("AMD Anti-Lag 2###amd_antilag",s.amd_antilag);
+    ImGui::EndDisabled();
+    Hint(s.amd_antilag_supported ?
+        Text("Reduces input latency through the Radeon Vulkan driver. Works independently of the upscaler and FSR FG.",
+             "Снижает задержку ввода через драйвер Radeon Vulkan. Работает независимо от апскейлера и FSR FG.") :
+        Text("AMD Anti-Lag 2 needs a Radeon GPU and a driver with VK_AMD_anti_lag support.",
+             "AMD Anti-Lag 2 требует Radeon и драйвер с поддержкой VK_AMD_anti_lag."));
+    Hint(Text("FSR FG adds one interpolated frame between real frames, in SDR or HDR10. The normal FPS limit counts real frames: 75 can produce 150 with FG 2x. Background FPS caps disable generation.",
+              "FSR FG добавляет промежуточный кадр в SDR или HDR10. Обычный лимит относится к реальным кадрам: 75 даёт до 150 с FG 2x. При лимите FPS в фоне генерация отключается."));
+    Checkbox(Text("Limit total FPS with Frame Generation###limit_generated_fps",
+                  "Лимит общих FPS с генерацией кадров###limit_generated_fps"),s.limit_generated_fps);
+    ImGui::BeginDisabled(!s.limit_generated_fps);
+    static int generated_limit=144;
+    static bool editing_generated_limit=false;
+    if (!editing_generated_limit) generated_limit=s.generated_fps_limit;
+    ImGui::TextUnformatted(Text("Total FPS cap","Общий лимит FPS"));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x -
+        148.0f * MenuScale() - ImGui::GetStyle().ItemSpacing.x));
+    if (ImGui::DragInt("###generated_fps_limit",
+                      &generated_limit,1.0f,30,1000,"%d FPS",ImGuiSliderFlags_AlwaysClamp))
+        Store(s.generated_fps_limit,generated_limit,true);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(148.0f * MenuScale());
+    if (ImGui::InputInt("###generated_fps_entry",&generated_limit,1,10,ImGuiInputTextFlags_EnterReturnsTrue) ||
+        ImGui::IsItemDeactivatedAfterEdit())
+        Store(s.generated_fps_limit,std::clamp(generated_limit,30,1000),true);
+    editing_generated_limit=ImGui::IsItemActive();
+    ImGui::EndDisabled();
+    Hint(Text("Optional. This cap includes generated frames and can reduce the real frame rate. Generated frames do not advance game logic or physics.",
+              "Этот необязательный лимит включает промежуточные кадры и может снизить реальные FPS. Генерация не меняет физику и логику игры."));
+    if (s.frame_generation==BbSettings::FrameGenerationFsr) {
+        if (const char* problem=s.frame_generation_problem.load()) ImGui::TextWrapped("%s",problem);
+        else ImGui::TextUnformatted(s.frame_generation_active==2 ? Text("FSR FG active: 2x","FSR FG активна: 2x") :
+                                  Text("FSR FG: waiting for valid scene frames","FSR FG: ожидание кадров сцены"));
+    }
+}
+
+void WindowSettings() {
+    auto& s = BbSettings::Get();
+    Section(Text("Window and focus", "Окно и фокус"));
+    static const char* languages[] = {"English", "Русский"};
+    int language = s.menu_language;
+    if (ImGui::BeginCombo(Text("Menu language###menu_language", "Язык меню###menu_language"),
+                          languages[language])) {
+        for (int i = 0; i < BbSettings::MenuLanguageCount; ++i) {
+            if (ImGui::Selectable(languages[i], i == language)) {
+                Store(s.menu_language, i, true);
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    const char* background_modes[] = {
+        Text("Keep running###background_run", "Продолжать работу###background_run"),
+        Text("Pause game and rendering###background_pause", "Приостановить игру и рендер###background_pause"),
+        "30 FPS", "60 FPS",
+    };
+    int background = s.background_mode;
+    if (ImGui::BeginCombo(Text("When in background###background_mode", "В фоне###background_mode"),
+                          background_modes[background])) {
+        for (int i = 0; i < 4; ++i) {
+            if (ImGui::Selectable(background_modes[i], i == background)) {
+                Store(s.background_mode, i, true);
+                // Save before focus can be lost, rather than waiting for menu close.
+                BbSettings::Save();
+                dirty = false;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    Hint(Text("When the window loses focus: keep running, pause the entire game on Windows, "
+              "or cap background rendering. Your foreground frame cap is kept.",
+              "При потере фокуса: продолжать, приостановить всю игру в Windows "
+              "или ограничить FPS в фоне. Основной лимит FPS сохраняется."));
+
+    const char* window_modes[] = {
+        Text("Launcher setting###window_launcher", "Настройка лаунчера###window_launcher"),
+        Text("Windowed###window_windowed", "Оконный###window_windowed"),
+        Text("Borderless fullscreen (low latency)###window_borderless",
+             "Без рамки на весь экран (низкая задержка)###window_borderless"),
+        Text("Fullscreen (driver default)###window_fullscreen",
+             "Полный экран (настройка драйвера)###window_fullscreen"),
+    };
+    int window_mode = s.window_mode.load() + 1;
+    if (ImGui::BeginCombo(Text("Window mode###window_mode", "Режим окна###window_mode"),
+                          window_modes[window_mode])) {
+        for (int i = 0; i < 4; ++i) {
+            if (ImGui::Selectable(window_modes[i], i == window_mode)) {
+                Store(s.window_mode, i - 1, true);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (s.window_mode == BbSettings::Borderless) {
+        Checkbox(Text("V-sync in borderless###borderless_vsync",
+                      "V-sync без рамки###borderless_vsync"), s.borderless_vsync);
+        Hint(Text("Off: Immediate presentation for minimum queueing; tearing is possible. "
+                  "On: Mailbox if supported, otherwise FIFO. Driver and Windows settings affect latency.",
+                  "Выкл: Immediate с минимальной очередью; возможны разрывы. "
+                  "Вкл: Mailbox, если поддерживается, иначе FIFO. Задержка зависит от Windows и драйвера."));
+    }
+
+}
+
+void OverlaySettings() {
+    auto& s = BbSettings::Get();
+    Section(Text("Performance overlay", "Статистика производительности"));
+    Checkbox(Text("Show performance overlay###show_fps", "Показывать статистику###show_fps"), s.show_fps);
+    Hint(Text("FPS, frame time and upscaler in the top-right corner. "
+              "Hide it without disabling this settings menu.",
+              "FPS, время кадра и апскейлер в правом верхнем углу. "
+              "Отключение не скрывает это меню настроек."));
+    Checkbox(Text("Show DLSS preset in overlay###show_dlss_preset",
+                  "Показывать пресет DLSS в статистике###show_dlss_preset"), s.show_dlss_preset);
+    Hint(Text("Add the preset letter on the same line. K>M means K is active and M is pending. "
+              "Turn this off to keep the original overlay.",
+              "Буква пресета в той же строке. K>M: K активен, M ожидает применения. "
+              "Выключите для исходной статистики."));
+    Checkbox(Text("Show input/output resolution in overlay###show_resolution",
+                  "Показывать разрешение входа/выхода###show_resolution"), s.show_resolution);
+    Hint(Text("Add the current render and output sizes on the same OSD line.",
+              "Текущее разрешение рендера и вывода в той же строке статистики."));
+    Checkbox(Text("Show Frame Generation in overlay###show_frame_generation",
+                  "Показывать генерацию кадров в статистике###show_frame_generation"),s.show_frame_generation);
+    Checkbox(Text("Show PC latency in overlay###show_latency",
+                  "Показывать задержку ПК в статистике###show_latency"),s.show_latency);
+    Hint(Text("Reflex measures simulation start to GPU completion. N/A means there is no valid driver sample. Monitor and input-device latency are not included.",
+              "Reflex измеряет время от начала симуляции до завершения GPU. N/A: нет данных драйвера. Задержка монитора и устройства ввода не учитывается."));
+}
+
+void CheatSettings() {
+    auto& s = BbSettings::Get();
+    Section(Text("Cheats", "Читы"));
     const auto multiplier = [&](const char* label, std::atomic<int>& target,
                                 uint32_t feature, bool motion = false) {
         const char* const* labels = motion ? BbSettings::MovementMultipliers : BbSettings::CheatMultipliers;
@@ -686,15 +717,84 @@ void Menu() {
     if (s.cheat_supported.load() != BB_CHEAT_ALL)
         ImGui::TextWrapped("%s", Text("Some live cheats are unavailable for this executable or conflict with a patch. See last_run.log.",
                                      "Часть читов недоступна для этого исполняемого файла или конфликтует с патчем. См. last_run.log."));
+    Section(Text("Startup cheats (restart required)", "Читы при запуске (после перезапуска)"));
     for (int e=0;e<BbSettings::EffectCount;++e) {
         const auto& effect=BbSettings::Effects[e];
         if (std::string_view(effect.key).starts_with("cheat_")) {
             const std::string label=std::string(Text(effect.label_en,effect.label))+
-                Text(" (restart required)###"," (после перезапуска)###")+effect.key;
+                "###"+effect.key;
             Checkbox(label.c_str(),s.effects[e]);
         }
     }
-    ImGui::SeparatorText(Text("Game effects (restart required)", "Эффекты игры (после перезапуска)"));
+}
+
+void AdvancedSettings() {
+    auto& s = BbSettings::Get();
+    const bool taa = s.upscaler == BbSettings::UpscalerTaa;
+    ImGui::BeginDisabled(s.upscaler == BbSettings::UpscalerOff);
+    Section(Text("Reconstruction and motion", "Реконструкция и движение"));
+    Checkbox(Text("Sharpening (RCAS)###sharpen", "Резкость (RCAS)###sharpen"), s.sharpen);
+    ImGui::BeginDisabled(!s.sharpen);
+    Slider(Text("Sharpness###sharpness", "Сила резкости###sharpness"), s.sharpness, 0.0f, 2.0f);
+    Hint(Text("Up to 1: the upscaler's own sharpening (RCAS). Above 1: adds another RCAS pass. "
+              "Ctrl+click the slider to enter an exact value.",
+              "До 1 — резкость самого апскейлера (RCAS). Выше 1 добавляется ещё один проход RCAS."
+              " Ctrl+клик по ползунку — ввести точное значение."));
+    ImGui::EndDisabled();
+    Checkbox(Text("Subpixel jitter###jitter", "Субпиксельный сдвиг (jitter)###jitter"), s.jitter);
+    Hint(Text("Each frame shifts the scene by a fraction of a pixel, letting the upscaler combine"
+              " several frames to recover more detail. Without jitter, only history-based "
+              "smoothing remains.",
+              "Каждый кадр сцена сдвигается на долю пикселя, и апскейлер собирает из нескольких "
+              "кадров больше деталей. Без него получается только сглаживание по истории."));
+
+    Section(Text("Reactive mask", "Маска реактивности"));
+    ImGui::BeginDisabled(taa);
+    Checkbox(Text("Enable mask###reactive", "Включить маску###reactive"), s.reactive);
+    Hint(Text("Marks transparent effects (particles, haze) so the upscaler relies less on "
+              "previous frames. Reduces trails behind effects, but brings back shimmering beneath"
+              " them.",
+              "Помечает прозрачные эффекты (частицы, дымку), чтобы апскейлер меньше опирался на "
+              "прошлые кадры. Меньше шлейфов за эффектами, но под ними возвращается дрожание."));
+    ImGui::BeginDisabled(!s.reactive);
+    Slider(Text("Scale###reactive_scale", "Масштаб###reactive_scale"), s.reactive_scale, 0.0f, 4.0f);
+    Slider(Text("Threshold###reactive_threshold", "Порог###reactive_threshold"), s.reactive_threshold, 0.0f, 1.0f);
+    Slider(Text("Maximum###reactive_max", "Максимум###reactive_max"), s.reactive_max, 0.0f, 1.0f);
+    bool show_mask = s.debug_view == BbSettings::DebugReactive;
+    if (ImGui::Checkbox(Text("Show mask (debug)###show_reactive",
+                             "Показать маску (отладка)###show_reactive"), &show_mask)) {
+        s.debug_view = show_mask ? BbSettings::DebugReactive : BbSettings::DebugNone;
+    }
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    Checkbox(Text("Character motion vectors###object_motion",
+                  "Векторы движения персонажей###object_motion"), s.object_motion);
+    Hint(Text("Accurate vectors for animated objects: clothing and weapons break up less during "
+              "motion. Static scenes do not receive an extra pass. Changes take effect after "
+              "restarting the game.",
+              "Точные векторы для анимированных объектов: одежда и оружие меньше рассыпаются при "
+              "движении. Статичная сцена не получает дополнительный проход. Изменение применяется"
+              " после перезапуска игры."));
+    bool show_motion = s.debug_view == BbSettings::DebugMotion;
+    if (ImGui::Checkbox(Text("Show motion vectors (debug)###show_motion",
+                             "Показать векторы движения (отладка)###show_motion"), &show_motion)) {
+        s.debug_view = show_motion ? BbSettings::DebugMotion : BbSettings::DebugNone;
+    }
+    Hint(Text("Red/green: horizontal/vertical motion (8 pixels = full brightness). Blue: the "
+              "pixel has an accurate object vector, rather than only camera motion. A moving "
+              "object with no blue and no red/green is treated as stationary by the upscaler, "
+              "causing trails.",
+              "Красный/зелёный: движение по горизонтали/вертикали (8 пикселей = полная яркость). "
+              "Синий: пиксель получил точный вектор объекта, а не только движение камеры. "
+              "Движущийся предмет без синего и без красного/зелёного апскейлер считает "
+              "неподвижным, отсюда шлейф."));
+    ImGui::EndDisabled(); // upscaler off
+
+}
+
+void EffectSettings() {
+    auto& s = BbSettings::Get();
+    Section(Text("Game effects (restart required)", "Эффекты игры (после перезапуска)"));
     const char* lods[] = {
         Text("Highest (-2)###lod_highest", "Максимальная (-2)###lod_highest"),
         Text("Game default###lod_default", "Как в игре###lod_default"),
@@ -714,11 +814,16 @@ void Menu() {
         }
         ImGui::EndCombo();
     }
-    for (int e = 0; e < BbSettings::EffectCount; ++e) {
-        const auto& effect = BbSettings::Effects[e];
-        if (std::string_view(effect.key).starts_with("cheat_")) continue;
-        const std::string label = std::string(Text(effect.label_en, effect.label)) + "###" + effect.key;
-        Checkbox(label.c_str(), s.effects[e]);
+    const int columns = ImGui::GetContentRegionAvail().x >= ImGui::GetFontSize() * 34.0f ? 2 : 1;
+    if (ImGui::BeginTable("###effects_grid", columns, ImGuiTableFlags_SizingStretchSame)) {
+        for (int e = 0; e < BbSettings::EffectCount; ++e) {
+            const auto& effect = BbSettings::Effects[e];
+            if (std::string_view(effect.key).starts_with("cheat_")) continue;
+            ImGui::TableNextColumn();
+            const std::string label = std::string(Text(effect.label_en, effect.label)) + "###" + effect.key;
+            Checkbox(label.c_str(), s.effects[e]);
+        }
+        ImGui::EndTable();
     }
     Hint(Text("Effects are enabled and disabled by game patches at startup "
               "(patches/Bloodborne.xml). Motion blur and dynamic light shadows have a noticeable "
@@ -733,6 +838,108 @@ void Menu() {
               "menu: левый touchpad / Tab. Нужны DbgFont14h.ccm и DbgFont14h.tpf в "
               "dvdroot_ps4/font из мода Nexus #253. Правый touchpad: Backspace."));
 
+}
+
+
+void Menu() {
+    auto& s = BbSettings::Get();
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float scale = std::min({base_scale, viewport->WorkSize.x / 760.0f,
+                                 viewport->WorkSize.y / 620.0f});
+    const ImVec2 maximum(viewport->WorkSize.x - 24.0f * scale,
+                        viewport->WorkSize.y - 24.0f * scale);
+    const ImVec2 size(std::min(720.0f * scale, maximum.x),
+                      std::min(560.0f * scale, maximum.y));
+    static ImVec2 last_viewport{};
+    static float last_scale = 0.0f;
+    const bool resized = last_viewport.x != viewport->WorkSize.x ||
+                         last_viewport.y != viewport->WorkSize.y || last_scale != scale;
+    last_viewport = viewport->WorkSize;
+    last_scale = scale;
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + (viewport->WorkSize.x - size.x) * 0.5f,
+                                   viewport->WorkPos.y + 24.0f * scale),
+                            resized ? ImGuiCond_Always : ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(size, resized ? ImGuiCond_Always : ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(580.0f * scale, 400.0f * scale), maximum);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f * scale, 12.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(7.0f * scale, 4.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f * scale, 7.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, ImVec2(8.0f * scale, 4.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 12.0f * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 4.0f * scale);
+    // PushFont also scales children and popups; per-window scaling does not in ImGui 1.92.
+    ImGui::PushFont(nullptr, 18.0f * scale / base_scale);
+    bool keep_open = true;
+    // Language-independent IDs also preserve the selected tab when the language changes.
+    if (!ImGui::Begin(Text("The Crowned Workshop: settings###bbport_settings",
+                           "The Crowned Workshop: настройки###bbport_settings"), &keep_open,
+                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
+                      ImGuiWindowFlags_NoScrollWithMouse)) {
+        ImGui::End();
+        ImGui::PopStyleVar(8);
+        ImGui::PopFont();
+        if (!keep_open) SetOpen(false);
+        return;
+    }
+    const ImVec2 mark = ImGui::GetCursorScreenPos();
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImU32 brass = IM_COL32(214, 194, 162, 255);
+    const ImVec2 crown[] = {
+        {mark.x + 2 * scale, mark.y + 5 * scale},
+        {mark.x + 8 * scale, mark.y + 9 * scale},
+        {mark.x + 14 * scale, mark.y},
+        {mark.x + 20 * scale, mark.y + 9 * scale},
+        {mark.x + 26 * scale, mark.y + 5 * scale},
+        {mark.x + 23 * scale, mark.y + 15 * scale},
+        {mark.x + 5 * scale, mark.y + 15 * scale},
+    };
+    draw->AddPolyline(crown, 7, brass, ImDrawFlags_Closed, 1.5f * scale);
+    draw->AddText(ImVec2(mark.x + 2 * scale, mark.y + 18 * scale), brass, "TK");
+    ImGui::Dummy(ImVec2(38.0f * scale, 40.0f * scale));
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    ImGui::TextColored(ImVec4(0.84f, 0.76f, 0.63f, 1.0f), "THE CROWNED WORKSHOP");
+    const float fps = DisplayFps();
+    if (s.frame_generation == BbSettings::FrameGenerationNvidia &&
+        s.frame_generation_active > 1 && s.nvidia_real_fps > 0.0f)
+        ImGui::TextDisabled(Text("%.0f FPS  |  %.0f real  |  %.1f ms", "%.0f FPS  |  %.0f реальных  |  %.1f мс"),
+                            fps, s.nvidia_real_fps.load(), fps > 0.0f ? 1000.0f / fps : 0.0f);
+    else
+        ImGui::TextDisabled(Text("%.0f FPS  |  %.1f ms", "%.0f FPS  |  %.1f мс"),
+                            fps, fps > 0.0f ? 1000.0f / fps : 0.0f);
+    ImGui::EndGroup();
+
+    const float footer = ImGui::GetTextLineHeightWithSpacing() +
+                         ImGui::GetFrameHeightWithSpacing() +
+                         ImGui::GetStyle().ItemSpacing.y * 2.0f + 2.0f * scale;
+    struct Tab { const char* label; const char* child; void (*content)(); };
+    const Tab tabs[] = {
+        {Text("Image###image", "Картинка###image"), "###image_panel", ImageSettings},
+        {Text("Frames###frames", "Кадры###frames"), "###frames_panel", FrameSettings},
+        {Text("Window###window", "Окно###window"), "###window_panel", WindowSettings},
+        {Text("Overlay###overlay", "Оверлей###overlay"), "###overlay_panel", OverlaySettings},
+        {Text("Cheats###cheats", "Читы###cheats"), "###cheats_panel", CheatSettings},
+        {Text("Effects###effects", "Эффекты###effects"), "###effects_panel", EffectSettings},
+        {Text("Advanced###advanced", "Дополн.###advanced"), "###advanced_panel", AdvancedSettings},
+    };
+    if (ImGui::BeginTabBar("###workshop_tabs", ImGuiTabBarFlags_FittingPolicyResizeDown)) {
+        for (const Tab& tab : tabs) {
+            if (ImGui::BeginTabItem(tab.label)) {
+                if (ImGui::BeginChild(tab.child, ImVec2(0.0f, -footer), ImGuiChildFlags_AlwaysUseWindowPadding)) {
+                    // Leave a consistent right-hand caption column for combos/sliders.
+                    ImGui::PushItemWidth(std::max(120.0f * scale, ImGui::GetContentRegionAvail().x - 250.0f * scale));
+                    tab.content();
+                    ImGui::PopItemWidth();
+                }
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::Separator();
     bool restart = s.object_motion != s.startup_object_motion ||
                    s.model_lod != s.startup_model_lod ||
                    s.live_resolution != s.startup_live_resolution ||
@@ -740,28 +947,26 @@ void Menu() {
     for (int e = 0; e < BbSettings::EffectCount; ++e) {
         restart |= s.effects[e] != s.startup_effects[e];
     }
+    if (restart)
+        ImGui::TextColored(ImVec4(0.84f, 0.76f, 0.63f, 1.0f), "%s",
+                          Text("Some changes require a restart", "Некоторые изменения требуют перезапуска"));
+    else
+        ImGui::TextDisabled("%s", Text("Changes are saved when you close the menu",
+                                       "Изменения сохраняются при закрытии меню"));
+    if (ImGui::Button(Text("Close###close", "Закрыть###close"))) keep_open = false;
     if (restart) {
-        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
-                           "%s", Text("Changes take effect after restarting the game",
-                                "Изменения применятся после перезапуска игры"));
-        if (ImGui::Button(Text("Apply and restart game###restart",
-                               "Применить и перезапустить игру###restart"))) {
+        ImGui::SameLine();
+        if (ImGui::Button(Text("Apply and restart###restart", "Применить и перезапустить###restart"))) {
             BbSettings::Save();
             runtime_restart();
         }
     }
-
-    ImGui::Spacing();
-    if (ImGui::Button(Text("Close###close", "Закрыть###close"))) {
-        keep_open = false;
-    }
     ImGui::SameLine();
-    ImGui::TextDisabled("%s", Text("Settings are saved automatically",
-                                 "Настройки сохраняются автоматически"));
+    ImGui::TextDisabled("Insert / L3+R3");
     ImGui::End();
-    if (!keep_open) {
-        SetOpen(false);
-    }
+    ImGui::PopStyleVar(8);
+    ImGui::PopFont();
+    if (!keep_open) SetOpen(false);
 }
 
 // The game's text dialog: what is typed, and how to finish (keyboard or controller).
@@ -901,10 +1106,7 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 6.0f;
-    style.FrameRounding = 4.0f;
-    style.GrabRounding = 4.0f;
-    style.Colors[ImGuiCol_WindowBg].w = 0.92f;
+    WorkshopTheme(style);
 
     ImFontConfig font_config;
     font_config.FontDataOwnedByAtlas = false;
