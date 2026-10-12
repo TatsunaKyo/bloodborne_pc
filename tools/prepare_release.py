@@ -4,8 +4,10 @@
 """Prepare a release from a verified package identity and its matching notes."""
 import argparse
 import json
+import posixpath
 from pathlib import Path
-from urllib.parse import urlencode
+import re
+from urllib.parse import urlencode, urlsplit, quote
 from release_integrity import validate, canonical_tag, TAG_RE, require
 
 
@@ -24,6 +26,19 @@ def prepare(package: Path, *, channel=None, existing_tag=None, repo=None):
     if lines and lines[0].startswith('# '): lines = lines[1:]
     notes = '\n'.join(lines).strip()
     commit = report['source_commit']
+    # Release descriptions have a different URL base from docs/releases/*.md.
+    # Keep their guide links tied to this package's exact source revision.
+    def guide_link(match):
+        target=match[2]
+        parsed=urlsplit(target)
+        if parsed.scheme or parsed.netloc or target.startswith('#'):return match[0]
+        path=posixpath.normpath(posixpath.join('docs/releases',parsed.path))
+        require(not path.startswith('../'), 'Release note link leaves the repository')
+        url='https://github.com/TatsunaKyo/bloodborne_pc/blob/'+commit+'/'+quote(path,safe='/')
+        if parsed.query:url+='?'+parsed.query
+        if parsed.fragment:url+='#'+parsed.fragment
+        return match[1]+url+match[3]
+    notes=re.sub(r'(\]\()([^\s)]+)(\))',guide_link,notes)
     body = notes+f"\n\nPackage: `{package.name}`\n\nSHA256: `{report['sha256']}`\n\nSource: [{commit[:7]}](https://github.com/TatsunaKyo/bloodborne_pc/commit/{commit}).\n"
     url = 'https://github.com/TatsunaKyo/bloodborne_pc/releases/new?' + urlencode({
         'tag':tag, 'target':commit, 'title':title, 'body':body, 'prerelease':'true' if channel == 'preview' else 'false'})

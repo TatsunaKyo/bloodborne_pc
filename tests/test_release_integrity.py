@@ -65,6 +65,14 @@ class Releases(unittest.TestCase):
         self.assertFalse(stable['prerelease']); self.assertEqual(stable['release_tag'], 'windows-v1.6-tatsunakyo.21-preview')
         with self.assertRaises(ValueError): prepare(p, existing_tag='windows-v1.6-tatsunakyo.20')
 
+    def test_release_links_resolve_to_the_recorded_source(self):
+        def notes(identity,data):
+            data['docs/releases/windows-v1.6-tatsunakyo.22.md']=b'# Revision\n\n[Setup](../repository-setup.md#actions) and [GitHub](https://github.com/).\n'
+        result=prepare(self.package(modify=notes))
+        self.assertIn('https://github.com/TatsunaKyo/bloodborne_pc/blob/'+'1'*40+'/docs/repository-setup.md#actions',result['body'])
+        self.assertIn('[GitHub](https://github.com/)',result['body'])
+        self.assertNotIn('](../',result['body'])
+
     def test_identity_and_binary_mismatches(self):
         mutations = [lambda i,d:i.update(source_commit='bad'),
                      lambda i,d:i.update(source_tree='bad'),
