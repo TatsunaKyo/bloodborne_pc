@@ -69,7 +69,7 @@ I added independent latency controls because choosing an upscaler or turning Fra
 | AMD Anti-Lag 2 | Off, On | A supported Radeon GPU and driver exposing `VK_AMD_anti_lag`. |
 
 > [!IMPORTANT]
-> Intel XeSS Low Latency (XeLL) was/is planned but XeLL currently does not support Vulkan. You can read more here: [Latency controls, supported hardware and measurements](docs/latency.md)
+> Intel Xe Low Latency (XeLL) was/is planned but XeLL currently does not support Vulkan. You can read more here: [Latency controls, supported hardware and measurements](docs/latency.md)
 
 ### Frame limits and background control
 
