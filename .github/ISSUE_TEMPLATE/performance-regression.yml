@@ -1,0 +1,26 @@
+name: Performance regression
+description: Compare frame rate, pacing or latency between two revisions.
+title: "[Performance] "
+body:
+  - type: markdown
+    attributes:
+      value: "I need a comparison of the same scene and settings to identify a regression. Real game FPS and generated output FPS are separate; include both caps."
+  - type: input
+    id: revisions
+    attributes: {label: Revisions compared, placeholder: "Previous revision → affected revision"}
+    validations: {required: true}
+  - type: textarea
+    id: hardware
+    attributes: {label: Hardware and Windows, description: "GPU/driver, CPU, RAM, Windows build and monitor refresh rate."}
+    validations: {required: true}
+  - type: textarea
+    id: settings
+    attributes: {label: Matching settings, description: "Scene, input/output resolution, upscaler quality/model, FG mode, both caps, HDR, latency mode, mods/cheats."}
+    validations: {required: true}
+  - type: textarea
+    id: comparison
+    attributes: {label: What changed, description: "Real/output FPS, frametimes or latency before/after. Mention how you measured them; a screenshot of the optional real-frame graph is useful."}
+    validations: {required: true}
+  - type: textarea
+    id: logs
+    attributes: {label: Reviewed logs or captures, description: "Attach relevant evidence without account details, saves or game files."}

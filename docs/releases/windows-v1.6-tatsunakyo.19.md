@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 19 preview
 
 I finally have a more specific lead for the Hunter's Dream flashing. On my Windows 11 / RTX 5070 Ti, it appears with NVIDIA FG enabled and disappears when I turn FG off. My Revision 18 capture contains eight matching frames before and after DLSS. Those images look normal, but some trees receive object-motion vectors exceeding 2,400 input pixels.

@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 13
 
 I added Radeon Anti-Lag 2, brought the real-frame FPS control into the in-game menu and corrected several sources of invalid temporal data after reports of flashing assets. This revision also gives the fork its own workshop identity and crowned TK emblem.

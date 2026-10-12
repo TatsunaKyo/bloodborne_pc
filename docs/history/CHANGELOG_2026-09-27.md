@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Исправления — 2026-09-27
 
 ## ✅ Что исправлено

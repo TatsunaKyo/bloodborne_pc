@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne Windows v1.6 — TatsunaKyo revision 8
 
 I added an editable number field alongside both FPS drag controls because setting an exact value with the slider was frustrating. In the launcher, dragging changes one FPS per pixel, with finer movement while holding Shift. In-game, the total FG cap accepts typed numbers and commits them with Enter or when leaving the field. The normal cap counts real game frames; the optional FG cap counts the total. For example, 75 real FPS with a total cap of 130 at 2x derives a ceiling of 65 real FPS. Generated frames do not advance game logic or physics.

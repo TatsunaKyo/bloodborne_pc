@@ -1,0 +1,802 @@
+{
+  "mingw-w64-clang-x86_64-SDL2": {
+    "filename": "mingw-w64-clang-x86_64-SDL2-2.32.10-1-any.pkg.tar.zst",
+    "sha256": "29b7ceee0e9c9092d0aa6e44d054ef3d955107baf5672cea1842b463247a12f5",
+    "version": "2.32.10-1"
+  },
+  "mingw-w64-clang-x86_64-abseil-cpp": {
+    "filename": "mingw-w64-clang-x86_64-abseil-cpp-20260526.0-1-any.pkg.tar.zst",
+    "sha256": "6474858963f7dda27bea60659de58c974273e2d0897ef3af1177a6cb69b70de0",
+    "version": "20260526.0-1"
+  },
+  "mingw-w64-clang-x86_64-aom": {
+    "filename": "mingw-w64-clang-x86_64-aom-3.15.1-1-any.pkg.tar.zst",
+    "sha256": "8adc87bf03e4f43c31cf4884ba7c7a11896118557f561510ae9feca05ed62794",
+    "version": "3.15.1-1"
+  },
+  "mingw-w64-clang-x86_64-boost": {
+    "filename": "mingw-w64-clang-x86_64-boost-1.92.0-3-any.pkg.tar.zst",
+    "sha256": "e84fd1cd08d07ac145e888b4f932ec407a446eba85e6bb34682eb7cf30b26221",
+    "version": "1.92.0-3"
+  },
+  "mingw-w64-clang-x86_64-boost-libs": {
+    "filename": "mingw-w64-clang-x86_64-boost-libs-1.92.0-3-any.pkg.tar.zst",
+    "sha256": "b75842f51b316e4eab668d64d2f2d042847031af5c1d1eb8a02818bf55dd7a87",
+    "version": "1.92.0-3"
+  },
+  "mingw-w64-clang-x86_64-brotli": {
+    "filename": "mingw-w64-clang-x86_64-brotli-1.2.0-1-any.pkg.tar.zst",
+    "sha256": "29bfbb9783ec5b86b6a51bacbd47708f75e854a3e05b0850360dcf6e901a485d",
+    "version": "1.2.0-1"
+  },
+  "mingw-w64-clang-x86_64-bzip2": {
+    "filename": "mingw-w64-clang-x86_64-bzip2-1.0.8-4-any.pkg.tar.zst",
+    "sha256": "bee14f4d52c1d58b59a17eb8953f1f4361689798d15709966a3d35ef7ce52dcf",
+    "version": "1.0.8-4"
+  },
+  "mingw-w64-clang-x86_64-c-ares": {
+    "filename": "mingw-w64-clang-x86_64-c-ares-1.34.8-1-any.pkg.tar.zst",
+    "sha256": "e9f5f065de8262a953ec3fc4421a306b9b2a7370d769a761a11a67ce9d23e0a2",
+    "version": "1.34.8-1"
+  },
+  "mingw-w64-clang-x86_64-ca-certificates": {
+    "filename": "mingw-w64-clang-x86_64-ca-certificates-20260816-1-any.pkg.tar.zst",
+    "sha256": "308604b18495cf2642d5af6a9ed237703cf705221e23aaa8d3a78e3ce2ab8619",
+    "version": "20260816-1"
+  },
+  "mingw-w64-clang-x86_64-cairo": {
+    "filename": "mingw-w64-clang-x86_64-cairo-1.18.6-2-any.pkg.tar.zst",
+    "sha256": "aaf9db0022f890f9907c7b6de5bcbea8802a195f8c721f033461d037b8e11045",
+    "version": "1.18.6-2"
+  },
+  "mingw-w64-clang-x86_64-clang": {
+    "filename": "mingw-w64-clang-x86_64-clang-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "1fee2841a761d739b96c7de1ebd08dec55c603b2c11ea47ce19b56161f2b031d",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-clang-libs": {
+    "filename": "mingw-w64-clang-x86_64-clang-libs-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "3de0accee7d5fc87dad60977f099948d1c59353ae9031365cdf39526bcf0f3d0",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-clang-tools-extra": {
+    "filename": "mingw-w64-clang-x86_64-clang-tools-extra-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "53ce3f39cd0b761bf2781317ad0f17a798c9bdf068ffe9467ed1fa213eda310c",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-cmake": {
+    "filename": "mingw-w64-clang-x86_64-cmake-4.4.4-3-any.pkg.tar.zst",
+    "sha256": "5835d6029d907de081f75b3d565bd8812fe5918f344d1c9176fe5249ae2dac39",
+    "version": "4.4.4-3"
+  },
+  "mingw-w64-clang-x86_64-compiler-rt": {
+    "filename": "mingw-w64-clang-x86_64-compiler-rt-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "3f0926a9b74eee208f0add40f05684ca1766bd44b64137de72c73eac165dc244",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-cppdap": {
+    "filename": "mingw-w64-clang-x86_64-cppdap-1.65.r11.g6464cd7-1-any.pkg.tar.zst",
+    "sha256": "20983afb176e058fee9234aad0f7598033472f53fd7f151273ff7f87dfcdf6c9",
+    "version": "1.65.r11.g6464cd7-1"
+  },
+  "mingw-w64-clang-x86_64-crt": {
+    "filename": "mingw-w64-clang-x86_64-crt-14.0.0.r426.g4564ee4b5-1-any.pkg.tar.zst",
+    "sha256": "9b548e032108faeee31a2d8ffa9336db12ed2cde48e7d74919cfee54f5d8e6b4",
+    "version": "14.0.0.r426.g4564ee4b5-1"
+  },
+  "mingw-w64-clang-x86_64-curl": {
+    "filename": "mingw-w64-clang-x86_64-curl-8.22.0-1-any.pkg.tar.zst",
+    "sha256": "ce6192a63fbdbd52a6440abcb0d89b81cdaea4a73798b39f569667af27fcb9e4",
+    "version": "8.22.0-1"
+  },
+  "mingw-w64-clang-x86_64-dav1d": {
+    "filename": "mingw-w64-clang-x86_64-dav1d-1.5.4-1-any.pkg.tar.zst",
+    "sha256": "9f081f0289a6b2e30ac47c829e7e7f435c5dcf5d3d0b3f1f54101bbb521d28ec",
+    "version": "1.5.4-1"
+  },
+  "mingw-w64-clang-x86_64-expat": {
+    "filename": "mingw-w64-clang-x86_64-expat-2.9.0-1-any.pkg.tar.zst",
+    "sha256": "4b6d086323da94fb2d63cb7a54b8b2e072515de8707066648007352359e8e730",
+    "version": "2.9.0-1"
+  },
+  "mingw-w64-clang-x86_64-fc-libs": {
+    "filename": "mingw-w64-clang-x86_64-fc-libs-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "6b16ffc9206a4ea59bf49e9aa89858c8ef437ccf826654b0d96e4a22d403fb67",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-ffmpeg": {
+    "filename": "mingw-w64-clang-x86_64-ffmpeg-9.0.2-1-any.pkg.tar.zst",
+    "sha256": "d49334d9af9cc26c0b0cf8b2eedba91d7a168ab4734ab88dbaabca6e8d5c3636",
+    "version": "9.0.2-1"
+  },
+  "mingw-w64-clang-x86_64-fmt": {
+    "filename": "mingw-w64-clang-x86_64-fmt-12.2.0-1-any.pkg.tar.zst",
+    "sha256": "1f867269df83185c88b84a1b405a56a0c4d01c301a2fda9f8eb7e3d0e2880880",
+    "version": "12.2.0-1"
+  },
+  "mingw-w64-clang-x86_64-fontconfig": {
+    "filename": "mingw-w64-clang-x86_64-fontconfig-2.18.3-1-any.pkg.tar.zst",
+    "sha256": "cc73526e86356510ddd51b41297364fa8a6f82a4ea65b01e110fcff1fa952507",
+    "version": "2.18.3-1"
+  },
+  "mingw-w64-clang-x86_64-freetype": {
+    "filename": "mingw-w64-clang-x86_64-freetype-2.14.3-1-any.pkg.tar.zst",
+    "sha256": "a5b7b61384b02a5c385f92a89ab5324c1be3d97532559c2ca9ef02f7cfd72eba",
+    "version": "2.14.3-1"
+  },
+  "mingw-w64-clang-x86_64-frei0r-plugins": {
+    "filename": "mingw-w64-clang-x86_64-frei0r-plugins-3.6.0-1-any.pkg.tar.zst",
+    "sha256": "8a3094b08af3eea82caa9e1758b14ebc6261d6d33a528add628b2358c7338488",
+    "version": "3.6.0-1"
+  },
+  "mingw-w64-clang-x86_64-fribidi": {
+    "filename": "mingw-w64-clang-x86_64-fribidi-1.0.17-1-any.pkg.tar.zst",
+    "sha256": "e019b8be7b6852443252a32eb275f4abee5d595108669967496a7e5bce03f8a4",
+    "version": "1.0.17-1"
+  },
+  "mingw-w64-clang-x86_64-gdk-pixbuf2": {
+    "filename": "mingw-w64-clang-x86_64-gdk-pixbuf2-2.44.8-1-any.pkg.tar.zst",
+    "sha256": "0d35295b35246ccd27346a4ac8b7ee53a7ceb0d0b568cebe47efc245597b9e8f",
+    "version": "2.44.8-1"
+  },
+  "mingw-w64-clang-x86_64-gettext-runtime": {
+    "filename": "mingw-w64-clang-x86_64-gettext-runtime-1.0-1-any.pkg.tar.zst",
+    "sha256": "6f22a64727816c9d9c8289bac9493a3c50691da678de22489d0545114568bb90",
+    "version": "1.0-1"
+  },
+  "mingw-w64-clang-x86_64-ggml": {
+    "filename": "mingw-w64-clang-x86_64-ggml-0.26.0-1-any.pkg.tar.zst",
+    "sha256": "1b06e3708096f23a8c86d549dfff4492ab1a2aea19bc54277c069f63d7e8f3ef",
+    "version": "0.26.0-1"
+  },
+  "mingw-w64-clang-x86_64-giflib": {
+    "filename": "mingw-w64-clang-x86_64-giflib-6.1.3-1-any.pkg.tar.zst",
+    "sha256": "9a3f4394f7b431135f85ee817a31e43f39165208f9f80c22641cf91126d45ba0",
+    "version": "6.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-glib2": {
+    "filename": "mingw-w64-clang-x86_64-glib2-2.90.1-1-any.pkg.tar.zst",
+    "sha256": "174290215f3e5022d23c783b59c8127abed71527f648e28e429a22d9c494ae69",
+    "version": "2.90.1-1"
+  },
+  "mingw-w64-clang-x86_64-glslang": {
+    "filename": "mingw-w64-clang-x86_64-glslang-16.3.0-1-any.pkg.tar.zst",
+    "sha256": "4ed7f8ac4621222366321a42bd453a87a5ad565d6bdad969f1b90353d6fe8ebd",
+    "version": "16.3.0-1"
+  },
+  "mingw-w64-clang-x86_64-gmp": {
+    "filename": "mingw-w64-clang-x86_64-gmp-6.3.0-2-any.pkg.tar.zst",
+    "sha256": "69f2f77c6c25e9f6bb0fed4ce0df1883054282236857cd17e6eb1aa0e717470e",
+    "version": "6.3.0-2"
+  },
+  "mingw-w64-clang-x86_64-gnutls": {
+    "filename": "mingw-w64-clang-x86_64-gnutls-3.8.13-3-any.pkg.tar.zst",
+    "sha256": "e49375bcfd776c0eafdddbfedf6e4a87dde308a502ea4ce7052267f6762187c2",
+    "version": "3.8.13-3"
+  },
+  "mingw-w64-clang-x86_64-graphite2": {
+    "filename": "mingw-w64-clang-x86_64-graphite2-1.3.15-1-any.pkg.tar.zst",
+    "sha256": "1933e839670e5c94084c2f7ec7a9c1a6c47c3cac5992a610d2dd2af0a006ad3e",
+    "version": "1.3.15-1"
+  },
+  "mingw-w64-clang-x86_64-gsm": {
+    "filename": "mingw-w64-clang-x86_64-gsm-1.0.24-1-any.pkg.tar.zst",
+    "sha256": "82c373a19e3bf37bd8013655a051c231899592b10b2a6f06963805fe7a65e2c2",
+    "version": "1.0.24-1"
+  },
+  "mingw-w64-clang-x86_64-harfbuzz": {
+    "filename": "mingw-w64-clang-x86_64-harfbuzz-14.6.0-1-any.pkg.tar.zst",
+    "sha256": "782b9c8b12df6984e52de051b2d4f97ffe43e421a6eb1f4757912d4cdb43401f",
+    "version": "14.6.0-1"
+  },
+  "mingw-w64-clang-x86_64-headers": {
+    "filename": "mingw-w64-clang-x86_64-headers-14.0.0.r426.g4564ee4b5-1-any.pkg.tar.zst",
+    "sha256": "df9c33e06797d9eb38e7b0bd75ead43567beeca3aac873f74d62ebe3168a118b",
+    "version": "14.0.0.r426.g4564ee4b5-1"
+  },
+  "mingw-w64-clang-x86_64-highway": {
+    "filename": "mingw-w64-clang-x86_64-highway-1.4.0-3-any.pkg.tar.zst",
+    "sha256": "3cb45e4bfc957335c3c0bf854dc9b0302b4c4b69569fe0bd56ee751f3a719fc5",
+    "version": "1.4.0-3"
+  },
+  "mingw-w64-clang-x86_64-icu": {
+    "filename": "mingw-w64-clang-x86_64-icu-78.3-4-any.pkg.tar.zst",
+    "sha256": "5ad1328ee46d205ac21bd099bac26844c4818d398fa22ad7c5676ace0b1625b0",
+    "version": "78.3-4"
+  },
+  "mingw-w64-clang-x86_64-imath": {
+    "filename": "mingw-w64-clang-x86_64-imath-3.2.3-3-any.pkg.tar.zst",
+    "sha256": "116f6fedcbc02366d865201200890ee9f7d3a6ade1427be218bfc88a19c50b16",
+    "version": "3.2.3-3"
+  },
+  "mingw-w64-clang-x86_64-jbigkit": {
+    "filename": "mingw-w64-clang-x86_64-jbigkit-2.1-6-any.pkg.tar.zst",
+    "sha256": "b58d83d6ee8f88270927a193235ad4cb848f7b2ec09c39304f6492702787ec3d",
+    "version": "2.1-6"
+  },
+  "mingw-w64-clang-x86_64-jsoncpp": {
+    "filename": "mingw-w64-clang-x86_64-jsoncpp-1.9.8-1-any.pkg.tar.zst",
+    "sha256": "0630157bc097ddb6bd345e9fc1fe2dce2c968857f52a05313d14a5f9d7d043e3",
+    "version": "1.9.8-1"
+  },
+  "mingw-w64-clang-x86_64-lame": {
+    "filename": "mingw-w64-clang-x86_64-lame-3.100-3-any.pkg.tar.zst",
+    "sha256": "0ee7bab16c09fbe321ec1e8a7614da31ccd3658997645743559a4f1010d57b0d",
+    "version": "3.100-3"
+  },
+  "mingw-w64-clang-x86_64-lcms2": {
+    "filename": "mingw-w64-clang-x86_64-lcms2-2.19.1-1-any.pkg.tar.zst",
+    "sha256": "9c7bf46bdedc1b5bef6b235e4bb513596afd81ce5f696634c10d0c4485bfcb1f",
+    "version": "2.19.1-1"
+  },
+  "mingw-w64-clang-x86_64-lerc": {
+    "filename": "mingw-w64-clang-x86_64-lerc-4.1.1-1-any.pkg.tar.zst",
+    "sha256": "517787ee63915bc3a9661f998518ce0eb270e3b030e6a75f481d667b489fbc3d",
+    "version": "4.1.1-1"
+  },
+  "mingw-w64-clang-x86_64-libarchive": {
+    "filename": "mingw-w64-clang-x86_64-libarchive-3.8.9-6-any.pkg.tar.zst",
+    "sha256": "de695bcd4baccb703606c32c0d1ffb6705415fb2085b6b61f5d73ad544eac591",
+    "version": "3.8.9-6"
+  },
+  "mingw-w64-clang-x86_64-libass": {
+    "filename": "mingw-w64-clang-x86_64-libass-0.17.5-1-any.pkg.tar.zst",
+    "sha256": "1ecb22b1db0e2a58e6ba4f19a846ba812accbabf1493b67deb74c9ac3db18053",
+    "version": "0.17.5-1"
+  },
+  "mingw-w64-clang-x86_64-libb2": {
+    "filename": "mingw-w64-clang-x86_64-libb2-0.98.1-3-any.pkg.tar.zst",
+    "sha256": "6f2c69f1ea27abbdb84c1e991e94dadae17a5e6d6e64859dc783f5b037edc2e2",
+    "version": "0.98.1-3"
+  },
+  "mingw-w64-clang-x86_64-libbluray": {
+    "filename": "mingw-w64-clang-x86_64-libbluray-1.5.0-1-any.pkg.tar.zst",
+    "sha256": "9d211dc33d33ecf025c7de8c1da629377b729123aec3b8f2c6dac921ac35cef4",
+    "version": "1.5.0-1"
+  },
+  "mingw-w64-clang-x86_64-libc++": {
+    "filename": "mingw-w64-clang-x86_64-libc++-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "df3744b6bb6a39472d29424e0d45f573e750ee86058100b6d227e5294b98da39",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-libcaca": {
+    "filename": "mingw-w64-clang-x86_64-libcaca-0.99.beta20-8-any.pkg.tar.zst",
+    "sha256": "d0ba0d7482ec044876314b660964e0e2d2ad3277df2dce7ca8848349fa25042f",
+    "version": "0.99.beta20-8"
+  },
+  "mingw-w64-clang-x86_64-libdatrie": {
+    "filename": "mingw-w64-clang-x86_64-libdatrie-0.2.14-1-any.pkg.tar.zst",
+    "sha256": "6795b7c9cb5febebc35108dda37feee15d29767a6b86f24ca6286da5e808dcec",
+    "version": "0.2.14-1"
+  },
+  "mingw-w64-clang-x86_64-libdeflate": {
+    "filename": "mingw-w64-clang-x86_64-libdeflate-1.26-1-any.pkg.tar.zst",
+    "sha256": "c8612c6296336c8336376d34ecbcb049295dfad24e833ba12cb918c0c0c58079",
+    "version": "1.26-1"
+  },
+  "mingw-w64-clang-x86_64-libdovi": {
+    "filename": "mingw-w64-clang-x86_64-libdovi-3.4.0-1-any.pkg.tar.zst",
+    "sha256": "ee12d3507cb418ed4292dcceb12daf69788aea498918f26a0ad72927e4a90962",
+    "version": "3.4.0-1"
+  },
+  "mingw-w64-clang-x86_64-libexif": {
+    "filename": "mingw-w64-clang-x86_64-libexif-0.6.26-1-any.pkg.tar.zst",
+    "sha256": "e17ffa23549fca8adb5073bb1b7505790673db14442b3cb16ffb0b89c734cf2e",
+    "version": "0.6.26-1"
+  },
+  "mingw-w64-clang-x86_64-libffi": {
+    "filename": "mingw-w64-clang-x86_64-libffi-3.8.0-1-any.pkg.tar.zst",
+    "sha256": "4d27339b52eabae86a1dff79cf432191ad8dd6acfa653b1179b12490234c66a6",
+    "version": "3.8.0-1"
+  },
+  "mingw-w64-clang-x86_64-libgme": {
+    "filename": "mingw-w64-clang-x86_64-libgme-0.6.5-2-any.pkg.tar.zst",
+    "sha256": "e8e698727433cf8b95b1ada347d64d954c572890b5837667d07d3ac8abbb2d89",
+    "version": "0.6.5-2"
+  },
+  "mingw-w64-clang-x86_64-libiconv": {
+    "filename": "mingw-w64-clang-x86_64-libiconv-1.19-1-any.pkg.tar.zst",
+    "sha256": "26c4ac9f2023eecdfffb291cab40c60585a0cd0f72539ca03c5558f3ecd309ec",
+    "version": "1.19-1"
+  },
+  "mingw-w64-clang-x86_64-libidn2": {
+    "filename": "mingw-w64-clang-x86_64-libidn2-2.3.8-4-any.pkg.tar.zst",
+    "sha256": "91b56797068c2e73c4ee26fa89dd8e9d2de464c639f01c948c12886dbc5b138d",
+    "version": "2.3.8-4"
+  },
+  "mingw-w64-clang-x86_64-libjpeg-turbo": {
+    "filename": "mingw-w64-clang-x86_64-libjpeg-turbo-3.2.0-1-any.pkg.tar.zst",
+    "sha256": "7e6f0ecbe5b4b35aa56d38126e07874a57a6d31409d8be7f653ad5252f46a275",
+    "version": "3.2.0-1"
+  },
+  "mingw-w64-clang-x86_64-libjxl": {
+    "filename": "mingw-w64-clang-x86_64-libjxl-0.12.0-1-any.pkg.tar.zst",
+    "sha256": "0b6007e11c83575860af9054098a384092e04576b1e0a43c19864613bb57dcd6",
+    "version": "0.12.0-1"
+  },
+  "mingw-w64-clang-x86_64-liblc3": {
+    "filename": "mingw-w64-clang-x86_64-liblc3-1.1.3-1-any.pkg.tar.zst",
+    "sha256": "41bb830189744a813f1139c6acc845f6583bea688b6d50f43bb26855ce21772c",
+    "version": "1.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-libmodplug": {
+    "filename": "mingw-w64-clang-x86_64-libmodplug-0.8.9.0-5-any.pkg.tar.zst",
+    "sha256": "7efa4a60428e7001717f93e5be6b576751a48b120fdc4250653446d7b252adad",
+    "version": "0.8.9.0-5"
+  },
+  "mingw-w64-clang-x86_64-libmysofa": {
+    "filename": "mingw-w64-clang-x86_64-libmysofa-1.3.5-1-any.pkg.tar.zst",
+    "sha256": "46ae39f5b08dfb06045d2a03f89e1ac76216a2809af4e45d18146094a01dd258",
+    "version": "1.3.5-1"
+  },
+  "mingw-w64-clang-x86_64-libogg": {
+    "filename": "mingw-w64-clang-x86_64-libogg-1.3.6-1-any.pkg.tar.zst",
+    "sha256": "cfb8802eeae4211e6e51bbd1297fd43b8019f958a6c738f777a599dc68d50d64",
+    "version": "1.3.6-1"
+  },
+  "mingw-w64-clang-x86_64-libplacebo": {
+    "filename": "mingw-w64-clang-x86_64-libplacebo-7.360.1-2-any.pkg.tar.zst",
+    "sha256": "3cf94fd4b702343d332ef970e5ddfd7b7d00da2a1b2e76cd38021281ac92048c",
+    "version": "7.360.1-2"
+  },
+  "mingw-w64-clang-x86_64-libpng": {
+    "filename": "mingw-w64-clang-x86_64-libpng-1.6.59-1-any.pkg.tar.zst",
+    "sha256": "6f8bdbad4cf8dad8dd2105bfb673e32fd96a5c967766f1180be67b75a3f09324",
+    "version": "1.6.59-1"
+  },
+  "mingw-w64-clang-x86_64-libpsl": {
+    "filename": "mingw-w64-clang-x86_64-libpsl-0.21.5-3-any.pkg.tar.zst",
+    "sha256": "4c73a70283a095e53c58be5e0598e3f51a92e42d7933a0dc6983c548dbe36741",
+    "version": "0.21.5-3"
+  },
+  "mingw-w64-clang-x86_64-librsvg": {
+    "filename": "mingw-w64-clang-x86_64-librsvg-2.63.2-1-any.pkg.tar.zst",
+    "sha256": "bbb981cab54454a349bc067cbda3cc769efe5944d678fbb74160d2be360ebdbe",
+    "version": "2.63.2-1"
+  },
+  "mingw-w64-clang-x86_64-libsoxr": {
+    "filename": "mingw-w64-clang-x86_64-libsoxr-0.1.3-5-any.pkg.tar.zst",
+    "sha256": "64c50c62b50ec789ee315e3dc46d79cb0c526e605dfc4732abffd59bff9a6c1e",
+    "version": "0.1.3-5"
+  },
+  "mingw-w64-clang-x86_64-libssh": {
+    "filename": "mingw-w64-clang-x86_64-libssh-0.12.2-1-any.pkg.tar.zst",
+    "sha256": "4b68f20f864beac583c76c26ab250822a322f31d17f9426c0f9a7f7d39491e14",
+    "version": "0.12.2-1"
+  },
+  "mingw-w64-clang-x86_64-libssh2": {
+    "filename": "mingw-w64-clang-x86_64-libssh2-1.11.1-2-any.pkg.tar.zst",
+    "sha256": "65abda38e96a8a07d379bcbffd1ecb8a888655d29f09d0ec8ed00e442e02c818",
+    "version": "1.11.1-2"
+  },
+  "mingw-w64-clang-x86_64-libsystre": {
+    "filename": "mingw-w64-clang-x86_64-libsystre-1.0.2-3-any.pkg.tar.zst",
+    "sha256": "0158a1f32f17d8b68ad7f813df41dfbd453d7120c078326f5a4a328fb7eb1d4a",
+    "version": "1.0.2-3"
+  },
+  "mingw-w64-clang-x86_64-libtasn1": {
+    "filename": "mingw-w64-clang-x86_64-libtasn1-4.21.0-1-any.pkg.tar.zst",
+    "sha256": "964ea9469d8c71e9f44fed7aa0c437806dac3a71d4c0612046cd9243eb49b20e",
+    "version": "4.21.0-1"
+  },
+  "mingw-w64-clang-x86_64-libthai": {
+    "filename": "mingw-w64-clang-x86_64-libthai-0.1.30-1-any.pkg.tar.zst",
+    "sha256": "4dd10fae08a1020e802eab59022fb09d676d2bc4fbac6b71bed31fcbdf38e77d",
+    "version": "0.1.30-1"
+  },
+  "mingw-w64-clang-x86_64-libtheora": {
+    "filename": "mingw-w64-clang-x86_64-libtheora-1.2.0-1-any.pkg.tar.zst",
+    "sha256": "d1cafcfe5495ed4fb807101c8dc177fbf7146ea76c99cde52b9d02749462ef43",
+    "version": "1.2.0-1"
+  },
+  "mingw-w64-clang-x86_64-libtiff": {
+    "filename": "mingw-w64-clang-x86_64-libtiff-4.7.2-1-any.pkg.tar.zst",
+    "sha256": "e1c5893dd7346bd4a21338eb2bb17120ed3bb31517b792fd2309222168ea43d2",
+    "version": "4.7.2-1"
+  },
+  "mingw-w64-clang-x86_64-libtre": {
+    "filename": "mingw-w64-clang-x86_64-libtre-0.9.0-2-any.pkg.tar.zst",
+    "sha256": "ce8b27b32545029dd072fb481ae0427f3b8ef34128f9a6b9c12fdbd1c85f5c47",
+    "version": "0.9.0-2"
+  },
+  "mingw-w64-clang-x86_64-libunibreak": {
+    "filename": "mingw-w64-clang-x86_64-libunibreak-7.0-1-any.pkg.tar.zst",
+    "sha256": "910376ad7aa4c89a5ec637373394a4ded936b41066890a9708b38f01697cb861",
+    "version": "7.0-1"
+  },
+  "mingw-w64-clang-x86_64-libunistring": {
+    "filename": "mingw-w64-clang-x86_64-libunistring-1.4.2-1-any.pkg.tar.zst",
+    "sha256": "5e7c731bd1db6fa508f6347689cee9335b581c84c0f6d2de155fd3792e5484b1",
+    "version": "1.4.2-1"
+  },
+  "mingw-w64-clang-x86_64-libunwind": {
+    "filename": "mingw-w64-clang-x86_64-libunwind-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "6dc583bd260a65e36ac7fe3bcf6669848032ed5edf4308591a338a3c02c88241",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-libuv": {
+    "filename": "mingw-w64-clang-x86_64-libuv-1.53.0-1-any.pkg.tar.zst",
+    "sha256": "6f51f1d9e8ca117cd7ce92e33452b460d5a9ec4f75ae0e7d33efca76e0b1a23e",
+    "version": "1.53.0-1"
+  },
+  "mingw-w64-clang-x86_64-libva": {
+    "filename": "mingw-w64-clang-x86_64-libva-2.24.1-1-any.pkg.tar.zst",
+    "sha256": "1df8d8c3dbe231b882f116720dd60f397407c3e016b8b56b4d7a325c623bac70",
+    "version": "2.24.1-1"
+  },
+  "mingw-w64-clang-x86_64-libvorbis": {
+    "filename": "mingw-w64-clang-x86_64-libvorbis-1.3.7-3-any.pkg.tar.zst",
+    "sha256": "3d8731e195d6bfca0404a1f1145646862c1d3c1e2ffd0d9d49df99467f4649b8",
+    "version": "1.3.7-3"
+  },
+  "mingw-w64-clang-x86_64-libvpl": {
+    "filename": "mingw-w64-clang-x86_64-libvpl-2.17.0-1-any.pkg.tar.zst",
+    "sha256": "84c72b0656b40eee125198c1763208c2f21e833a603458b9031a99533f13da69",
+    "version": "2.17.0-1"
+  },
+  "mingw-w64-clang-x86_64-libvpx": {
+    "filename": "mingw-w64-clang-x86_64-libvpx-1.17.0-1-any.pkg.tar.zst",
+    "sha256": "c03c249976710057699dd124fa27f4668df87029b06f73487555f47a4353486a",
+    "version": "1.17.0-1"
+  },
+  "mingw-w64-clang-x86_64-libwebp": {
+    "filename": "mingw-w64-clang-x86_64-libwebp-1.6.0-1-any.pkg.tar.zst",
+    "sha256": "441f8d7a5bcb9a435bf567e8414ac489e4d72e415e6ccab4d048b6e3a986571d",
+    "version": "1.6.0-1"
+  },
+  "mingw-w64-clang-x86_64-libwinpthread": {
+    "filename": "mingw-w64-clang-x86_64-libwinpthread-14.0.0.r426.g4564ee4b5-1-any.pkg.tar.zst",
+    "sha256": "76ad0b7af74e876f6af49adc584a3fc592db231de57812c3e018f2b0c3a254cc",
+    "version": "14.0.0.r426.g4564ee4b5-1"
+  },
+  "mingw-w64-clang-x86_64-libx264": {
+    "filename": "mingw-w64-clang-x86_64-libx264-0.165.r3222.b35605a-3-any.pkg.tar.zst",
+    "sha256": "e9bfb39b61bfa25833f904e467d5661ed83a575271ef7353061be914330500f6",
+    "version": "0.165.r3222.b35605a-3"
+  },
+  "mingw-w64-clang-x86_64-libxml2": {
+    "filename": "mingw-w64-clang-x86_64-libxml2-2.15.4-1-any.pkg.tar.zst",
+    "sha256": "61de987a3655c1bc81ea50ee1bdc6ac91836d96e91115ba8afdb82283272f6d8",
+    "version": "2.15.4-1"
+  },
+  "mingw-w64-clang-x86_64-llama.cpp": {
+    "filename": "mingw-w64-clang-x86_64-llama.cpp-1~0.6.0-1-any.pkg.tar.zst",
+    "sha256": "0bb0a881bfcc75424bd5bfb86c67bdd10d1649f85807b47228650d0db6b3532f",
+    "version": "1~0.6.0-1"
+  },
+  "mingw-w64-clang-x86_64-lld": {
+    "filename": "mingw-w64-clang-x86_64-lld-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "dfbaf81be26c354348f5b372665077c75f3c0f54b9e9b8e5b8e769752507b23c",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-llvm": {
+    "filename": "mingw-w64-clang-x86_64-llvm-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "ed9be4e59d7f30ef38a4d13318d9b35277f93345dea41d5b2a3aa8fcbbdb3306",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-llvm-libs": {
+    "filename": "mingw-w64-clang-x86_64-llvm-libs-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "5711b4b57e69fb55afcc93c873d8dea72d997489fb273b1f88df800638eaa5f9",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-llvm-openmp": {
+    "filename": "mingw-w64-clang-x86_64-llvm-openmp-23.1.3-2-any.pkg.tar.zst",
+    "sha256": "f1533f9a5cc16f5a33488eaeb9bfbee9f09e37b241923acc59ac38672652684a",
+    "version": "23.1.3-2"
+  },
+  "mingw-w64-clang-x86_64-llvm-tools": {
+    "filename": "mingw-w64-clang-x86_64-llvm-tools-23.1.3-1-any.pkg.tar.zst",
+    "sha256": "be6386e7d28fdea73fdc03f5627183f06486052e1d51e01f2a411f6d0870233c",
+    "version": "23.1.3-1"
+  },
+  "mingw-w64-clang-x86_64-lz4": {
+    "filename": "mingw-w64-clang-x86_64-lz4-1.10.0-1-any.pkg.tar.zst",
+    "sha256": "fe227e59fad25977ff1f7a064ddfba4a397db3a8d72f8c6c9d1dfff413b7f64f",
+    "version": "1.10.0-1"
+  },
+  "mingw-w64-clang-x86_64-lzo2": {
+    "filename": "mingw-w64-clang-x86_64-lzo2-2.10-3-any.pkg.tar.zst",
+    "sha256": "014d7700a4a81b71d73b29e64cbc32c02be1ae7b0c170aa731bf4d0ad700f578",
+    "version": "2.10-3"
+  },
+  "mingw-w64-clang-x86_64-miniupnpc": {
+    "filename": "mingw-w64-clang-x86_64-miniupnpc-2.3.3-4-any.pkg.tar.zst",
+    "sha256": "2f49e46af9463e500f0bfd9e78e3f8744c8c1b576d44a8ae741ecf5e01e71058",
+    "version": "2.3.3-4"
+  },
+  "mingw-w64-clang-x86_64-mpdecimal": {
+    "filename": "mingw-w64-clang-x86_64-mpdecimal-4.0.1-3-any.pkg.tar.zst",
+    "sha256": "ee3946fa273e98c3b0e0da1a6e85c3ceb92cf231b2aea16ee16e1cc1996f5ac9",
+    "version": "4.0.1-3"
+  },
+  "mingw-w64-clang-x86_64-ncurses": {
+    "filename": "mingw-w64-clang-x86_64-ncurses-6.6-4-any.pkg.tar.zst",
+    "sha256": "cbb44c61b2eb4cad7eb14f4b70b229b3e5661213f38e23b9f56f42fc0ff22055",
+    "version": "6.6-4"
+  },
+  "mingw-w64-clang-x86_64-nettle": {
+    "filename": "mingw-w64-clang-x86_64-nettle-4.0-1-any.pkg.tar.zst",
+    "sha256": "626c06c8e2198c2e5cc5c8e2ba0a1faa2670039ae1f5968ac8df8655a594b64c",
+    "version": "4.0-1"
+  },
+  "mingw-w64-clang-x86_64-nghttp2": {
+    "filename": "mingw-w64-clang-x86_64-nghttp2-1.70.0-1-any.pkg.tar.zst",
+    "sha256": "d2e375e98c996e65c83e01e18e4ed86f56d3d79b9e659e7936e69a50fac1d2c0",
+    "version": "1.70.0-1"
+  },
+  "mingw-w64-clang-x86_64-nghttp3": {
+    "filename": "mingw-w64-clang-x86_64-nghttp3-1.18.0-1-any.pkg.tar.zst",
+    "sha256": "370af368e29f42d9ac2c4ccf5b0dc1dcf6445bba9b8289b237eb529a4fca79c2",
+    "version": "1.18.0-1"
+  },
+  "mingw-w64-clang-x86_64-ngtcp2": {
+    "filename": "mingw-w64-clang-x86_64-ngtcp2-1.25.0-1-any.pkg.tar.zst",
+    "sha256": "2e7c41ae5d5561829a5ce5c08e09608f6494fe2d3b98ac93c2bed3de97e883d4",
+    "version": "1.25.0-1"
+  },
+  "mingw-w64-clang-x86_64-ninja": {
+    "filename": "mingw-w64-clang-x86_64-ninja-1.13.2-1-any.pkg.tar.zst",
+    "sha256": "dbb68154241fc24df9c176f605712f6f2491226f8c495627e95201c149a49a65",
+    "version": "1.13.2-1"
+  },
+  "mingw-w64-clang-x86_64-nlohmann-json": {
+    "filename": "mingw-w64-clang-x86_64-nlohmann-json-3.12.0-1-any.pkg.tar.zst",
+    "sha256": "c2062f80078f133d789def8e35d2418c93eba4b7978865a94408828dccb35d44",
+    "version": "3.12.0-1"
+  },
+  "mingw-w64-clang-x86_64-openal": {
+    "filename": "mingw-w64-clang-x86_64-openal-1.25.2-1-any.pkg.tar.zst",
+    "sha256": "21ac02b95333e1889a00c1f6d2c0d6c51cc67b505e3a78d217daa0d35aa1dcdc",
+    "version": "1.25.2-1"
+  },
+  "mingw-w64-clang-x86_64-openblas": {
+    "filename": "mingw-w64-clang-x86_64-openblas-0.3.34-1-any.pkg.tar.zst",
+    "sha256": "3536654fd43a6aba07c4019ce27a623f10528913efc5bd559b95e282cfdb9f7f",
+    "version": "0.3.34-1"
+  },
+  "mingw-w64-clang-x86_64-opencl-icd": {
+    "filename": "mingw-w64-clang-x86_64-opencl-icd-2026.05.29-1-any.pkg.tar.zst",
+    "sha256": "5c250f0e6e7a6d4c00a5cb3b3601746fdc77230fea6078b86b83846bd387dd27",
+    "version": "2026.05.29-1"
+  },
+  "mingw-w64-clang-x86_64-opencore-amr": {
+    "filename": "mingw-w64-clang-x86_64-opencore-amr-0.1.6-1-any.pkg.tar.zst",
+    "sha256": "df7a7809946de7b9f472e9f1c8f6171137725facd5f1c4cb605113911c8ad0f5",
+    "version": "0.1.6-1"
+  },
+  "mingw-w64-clang-x86_64-openexr": {
+    "filename": "mingw-w64-clang-x86_64-openexr-3.4.16-1-any.pkg.tar.zst",
+    "sha256": "c79f7bc1636f0f2f9c5a92ce59f8a346c0a68de8316b2b7aacfdf6e25cf5d35b",
+    "version": "3.4.16-1"
+  },
+  "mingw-w64-clang-x86_64-openjpeg2": {
+    "filename": "mingw-w64-clang-x86_64-openjpeg2-2.5.4-2-any.pkg.tar.zst",
+    "sha256": "219a86027279bf561a1e159b3e350e0500798b112678991332f720387086b564",
+    "version": "2.5.4-2"
+  },
+  "mingw-w64-clang-x86_64-openjph": {
+    "filename": "mingw-w64-clang-x86_64-openjph-0.32.0-1-any.pkg.tar.zst",
+    "sha256": "b05edd7a9a9d899bf8ee2d0625101d265f6bb6f34a49e0b82fa3f7962fad769a",
+    "version": "0.32.0-1"
+  },
+  "mingw-w64-clang-x86_64-openssl": {
+    "filename": "mingw-w64-clang-x86_64-openssl-3.6.5-1-any.pkg.tar.zst",
+    "sha256": "c6be6a00e4c5672306d3abefa195d8341d57f6d9c52a066bc6145d50038e4c62",
+    "version": "3.6.5-1"
+  },
+  "mingw-w64-clang-x86_64-opus": {
+    "filename": "mingw-w64-clang-x86_64-opus-1.6.1-1-any.pkg.tar.zst",
+    "sha256": "addb5607cb62769bf3c9dd2b8be7cea4cc8664eb449bdf77221bd5821b47e93a",
+    "version": "1.6.1-1"
+  },
+  "mingw-w64-clang-x86_64-p11-kit": {
+    "filename": "mingw-w64-clang-x86_64-p11-kit-0.26.5-1-any.pkg.tar.zst",
+    "sha256": "e80802646ba0e9dba2bc881258476735920ded7d288cb386e0d26c77c7a46fea",
+    "version": "0.26.5-1"
+  },
+  "mingw-w64-clang-x86_64-pango": {
+    "filename": "mingw-w64-clang-x86_64-pango-1.58.2-1-any.pkg.tar.zst",
+    "sha256": "16a25876127c6dcfdc0de86ecdb32a8ef79df89c798995c74d88cffbe7914420",
+    "version": "1.58.2-1"
+  },
+  "mingw-w64-clang-x86_64-pcre2": {
+    "filename": "mingw-w64-clang-x86_64-pcre2-10.49-1-any.pkg.tar.zst",
+    "sha256": "8ea1407808aa043ed38c910406172b5a393efaa3712cd3bbcd0eb4bbc16b1d83",
+    "version": "10.49-1"
+  },
+  "mingw-w64-clang-x86_64-pixman": {
+    "filename": "mingw-w64-clang-x86_64-pixman-0.46.4-3-any.pkg.tar.zst",
+    "sha256": "1104bac77fb10bba4ddfd83c6220149e0a7e56127f9f57c7946c2d0299c9b8a3",
+    "version": "0.46.4-3"
+  },
+  "mingw-w64-clang-x86_64-pkgconf": {
+    "filename": "mingw-w64-clang-x86_64-pkgconf-1~3.0.7-2-any.pkg.tar.zst",
+    "sha256": "dcc05bd1b6339a6aa7ec746fc9810ff1560400b47856c19bd1b2a6a06efa4368",
+    "version": "1~3.0.7-2"
+  },
+  "mingw-w64-clang-x86_64-protobuf": {
+    "filename": "mingw-w64-clang-x86_64-protobuf-36.2-1-any.pkg.tar.zst",
+    "sha256": "db5ac36d574f450f850a3070cfab7225cf6494f60af8afe88cc7d6d37f142712",
+    "version": "36.2-1"
+  },
+  "mingw-w64-clang-x86_64-python": {
+    "filename": "mingw-w64-clang-x86_64-python-3.14.8-1-any.pkg.tar.zst",
+    "sha256": "703db05ec467614773c29ceeea54684f1b77de5e8d16096b2e3a100cb2600f01",
+    "version": "3.14.8-1"
+  },
+  "mingw-w64-clang-x86_64-python-packaging": {
+    "filename": "mingw-w64-clang-x86_64-python-packaging-26.3-1-any.pkg.tar.zst",
+    "sha256": "f0e694ed156c7561820b3ff3681407fafdf0dc07f09815b53cced26db207054c",
+    "version": "26.3-1"
+  },
+  "mingw-w64-clang-x86_64-rav1e": {
+    "filename": "mingw-w64-clang-x86_64-rav1e-0.8.1-1-any.pkg.tar.zst",
+    "sha256": "d1b51d897953a758a221f480cb6ea768fdd3070d699436464ef8cf311e924d79",
+    "version": "0.8.1-1"
+  },
+  "mingw-w64-clang-x86_64-rhash": {
+    "filename": "mingw-w64-clang-x86_64-rhash-1.4.6-1-any.pkg.tar.zst",
+    "sha256": "4ea744fa603b3198fa69d1051ddc95aa5de9c7b503dd01d35eeb1b916e8a505e",
+    "version": "1.4.6-1"
+  },
+  "mingw-w64-clang-x86_64-robin-map": {
+    "filename": "mingw-w64-clang-x86_64-robin-map-1.4.1-1-any.pkg.tar.zst",
+    "sha256": "b75a553db1d568fa19716aca1bb009ebf84f7337f965aca92b2b42254e487b4e",
+    "version": "1.4.1-1"
+  },
+  "mingw-w64-clang-x86_64-rtmpdump": {
+    "filename": "mingw-w64-clang-x86_64-rtmpdump-2.6-2-any.pkg.tar.zst",
+    "sha256": "45877443ff71890749504d3b8d6687ea012a2612302006f532f2e95a264e0af8",
+    "version": "2.6-2"
+  },
+  "mingw-w64-clang-x86_64-sdl3": {
+    "filename": "mingw-w64-clang-x86_64-sdl3-3.4.18-1-any.pkg.tar.zst",
+    "sha256": "26847e18a9f413a1ebec5a2359881ceeef810558c63235ca0997a353c868035b",
+    "version": "3.4.18-1"
+  },
+  "mingw-w64-clang-x86_64-shaderc": {
+    "filename": "mingw-w64-clang-x86_64-shaderc-2026.4-1-any.pkg.tar.zst",
+    "sha256": "1eb1df14e08720f354e4a99bb8d8512ab4d6c2a8179023ee60f809a66bbe13b4",
+    "version": "2026.4-1"
+  },
+  "mingw-w64-clang-x86_64-speex": {
+    "filename": "mingw-w64-clang-x86_64-speex-1.2.1-1-any.pkg.tar.zst",
+    "sha256": "963b49323ea5973e2d493c39c0f49dc516239a31d5b12b27e99dc2323a80736f",
+    "version": "1.2.1-1"
+  },
+  "mingw-w64-clang-x86_64-speexdsp": {
+    "filename": "mingw-w64-clang-x86_64-speexdsp-1.2.1-1-any.pkg.tar.zst",
+    "sha256": "171f52ce81170489df70900390d0b1bc761769779b1930a59cf9e0a73f2abd3c",
+    "version": "1.2.1-1"
+  },
+  "mingw-w64-clang-x86_64-spirv-cross": {
+    "filename": "mingw-w64-clang-x86_64-spirv-cross-1~1.4.363.0-1-any.pkg.tar.zst",
+    "sha256": "926c01e9c7f4540233b102e9a870f1ec2018a491cc6f42f88e4057d69423c043",
+    "version": "1~1.4.363.0-1"
+  },
+  "mingw-w64-clang-x86_64-spirv-headers": {
+    "filename": "mingw-w64-clang-x86_64-spirv-headers-2~1.4.363.0-1-any.pkg.tar.zst",
+    "sha256": "bd00e5589a326b15c3c7c23916551eb6b6657065e539eff08be6170c89493f02",
+    "version": "2~1.4.363.0-1"
+  },
+  "mingw-w64-clang-x86_64-spirv-tools": {
+    "filename": "mingw-w64-clang-x86_64-spirv-tools-3~1.4.363.0-1-any.pkg.tar.zst",
+    "sha256": "36cc50416ce16081510b196e7fabdb07fd2220f54d21e3290d87b90db797ddd0",
+    "version": "3~1.4.363.0-1"
+  },
+  "mingw-w64-clang-x86_64-sqlite3": {
+    "filename": "mingw-w64-clang-x86_64-sqlite3-3.53.4-1-any.pkg.tar.zst",
+    "sha256": "a16a83e52688eb668323cbf551cc6fc11d06b1e259d84974ddfc7f3e760be0ea",
+    "version": "3.53.4-1"
+  },
+  "mingw-w64-clang-x86_64-srt": {
+    "filename": "mingw-w64-clang-x86_64-srt-1.5.7-1-any.pkg.tar.zst",
+    "sha256": "1bc4b7314c479b8a074792e4f043e19e299944991fb8d55ee35ace411fb5607e",
+    "version": "1.5.7-1"
+  },
+  "mingw-w64-clang-x86_64-svt-av1": {
+    "filename": "mingw-w64-clang-x86_64-svt-av1-4.2.0-1-any.pkg.tar.zst",
+    "sha256": "c3e1b7ea91322cd3cab23524addc44fa48cb34f00bc8f461e019f087276bd167",
+    "version": "4.2.0-1"
+  },
+  "mingw-w64-clang-x86_64-tcl": {
+    "filename": "mingw-w64-clang-x86_64-tcl-8.6.18-1-any.pkg.tar.zst",
+    "sha256": "007c0c97a703089c2afde17ed1ac62a5eb68c1ad5e47f9402d5919ff52f1264b",
+    "version": "8.6.18-1"
+  },
+  "mingw-w64-clang-x86_64-tk": {
+    "filename": "mingw-w64-clang-x86_64-tk-8.6.18-1-any.pkg.tar.zst",
+    "sha256": "c85db1bccfabf1037a4cf8433ba9113bf467ae7dea1feb70da5b23913a244ea4",
+    "version": "8.6.18-1"
+  },
+  "mingw-w64-clang-x86_64-tzdata": {
+    "filename": "mingw-w64-clang-x86_64-tzdata-2026e-1-any.pkg.tar.zst",
+    "sha256": "a48ad3ed31a5a6bdc6e6407ebba50ba347ede0d5f31996a551fb806d0422c9ea",
+    "version": "2026e-1"
+  },
+  "mingw-w64-clang-x86_64-vid.stab": {
+    "filename": "mingw-w64-clang-x86_64-vid.stab-1.1.2-1-any.pkg.tar.zst",
+    "sha256": "e011afcbf200e1d57aad4b8fb32f72f9a1da8fb84be17244863893471aad372c",
+    "version": "1.1.2-1"
+  },
+  "mingw-w64-clang-x86_64-vulkan-headers": {
+    "filename": "mingw-w64-clang-x86_64-vulkan-headers-1~1.4.363.0-1-any.pkg.tar.zst",
+    "sha256": "7eabb1efd99c5bd80d2a2b3b5f9ef76afee32f096a175e0e4d0f86793fcb7247",
+    "version": "1~1.4.363.0-1"
+  },
+  "mingw-w64-clang-x86_64-vulkan-loader": {
+    "filename": "mingw-w64-clang-x86_64-vulkan-loader-1~1.4.363.0-1-any.pkg.tar.zst",
+    "sha256": "1299c3ffd60fefbb22cb985ea1d81f3a36dd5185f6c5ac8e5ff0e3257b37e2f5",
+    "version": "1~1.4.363.0-1"
+  },
+  "mingw-w64-clang-x86_64-vulkan-memory-allocator": {
+    "filename": "mingw-w64-clang-x86_64-vulkan-memory-allocator-3.4.0-1-any.pkg.tar.zst",
+    "sha256": "833f3910d7942d570c399fbddd57fe9245d45c7aff6d5565ce1c72d0966d2978",
+    "version": "3.4.0-1"
+  },
+  "mingw-w64-clang-x86_64-whisper.cpp": {
+    "filename": "mingw-w64-clang-x86_64-whisper.cpp-1~1.9.4.r183.g60c0be6ac-1-any.pkg.tar.zst",
+    "sha256": "79648011c318cc0601dc3c48a361da8d43dbcc2b5d29e6dc3acb7acd9212eb13",
+    "version": "1~1.9.4.r183.g60c0be6ac-1"
+  },
+  "mingw-w64-clang-x86_64-wineditline": {
+    "filename": "mingw-w64-clang-x86_64-wineditline-2.208-1-any.pkg.tar.zst",
+    "sha256": "853aa831a43b781c157181c6bd35589014721e864d823f0c0a13dc80ba0a2d75",
+    "version": "2.208-1"
+  },
+  "mingw-w64-clang-x86_64-winpthreads": {
+    "filename": "mingw-w64-clang-x86_64-winpthreads-14.0.0.r426.g4564ee4b5-1-any.pkg.tar.zst",
+    "sha256": "478ec2087416ed14ca623436a5bc3ec49f5be9d6f74d28e22298f4a2df4f6548",
+    "version": "14.0.0.r426.g4564ee4b5-1"
+  },
+  "mingw-w64-clang-x86_64-x265": {
+    "filename": "mingw-w64-clang-x86_64-x265-4.3-1-any.pkg.tar.zst",
+    "sha256": "c6d18e823b11639c26e815bb5f8f04f554796f726c920dc6221fdafe50473547",
+    "version": "4.3-1"
+  },
+  "mingw-w64-clang-x86_64-xvidcore": {
+    "filename": "mingw-w64-clang-x86_64-xvidcore-1.3.7-5-any.pkg.tar.zst",
+    "sha256": "580ee68270d1ef0404d9a9927c2947b8f0e6aa5e8ac3de9faa47948c81cf56a0",
+    "version": "1.3.7-5"
+  },
+  "mingw-w64-clang-x86_64-xxhash": {
+    "filename": "mingw-w64-clang-x86_64-xxhash-0.8.4-1-any.pkg.tar.zst",
+    "sha256": "f46362401700e4d3bc6a214065614cf3ddfcadf48c7ea5f306c38483807c52a8",
+    "version": "0.8.4-1"
+  },
+  "mingw-w64-clang-x86_64-xz": {
+    "filename": "mingw-w64-clang-x86_64-xz-5.8.4-1-any.pkg.tar.zst",
+    "sha256": "6fc8efc101a0a638f7d637731b24cc2989f479a0a41d76a6723fd82ae3bffac9",
+    "version": "5.8.4-1"
+  },
+  "mingw-w64-clang-x86_64-zimg": {
+    "filename": "mingw-w64-clang-x86_64-zimg-3.0.6-3-any.pkg.tar.zst",
+    "sha256": "058f8098e3344cd3e46a685fbf313d2dfe9a5fad16f3780c02945ffac818d9b3",
+    "version": "3.0.6-3"
+  },
+  "mingw-w64-clang-x86_64-zlib": {
+    "filename": "mingw-w64-clang-x86_64-zlib-1.3.2-2-any.pkg.tar.zst",
+    "sha256": "96d8db2f2bf24c0d4e82b899d50a3497d97536a8bd38ce275401d0f2b9580b5e",
+    "version": "1.3.2-2"
+  },
+  "mingw-w64-clang-x86_64-zstd": {
+    "filename": "mingw-w64-clang-x86_64-zstd-1.5.7-2-any.pkg.tar.zst",
+    "sha256": "2d75c4ddf8f4f7b76fe33e3f1eea16450f9b3aede14285c886462d72f0ffd87d",
+    "version": "1.5.7-2"
+  },
+  "mingw-w64-clang-x86_64-zvbi": {
+    "filename": "mingw-w64-clang-x86_64-zvbi-0.2.45-1-any.pkg.tar.zst",
+    "sha256": "71a2866cc942cbd09226cc01a6266bc589785a281457d044767bf7965850b665",
+    "version": "0.2.45-1"
+  },
+  "mingw-w64-clang-x86_64-zycore-c": {
+    "filename": "mingw-w64-clang-x86_64-zycore-c-1.5.2-2-any.pkg.tar.zst",
+    "sha256": "210ca4f14092504dc6330110a8ae6a1219c20000bfc78817d99a3ad1a7d95c06",
+    "version": "1.5.2-2"
+  },
+  "mingw-w64-clang-x86_64-zydis": {
+    "filename": "mingw-w64-clang-x86_64-zydis-4.1.1-1-any.pkg.tar.zst",
+    "sha256": "f141ee463c0e92affb391be13f4f1ca5a82fda5656f1ee005311508e4434b507",
+    "version": "4.1.1-1"
+  }
+}

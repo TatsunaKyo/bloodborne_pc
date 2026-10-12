@@ -35,7 +35,7 @@ I also want to improve text during FG by separating the HUD from the scene, with
 
 The current mip bias already restores fine texture detail. More negative bias or stronger sharpening can increase shimmer, so those are tuning choices to compare on a moving scene. The optional profiler helps quantify future changes; it is not a prerequisite for removing redundant work that is identifiable in the code.
 
-For the main gameplay configuration and open regression checks, see [Testing and known issues](testing.md).
+For the main gameplay configuration and open regression checks, see [Testing](testing.md) and [current reports](known-issues.md).
 
 ## ConstRam and geometry reads
 

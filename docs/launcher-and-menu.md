@@ -50,6 +50,8 @@ The same category names apply to the launcher. Some startup/management controls 
 
 ## Live settings and saved preferences
 
+I made the runtime controls editable during play. [Live editing](live-settings.md) lists the exact behavior and startup exceptions.
+
 The launcher and menu share `bbport.menu.ini`. Saving from the launcher preserves choices changed during play. The in-game menu saves when closed; settings that need a restart show that explicitly. DLSS presets, overlay choices and unlocked real-frame limits can change during the session. Startup patches retain their restart requirement.
 
 I corrected the ignored-checkbox handling and check real clicks, keyboard/controller navigation and both menu languages. The launcher layout is checked at 100–200% scaling. [Testing](testing.md) records the current checks.

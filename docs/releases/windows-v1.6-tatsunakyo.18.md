@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 18 diagnostic preview
 
 My Windows 11 / RTX 5070 Ti test still shows flashing assets in the Hunter's Dream on Revision 17, even with draw preparation, the draw pipeline, deferred Vulkan recording and copy workers disabled. I am keeping that result in the rendering investigation instead of treating the previous ordering fixes as the end of it.

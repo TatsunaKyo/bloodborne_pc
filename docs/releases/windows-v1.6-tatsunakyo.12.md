@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne Windows v1.6 — TatsunaKyo Revision 12
 
 I added a dedicated XeSS quality menu after finishing the Revision 11 frame-pacing build. This package includes that pacing work too; the earlier builds remain available for comparison.

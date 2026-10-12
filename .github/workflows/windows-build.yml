@@ -1,0 +1,70 @@
+name: Windows build and package
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Publication channel for the prepared form; this job does not publish
+        type: choice
+        options: [stable, preview]
+        default: stable
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14.8'
+      - name: Remember Windows Python
+        shell: pwsh
+        run: '"WINPYTHON=$((Get-Command python).Source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: CLANG64
+          update: false
+          install: git patch
+      - name: Download and verify pinned dependencies
+        shell: pwsh
+        run: python tools/fetch_windows_dependencies.py
+      - name: Install the pinned CLANG64 package set
+        shell: msys2 {0}
+        run: pacman -U --noconfirm out/dependencies/*.pkg.tar.zst
+      - name: Compile native programs and CPU regression executables
+        shell: msys2 {0}
+        run: |
+          bash build.sh
+          ninja -C out/gpu -j2 frame-limits-test frame-pacing-test background-pause-test temporal-history-test motion-history-test xess-presets-test amd-antilag-test camera-motion-test
+      - name: Execute Windows regressions
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p out/verification
+          for test in frame-limits frame-pacing background-pause temporal-history motion-history xess-presets amd-antilag camera-motion; do
+            ./out/gpu/${test}-test.exe | tee -a out/verification/native-windows-tests.log
+          done
+      - name: Compile the Windows launcher
+        shell: msys2 {0}
+        run: bash packaging/windows/package.sh --launcher-only
+      - name: Test the actual compiled launcher and prepare the complete package
+        shell: msys2 {0}
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+        run: |
+          "$WINPYTHON" -m pip install PyInstaller==6.19.0 Pillow==12.3.0
+          "$WINPYTHON" tests/test_launcher_updates.py out/pyi-dist/Bloodborne/Bloodborne.exe
+          "$WINPYTHON" tests/test_launcher_window_settings.py out/pyi-dist/Bloodborne/Bloodborne.exe
+          "$WINPYTHON" tools/assemble_windows.py --baseline out/dependencies/runtime-baseline.zip --dll-dir "$(cygpath -w /clang64/bin)" --channel "$RELEASE_CHANNEL"
+      - name: Upload candidate and verification files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: crowned-workshop-windows-candidate
+          path: dist
+          if-no-files-found: error
+          retention-days: 14

@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Earlier technical reference. [The Crowned Workshop current guides](index.md) · [Current reports](known-issues.md). This page retains its original context and credits.
+
 # Temporal upscaling and frame generation — frame analysis and plan
 
 ## Native TAA and missing FSR 4 assets (2026-10-01)

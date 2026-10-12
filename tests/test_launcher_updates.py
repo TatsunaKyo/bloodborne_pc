@@ -67,6 +67,37 @@ class ForkUpdates(unittest.TestCase):
         self.assertEqual((version, url), (future_version, 'https://example.invalid/windows.zip'))
         self.assertTrue(page.endswith('/windows-v' + future_version))
 
+    def test_published_stable_preview_tags(self):
+        release = json.loads((source.parents[1] / 'tests/fixtures/release21-stable.json').read_text())
+        version, url, _page = self.latest(release)
+        self.assertEqual(version, '1.6-tatsunakyo.21')
+        self.assertTrue(url.endswith('/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-21.zip'))
+        for revision in (19, 21, future_revision):
+            candidate = self.release(f'windows-v1.6-tatsunakyo.{revision}-preview', assets=[
+                {'name':f'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-{revision}.zip',
+                 'browser_download_url':'https://example.invalid/windows.zip', 'state':'uploaded'}])
+            candidate['prerelease'] = False
+            self.assertEqual(self.latest(candidate)[0],f'1.6-tatsunakyo.{revision}')
+
+    def test_actual_prereleases_and_drafts_are_not_offered(self):
+        for tag in ('windows-v'+future_version, 'windows-v'+future_version+'-preview'):
+            for flag in ('prerelease','draft'):
+                release = self.release(tag); release[flag] = True
+                with self.subTest(tag=tag,flag=flag), self.assertRaises(ValueError):
+                    self.latest(release)
+                self.assertEqual(self.check(release), [])
+
+    def test_malformed_or_unready_release(self):
+        for release in ({}, [], {'tag_name':None}, {'tag_name':42}, {'tag_name':'windows-v'+future_version,'assets':{}}):
+            with self.subTest(release=release), self.assertRaises(ValueError):
+                self.latest(release)
+        release = self.release(); release['assets'][-1]['state'] = 'new'
+        self.assertIsNone(self.latest(release)[1])
+        release = self.release(); release['assets'].append(dict(release['assets'][-1]))
+        self.assertIsNone(self.latest(release)[1])
+        release = self.release(); release['assets'][-1]['browser_download_url'] = 'file:///tmp/package.zip'
+        with self.assertRaises(ValueError): self.latest(release)
+
     def test_source_zip_is_not_installed(self):
         self.assertIsNone(self.latest(self.release(assets=[
             {'name': 'source.zip', 'browser_download_url': 'https://example.invalid/source.zip'}]))[1])

@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 20 preview
 
 My latest Revision 19 test suggests the Hunter's Dream flashing is finally resolved on my Windows 11 / RTX 5070 Ti. I still notice some inconsistent frame delivery, so I have kept that visual correction and focused this revision on pacing and a clearer way to see it.

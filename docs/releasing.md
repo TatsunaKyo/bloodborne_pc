@@ -1,21 +1,36 @@
 # Publishing The Crowned Workshop
 
-I publish the full rebuilt package so the launcher and renderer stay together. The current preview is **Revision 20**, with tag **windows-v1.6-tatsunakyo.20-preview**.
+I publish the complete package so the launcher, native components, runtimes and documentation match. Release preparation now reads the package's `BUILD-IDENTITY.json` and its version-specific notes; there is no revision number to edit in the tool.
 
-## Files and release page
+## Version and channel
 
-Use **Bloodborne-Windows-v1.6-TatsunaKyo-Revision-21.zip** and its **.zip.sha256** file. The prepared release page delivered with them contains the title, description, exact source commit and archive checksum. The same information is in **Crowned-Workshop-Revision-21-Release.json**, with the text in **Crowned-Workshop-Revision-21-Release.md**.
+| Channel | New tag | GitHub setting |
+|---|---|---|
+| Stable | `windows-v1.6-tatsunakyo.22` (using the actual version/revision) | Prerelease off; make it Latest when ready. |
+| Preview | Same version with `-preview` | Prerelease on; keep it out of the stable updater. |
 
-1. Open the prepared page and review the preview.
-2. Attach the full ZIP and its SHA256 file.
-3. Publish when the build is ready for other users to try.
+The public Revision 19 and 21 tags end in `-preview` even though GitHub marks those releases stable. I keep those tags intact. The corrected updater accepts them by version and release status; genuine drafts/prereleases are excluded. Revision 22's new stable tag has no suffix so installed older launchers can recognize it too.
 
-The package's **BUILD-IDENTITY.json** records its source commit and binary hashes. I pin the release to that commit so a later branch update does not change which source matches the uploaded build. The [Revision 20 notes](releases/windows-v1.6-tatsunakyo.20.md) describe the changes and checks.
+## Prepare the exact package
 
-## Building the package
+```bash
+python tools/release_integrity.py path/to/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-22.zip --repo . --require-sidecar
+python tools/prepare_release.py path/to/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-22.zip --repo . --channel stable --output dist/release.md
+```
 
-[Windows build instructions](../packaging/windows/README.md) cover the native components, launcher, pinned runtimes and licenses. Both Bloodborne.exe and the native renderer are rebuilt for each revision. Keep the full package contents when uploading; no game files belong in the release.
+Use the actual package filename for the revision you built. The second command writes a ready-to-review Markdown description and JSON containing the publishing URL, exact source commit, tag, channel, package and checksum. It reads the matching notes already included in the package and refuses mismatched executables, runtimes, source or dependencies.
 
-For the project's feature overview, see the [README](../README.md). Testing and open reports are in [Testing](testing.md), and planned work is in [the roadmap](tatsunakyo-next.md).
+`--channel preview` prepares a prerelease. To regenerate the form for an already-published legacy stable tag, use `--channel stable --existing-tag windows-v1.6-tatsunakyo.21-preview` with that release's package. The tool never edits tags or publishes a release.
 
-[Earlier publishing records](history/releasing-through-15.md) remain available as an archive.
+1. Review the prepared page and its source target.
+2. Upload the **full ZIP and its .zip.sha256 file**.
+3. Test the candidate on the intended Windows hardware, then publish with the selected channel setting.
+4. Keep the verification records and build identity with the package. The Published release integrity workflow checks the uploaded assets against their tag/source.
+
+## Automated builds
+
+[Windows build and package](../.github/workflows/windows-build.yml) rebuilds native programs and the launcher, runs regressions and prepares a candidate. Unchanged SDK DLLs/licenses come from the checksum-pinned stable baseline; current native executables, launcher and repository files replace their older counterparts. Installed MSYS2 versions, compiler details, hashes and source/tree are recorded. Fixed inputs improve repeatability; I do not claim that different hosts produce byte-identical compiler output.
+
+Publication stays manual. [Repository settings](repository-setup.md) explains Issues/Actions activation; [Windows build instructions](../packaging/windows/README.md) cover local builds. [Contributing](../CONTRIBUTING.md), [tests](testing.md) and [the infrastructure plan](infrastructure-plan.md) describe the gates and next work.
+
+[Earlier publishing records](history/releasing-through-15.md) remain archived.

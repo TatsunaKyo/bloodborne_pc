@@ -12,4 +12,4 @@ For more detail, Advanced offers frame statistics and GPU pass timing in the log
 
 I kept the default one-frame GPU queue because I want low latency. You can try a larger **Frames → Frames ahead of the GPU** value if it helps your configuration, but check the extra delay as well. I've reduced the repeated renderer work I found; I still welcome gameplay comparisons from other PCs to see how much that helps in practice.
 
-I test gameplay on my Windows 11 / RTX setup. [Testing and known issues](testing.md) collects that coverage and the remaining checks.
+I test gameplay on my Windows 11 / RTX setup. [Testing](testing.md) and [current reports](known-issues.md) collects that coverage and the remaining checks.

@@ -1,9 +1,37 @@
-# bbport on Windows
+# Building The Crowned Workshop on Windows
+
+Players can use the complete revision ZIP without installing Python or a compiler. Start with [the player guide](README-Windows.txt) and [current documentation](../../docs/index.md). This page is for building the port.
+
+## Verified release candidates
+
+I keep release preparation separate from the older development ZIP command. The **Windows build and package** workflow installs the checksum-pinned package set, builds the native programs and launcher, executes the Windows CPU regressions, checks the compiled launcher and assembles a complete candidate. It does not publish a release.
+
+For the same process in an MSYS2 CLANG64 shell, set `WINPYTHON` to a python.org Python 3.14.8 executable, commit your source changes and run:
+
+```bash
+"$WINPYTHON" tools/fetch_windows_dependencies.py
+pacman -U --noconfirm out/dependencies/*.pkg.tar.zst
+bash build.sh
+ninja -C out/gpu frame-limits-test frame-pacing-test background-pause-test temporal-history-test motion-history-test xess-presets-test amd-antilag-test camera-motion-test
+set -euo pipefail
+mkdir -p out/verification
+for test in frame-limits frame-pacing background-pause temporal-history motion-history xess-presets amd-antilag camera-motion; do
+  ./out/gpu/${test}-test.exe | tee -a out/verification/native-windows-tests.log
+done
+bash packaging/windows/package.sh --launcher-only
+"$WINPYTHON" -m pip install PyInstaller==6.19.0 Pillow==12.3.0
+"$WINPYTHON" tests/test_launcher_updates.py out/pyi-dist/Bloodborne/Bloodborne.exe
+"$WINPYTHON" tests/test_launcher_window_settings.py out/pyi-dist/Bloodborne/Bloodborne.exe
+"$WINPYTHON" tools/assemble_windows.py --baseline out/dependencies/runtime-baseline.zip --dll-dir "$(cygpath -w /clang64/bin)" --channel stable
+```
+
+The baseline contributes unchanged SDK redistributables and their licenses; the workflow replaces the native executables, launcher and project files with the new build. The candidate records its source commit/tree, executable/runtime hashes and dependencies. The validator checks DLL imports, the source patch, package contents and SHA-256 before preparing the publication page. Use `--channel preview` for an actual prerelease. See [Releasing](../../docs/releasing.md) for the tag policy and publication steps.
+
+## Development builds
 
 I added the NVIDIA Vulkan FG/Reflex integration in Revision 7 using the included Streamline 2.14.1 declarations. For a usable Windows package, place the matching production `sl.interposer.dll`, `sl.common.dll`, `sl.dlss_g.dll`, `sl.reflex.dll`, `sl.pcl.dll`, `NvLowLatencyVk.dll`, `nvngx_dlssg.dll` and `nvngx_dlss.dll` in `bin/streamline/`. Include NVIDIA's license files and the matching Microsoft Visual C++ runtime dependencies. I bundle these components in the revision ZIP; copying only `bb-probe.exe` is insufficient. Do not substitute the SDK's development DLLs or mix SDK versions. See [the FG guide](../../docs/frame-generation.md) for supported paths and remaining hardware validation.
 
-The port builds and runs natively on 64-bit Windows 10 (1903+) / 11 with the same sources as
-on Linux. Players: see `README-Windows.txt` (it ships in the package).
+The port targets 64-bit Windows 10 (1903+) / 11. My gameplay testing is on Windows 11 with an RTX GPU; other configurations are listed separately in [Compatibility](../../docs/compatibility.md).
 
 ## Build
 
@@ -74,6 +102,4 @@ Diagnostics added on the way: `BB_FRAME_DUMP_TRIGGER=<file>` writes the guest di
 and the presented image of the next frame to `BB_DUMP_DIR` (raw 32-bit pixels), which also
 works for menus and movies.
 
-Not ported: the watchdog/`--timeout` thread dumps (Linux signals), userfaultfd tracking
-(`BB_UFFD`), MangoHud, PGO (GCC flags), the GTK launcher (`launcher/bbport_launcher_win.py`, Tkinter, replaces it), and
-the `tests/` programs (several use Linux-only APIs).
+The Windows path does not use the Linux signal watchdog, userfaultfd tracking (`BB_UFFD`), MangoHud or GCC PGO. The Tk launcher replaces the GTK launcher. Portable CPU regression programs run in Windows CI; the renderer recording and sanitizer harnesses run on Linux where their required APIs are available.

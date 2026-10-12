@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest an addition or a better way to use the existing settings.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: "Check the [roadmap](https://github.com/TatsunaKyo/bloodborne_pc/blob/windows/docs/tatsunakyo-next.md) before opening a request. Existing ideas can still benefit from examples or implementation references."
+  - type: textarea
+    id: need
+    attributes: {label: "What would this improve?", description: "Describe the problem or experience you want to change."}
+    validations: {required: true}
+  - type: textarea
+    id: proposal
+    attributes: {label: Proposed behavior, description: "Include where the control belongs and whether it should change live."}
+    validations: {required: true}
+  - type: textarea
+    id: references
+    attributes: {label: References or alternatives, description: "Optional source/mod/vendor links. Code for another emulator may need a different approach here."}

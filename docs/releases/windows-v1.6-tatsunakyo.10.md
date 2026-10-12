@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne for Windows v1.6 — TatsunaKyo revision 10
 
 In this revision I worked on temporal stability and on reducing some unnecessary renderer work. I wanted the upscalers and Frame Generation to handle abrupt camera changes more cleanly, and to avoid repeating checks that did not need to happen on every frame.

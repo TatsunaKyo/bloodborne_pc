@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 17
 
 I still had assets flashing in front of me and far away in the Hunter's Dream on Revision 16. I kept this revision focused on the data each draw uses. The workshop launcher and seven-tab in-game menu are retained.

@@ -2,11 +2,17 @@
 
 # Bloodborne: The Crowned Workshop
 
-**Current revision: v1.6, revision 21 (stable).** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Release notes](docs/releases/windows-v1.6-tatsunakyo.21.md) · [Development roadmap](docs/tatsunakyo-next.md)
+**Latest published stable: revision 21.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Release notes](docs/releases/windows-v1.6-tatsunakyo.21.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
-My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. I want to make Bloodborne more comfortable to play on a modern Windows PC, with more graphics choices, better window controls and settings you can change during play. This project would NOT be possible without the original work and the people involved.
+I maintain this revision of [Super Medo's native Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and shadPS4. I want more graphics choices, easier window controls and settings I can change while playing. The workshop, lantern and crowned TK emblem are my own project identity; the original game and port keep their creators' credit.
 
-The Crowned Workshop is my own place to work on the port. The workshop, lantern and crowned TK emblem are part of that identity; the credit for the game and the original port stays with their creators.
+| Download | Get started |
+|---|---|
+| [Latest stable ZIP and SHA256](https://github.com/TatsunaKyo/bloodborne_pc/releases/latest) | [Installation and live settings](docs/launcher-and-menu.md) |
+| [Release notes](docs/releases/index.md) | [Hardware compatibility](docs/compatibility.md) |
+| [Current reports](docs/known-issues.md) | [All guides](docs/index.md) |
+
+**Windows 10/11 · 64-bit · Vulkan 1.3 · GPL-2.0-or-later.** Specific upscalers, FG and latency modes have additional GPU/driver requirements.
 
 > [!CAUTION]
 > NO game files are included. You NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump, including `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09.
@@ -20,13 +26,19 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 
 **Play Bloodborne.exe** starts with your saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each package includes its SHA256 checksum and **Start-Verified-Launcher.cmd**. [Installation and settings](docs/launcher-and-menu.md)
 
+## Live editing during play
+
+I designed the added runtime controls to be useful **LIVE, without closing and restarting the game**. Press **Insert** or **L3+R3** to change DLSS model presets, supported FG/latency modes, unlocked frame caps, window/background behavior, runtime cheats or your overlay. Both interfaces keep the same preferences.
+
+For live upscaler quality/output changes, enable **Image → Live resolution changes** before launching. Startup game patches and a few renderer options still require a restart; [the live-settings table](docs/live-settings.md) makes those exceptions clear.
+
 ## What this fork adds
 
 ### High-fidelity upscaling support: DLSS, FSR and XeSS
 
 ![DLSS, FSR and XeSS: input scene, reconstruction and display output](docs/assets/features/upscaling.png)
 
-I wanted more control over image quality and more choices for people playing on different GPUs. The original port already had DLSS, FSR and TAA; I added **XeSS Super Resolution** and a separate **DLSS model-preset selector**, with the same settings available in the launcher and while playing. The following shows all the upscaling options provided:
+I wanted more control over image quality and more choices for people playing on different GPUs. The original port already had DLSS, FSR and TAA; I added **XeSS Super Resolution** and a separate **DLSS model-preset selector**, with the same settings available in the launcher and while playing. **DLSS model changes apply live on the next scene frame**; live quality/resolution changes use the policy described above. The following shows all the upscaling options provided:
 
 | Upscaler | Available option |
 |---|---|
@@ -55,7 +67,7 @@ For DLSS, I exposed the following presets exactly as separate choices:
 
 ![Real game frames and extra display frames, with SDR and HDR10 support](docs/assets/features/frame-generation.png)
 
-Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**; I wanted HDR users to have the same FG choices. You can activate FG both from the launcher and the in-game menu. I kept the normal FPS limit tied to real game frames, with or without FG, and added an optional second limit for the complete FG output. This lets you control the game rate and the generated display rate separately. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
+Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**; I wanted HDR users to have the same FG choices. You can activate and adjust FG **live from the in-game menu**, as well as before launch in the launcher. I kept the normal FPS limit tied to real game frames, with or without FG, and added an optional second limit for the complete FG output. This lets you control the game rate and the generated display rate separately. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
 
 ### NVIDIA Reflex and AMD Anti-Lag 2
 
@@ -97,7 +109,7 @@ I also added a choice for when you Alt-Tab or leave the game in the background. 
 | **30 FPS** | Limits real background frames to 30, or your lower foreground cap. |
 | **60 FPS** | Limits real background frames to 60, or your lower foreground cap. |
 
-FG is suspended during the background pause or limit, and your foreground settings return when you come back. Frame limits are in **Frames** and background behavior is in **Window**, with the same categories in both interfaces.
+FG is suspended during the background pause or limit, and your foreground settings return when you come back. Frame limits are in **Frames** and background behavior is in **Window**, with the same categories in both interfaces. **The caps and background policy can change live.**
 
 [Frame-limit behavior and timing details](docs/display-and-overlay.md#fps-limits) · [Focus, pause and presentation](docs/display-and-overlay.md#window-and-background)
 
@@ -153,7 +165,7 @@ I added runtime choices alongside the original startup cheats, so you can adjust
 | Consumables / ammunition kept on use | Optional toggle; you still need to own the item. |
 | No Fall Damage | Optional toggle for normal falls; scripted deaths still apply. |
 
-They start off and share the **Cheats** category in both interfaces. I am still working on the reports involving sustained running stamina, Echoes awards and firing with several cheats enabled together; the guide keeps those details visible. Startup patches retain their restart requirement.
+They start off and share the **Cheats** category in both interfaces. Earlier reports involving sustained running stamina, Echoes awards and firing with several cheats enabled together stay in the [reports to recheck](docs/known-issues.md); I keep them distinct from confirmed current-build regressions. Startup patches retain their restart requirement.
 
 [Cheat behavior and current limitations](docs/cheats.md)
 
@@ -194,11 +206,25 @@ The original mod/patch loading, keyboard/controller support, shortcuts, shader-c
 - Around **6 GB of free memory commit** (RAM plus page file), or **10 GB for 1440p/4K** output.
 - Your own decrypted **CUSA03173 1.09** game files.
 
-I test the revisions on my **Windows 11 PC with a GeForce RTX 5070 Ti**. This is the main gameplay test configuration for the fork. Automated tests also cover settings, controls, hook behavior, renderer contracts and package contents. Coverage and open problems are collected in [Testing and known issues](docs/testing.md), rather than repeated throughout the documentation. AMD/Intel hardware and other Windows configurations depend on community feedback.
+I test the revisions on my **Windows 11 PC with a GeForce RTX 5070 Ti**. This is the main gameplay test configuration for the fork. Automated tests also cover settings, controls, hook behavior, renderer contracts and package contents. Coverage and open problems are collected in [test methods](docs/testing.md) and [current reports](docs/known-issues.md), rather than repeated throughout the documentation. AMD/Intel hardware and other Windows configurations depend on community feedback.
+
+## Roadmap
+
+I am keeping the existing gameplay work active while making the fork easier to maintain:
+
+- **Release reliability:** updater compatibility, verified complete packages, CI and useful report forms.
+- **Save Manager:** automatic backups, snapshots, restore with rollback and profiles.
+- **PC input:** full remapping, native mouse camera and controller/UI consistency.
+- **Ultrawide and HUD:** aspect-aware FOV, interface placement and cinematic handling.
+- **Frame pacing and image quality:** real/displayed cadence, shader-cache resilience and HUDless FG.
+- **Support and compatibility:** a locally reviewed/redacted report archive and reviewed hardware results.
+- **Further cheats and vendor features:** the scoped gameplay/training proposals and supported backend extensions.
+
+[Detailed gameplay roadmap](docs/tatsunakyo-next.md) · [Infrastructure phases](docs/infrastructure-plan.md)
 
 ## Help and development
 
-For a bug report, include your GPU, driver, settings, reproduction steps and `user/last_run.log`. For crashes or performance issues, enable the optional diagnostics before reproducing the problem. [Testing and known issues](docs/testing.md) collects the open reports; [the roadmap](docs/tatsunakyo-next.md) covers planned features and priorities.
+For a bug report, include your GPU, driver, settings, reproduction steps and `user/last_run.log`. For crashes or performance issues, enable the optional diagnostics before reproducing the problem. [test methods](docs/testing.md) and [current reports](docs/known-issues.md) collects the open reports; [the roadmap](docs/tatsunakyo-next.md) covers planned features and priorities.
 
 For black screens, try **Advanced → Clear shader cache**. Rebuilding it can cause initial stutter. Report fork-specific issues here; the [upstream Discord](https://discord.gg/yTMG8c4Bqm) belongs to the original project.
 

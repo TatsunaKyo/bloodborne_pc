@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne for Windows v1.6 — TatsunaKyo revision 3
 
 I added optional resolution information to the OSD and a choice for what the game should do when you switch to another window. I wanted the information available without forcing a larger overlay on everyone.

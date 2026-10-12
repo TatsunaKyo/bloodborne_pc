@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a crash, broken control or visual problem in The Crowned Workshop.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "Tell me what happened and how to reproduce it. Check the [current reports](https://github.com/TatsunaKyo/bloodborne_pc/blob/windows/docs/known-issues.md) first. Attach logs only after reviewing them; keep game files, saves and account details private."
+  - type: input
+    id: revision
+    attributes: {label: Port revision, placeholder: "Revision and stable/preview status"}
+    validations: {required: true}
+  - type: input
+    id: hardware
+    attributes: {label: GPU and driver, placeholder: "GPU model and driver version"}
+    validations: {required: true}
+  - type: input
+    id: windows
+    attributes: {label: Windows version, placeholder: "Windows 10/11 and build number"}
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings
+      description: "Output resolution, upscaler/quality/model, FG provider/multiplier, real cap, output cap, HDR and window mode. List active mods or cheats too."
+    validations: {required: true}
+  - type: textarea
+    id: reproduction
+    attributes: {label: How to reproduce it, description: "Scene/location, actions and how often it happens."}
+    validations: {required: true}
+  - type: textarea
+    id: result
+    attributes: {label: Expected and actual behavior}
+    validations: {required: true}
+  - type: textarea
+    id: evidence
+    attributes: {label: Logs or screenshots, description: "Attach reviewed logs/screenshots here. Developer diagnostics are optional under Advanced; a support archive generator is planned."}

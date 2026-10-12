@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "project": "Bloodborne: The Crowned Workshop",
+  "updated": "2026-10-12",
+  "records": [
+    {
+      "id": "maintainer-rtx5070ti-revision19",
+      "reviewed": true,
+      "reviewer": "TatsunaKyo",
+      "os": "Windows 11",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti",
+      "driver": null,
+      "port_revision": 19,
+      "evidence_kind": "gameplay report with prior Revision18 diagnostic configuration",
+      "status": "tested",
+      "features": [
+        "DLSS Performance / preset L",
+        "NVIDIA FG x2",
+        "HDR10"
+      ],
+      "result": "Latest affected-scene report says Hunter\u2019s Dream flashing resolved; further pacing comparison requested."
+    },
+    {
+      "id": "fsr-fg-pipeline",
+      "reviewed": true,
+      "reviewer": "TatsunaKyo",
+      "os": null,
+      "gpu": "Lavapipe software Vulkan",
+      "driver": null,
+      "port_revision": null,
+      "evidence_kind": "headless pipeline/validation checks",
+      "status": "partially-tested",
+      "features": [
+        "FSR FG SDR/HDR",
+        "resize",
+        "history/resource ownership"
+      ],
+      "result": "Pipeline checks; no Radeon gameplay confirmation."
+    }
+  ]
+}

@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne Windows v1.6 — TatsunaKyo revision 9
 
 I corrected the Play layout after the DLSS preset dropdown shifted left and the NVIDIA FG multiplier overlapped Output. The preset now lines up with the other quick settings, and the multiplier has a separate row above Output. Both optional rows keep their assigned positions when hidden and shown again. At smaller window sizes and higher DPI, the banner shrinks and the Ready check text wraps to leave room for the settings.

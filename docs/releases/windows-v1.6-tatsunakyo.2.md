@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne for Windows v1.6 — TatsunaKyo revision 2
 
 Based on [revision 1](windows-v1.6-tatsunakyo.1.md), retaining its English in-game menu, borderless fullscreen, DLSS render presets and optional compact performance overlay.

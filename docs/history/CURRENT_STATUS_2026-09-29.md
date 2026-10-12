@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne на ПК: фактическое состояние порта и апскейлера
 
 Срез на **29 сентября 2026 года**. Источник — файлы в `game_files`, история Git

@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Earlier technical reference. [The Crowned Workshop current guides](index.md) · [Current reports](known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: первый эксперимент нативного запуска
 
 ## Частота кадров, звук, диагностика (2026-09-25)

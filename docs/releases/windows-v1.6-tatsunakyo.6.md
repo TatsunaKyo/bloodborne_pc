@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne Windows v1.6 — TatsunaKyo revision 6
 
 I added the first experimental FSR Frame Generation path here. Choose **FSR Frame Generation (2x)** in Graphics or the Insert / L3+R3 menu. It works with the temporal upscalers, including DLSS, and starts off. This initial implementation uses SDR. With HDR enabled or the upscaler switched off, it keeps presenting real frames; HDR support followed in Revision 7.

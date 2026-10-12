@@ -1,0 +1,23 @@
+{
+  "tag_name": "windows-v1.6-tatsunakyo.21-preview",
+  "html_url": "https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/windows-v1.6-tatsunakyo.21-preview",
+  "target_commitish": "910051b3de4d9f58cfc0b9904b4e9b2ed687f5b1",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+    {
+      "name": "Bloodborne-Windows-v1.6-TatsunaKyo-Revision-21.zip",
+      "browser_download_url": "https://github.com/TatsunaKyo/bloodborne_pc/releases/download/windows-v1.6-tatsunakyo.21-preview/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-21.zip",
+      "state": "uploaded",
+      "size": 272439915,
+      "digest": "sha256:0fd822dd01bdc4360d7caa47282fe374eafd2f6418f13159d532f50241676d5f"
+    },
+    {
+      "name": "Bloodborne-Windows-v1.6-TatsunaKyo-Revision-21.zip.sha256",
+      "browser_download_url": "https://github.com/TatsunaKyo/bloodborne_pc/releases/download/windows-v1.6-tatsunakyo.21-preview/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-21.zip.sha256",
+      "state": "uploaded",
+      "size": 117,
+      "digest": "sha256:4b2a92e4f129f02cbdfc2c4ba9562d90096913df149eae8b4c75150a1d5166cb"
+    }
+  ]
+}

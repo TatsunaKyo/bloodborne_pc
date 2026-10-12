@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne Windows v1.6 — TatsunaKyo revision 7
 
 I replaced the wrong player lookup in the initial cheat implementation. It made the new options ineffective and could crash after a save loaded. The lookup now compares against the game's actual main player and skips player-only changes while loading. I also put all the cheats in the same section, with startup patches marked as needing a restart. Damage, incoming damage reduction, Echoes, movement, stamina and consumable hooks were checked with both native trampolines and the actual Windows-compiled object. My Windows gameplay results and remaining checks are tracked on the shared testing page.

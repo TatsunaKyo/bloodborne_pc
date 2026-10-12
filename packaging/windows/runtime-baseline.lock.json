@@ -1,0 +1,8 @@
+{
+  "revision": 21,
+  "source_commit": "910051b3de4d9f58cfc0b9904b4e9b2ed687f5b1",
+  "url": "https://github.com/TatsunaKyo/bloodborne_pc/releases/download/windows-v1.6-tatsunakyo.21-preview/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-21.zip",
+  "sha256": "0fd822dd01bdc4360d7caa47282fe374eafd2f6418f13159d532f50241676d5f",
+  "bytes": 272439915,
+  "role": "Unchanged redistributable SDK runtimes, licenses and PyInstaller bundle dependencies; launcher/native executables are rebuilt."
+}

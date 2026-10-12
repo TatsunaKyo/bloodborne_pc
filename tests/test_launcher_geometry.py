@@ -121,7 +121,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                     owners = {key: [category for category, _widget in locations]
                               for key, locations in obj.setting_locations.items()}
                     assert all(len(locations) == 1 for locations in owners.values()), owners
-                    mapping_file = source.parents[1] / 'out/verification/menu21/settings-categories.json'
+                    mapping_file = source.parents[1] / f'out/verification/menu{revision}/settings-categories.json'
                     assert mapping_file.is_file(), 'Run the ImGui category fixture before the compiled launcher geometry test.'
                     native = json.loads(mapping_file.read_text())
                     shared = set(owners).intersection(native)

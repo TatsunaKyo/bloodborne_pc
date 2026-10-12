@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Earlier technical reference. [The Crowned Workshop current guides](index.md) · [Current reports](known-issues.md). This page retains its original context and credits.
+
 # Parallel GPU command processing — design notes
 
 Goal: remove the single-core bottleneck of the emulated GPU command processor

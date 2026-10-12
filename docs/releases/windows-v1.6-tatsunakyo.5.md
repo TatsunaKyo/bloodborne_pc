@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne Windows v1.6 — TatsunaKyo revision 5
 
 I added the live cheats I wanted for this fork, with choices in both the launcher and in-game menu. Player damage, enemy damage reduction and Blood Echoes support x2, x4, x8 and x16. Movement also offers x1.5. Infinite stamina and keeping consumables after use are separate switches. I left everything off by default so you can choose which options, if any, you want to use.

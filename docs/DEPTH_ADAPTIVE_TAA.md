@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Earlier technical reference. [The Crowned Workshop current guides](index.md) · [Current reports](known-issues.md). This page retains its original context and credits.
+
 # Depth-Adaptive TAA Improvements
 
 **Дата:** 2026-10-01  

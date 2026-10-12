@@ -43,7 +43,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.21'
+VERSION = '1.6-tatsunakyo.22'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -2305,13 +2305,26 @@ def latest_release():
                                                             'User-Agent': 'bbport-launcher'})
     with urllib.request.urlopen(request, timeout=15) as response:
         release = json.load(response)
-    tag = re.fullmatch(r'windows-v(\d+(?:\.\d+)*)-tatsunakyo\.(\d+)', release['tag_name'])
+    if not isinstance(release, dict) or release.get('draft') or release.get('prerelease'):
+        raise ValueError('The stable updater does not install drafts or prereleases.')
+    # Revisions 19 and 21 were published as stable releases with a legacy
+    # -preview tag. GitHub's release flag determines their channel.
+    tag_name = release.get('tag_name')
+    tag = re.fullmatch(r'windows-v(\d+(?:\.\d+)*)-tatsunakyo\.(\d+)(?:-preview)?',
+                       tag_name) if isinstance(tag_name, str) else None
     if not tag:
         raise ValueError('The latest release is not a TatsunaKyo Windows revision.')
     version = f'{tag[1]}-tatsunakyo.{tag[2]}'
     package_name = f'Bloodborne-Windows-v{tag[1]}-TatsunaKyo-Revision-{tag[2]}.zip'
-    url = next((asset['browser_download_url'] for asset in release.get('assets', [])
-                if asset.get('name', '') == package_name), None)
+    assets = release.get('assets', [])
+    if not isinstance(assets, list):
+        raise ValueError('Invalid release asset list.')
+    packages = [asset for asset in assets if isinstance(asset, dict)
+                and asset.get('name') == package_name
+                and asset.get('state', 'uploaded') == 'uploaded']
+    url = packages[0].get('browser_download_url') if len(packages) == 1 else None
+    if url and (not isinstance(url, str) or not url.startswith('https://')):
+        raise ValueError('Invalid Windows package URL.')
     return version, url, release.get('html_url') or RELEASES_PAGE
 
 

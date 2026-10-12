@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 16
 
 Revision 15 was better on my PC, but I still had assets appearing and disappearing in the Hunter's Dream. I went back through the geometry uploads first. I also rebuilt the in-game menu: it needed proper tabs and a more compact layout.

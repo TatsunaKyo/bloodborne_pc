@@ -115,6 +115,6 @@ with tempfile.TemporaryDirectory(prefix='bbport-xess-popup-') as directory:
                     root.after_cancel(callback)
                 root.destroy()
 
-output = source.parents[1] / 'out/verification/launcher-xess-revision15.json'
+output = source.parents[1] / f'out/verification/launcher-xess-revision{launcher.VERSION.rsplit(".", 1)[1]}.json'
 output.write_text(json.dumps({'cases': results, 'checks': 'actual popup input, all seven entries, both pages, conditional rows/hints, independent saved quality, concurrent game changes'}, indent=2)+'\n')
 print(f'PASS: {len(results)} real XeSS popup selections on Play/Image in English/Russian at 100/150/200%; migration, visibility and independent saved preferences pass.')

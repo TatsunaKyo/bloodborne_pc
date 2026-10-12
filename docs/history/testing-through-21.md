@@ -1,0 +1,61 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
+> I keep this page as the test record through Revision 21. [Current test guide](../testing.md) · [Current reports](../known-issues.md) · [Hardware coverage](../compatibility.md)
+
+# Testing and known issues
+
+I test this fork on my **Windows 11 PC with an NVIDIA GeForce RTX 5070 Ti** and use those gameplay results to correct each revision. The broken controls, continuous stamina drain, incorrect FG FPS readout and firing crash were problems I encountered during those tests. I keep them here so I can check the same cases again after a fix.
+
+That is my main test configuration. I do not currently own an Intel GPU, and AMD/Intel gameplay coverage, other monitor/driver combinations and a complete play-through need separate results. I check newly rebuilt changes against the reported cases before marking those particular issues resolved.
+
+## Automated coverage
+
+- Launcher preferences, shared in-game settings, update-channel selection and controls extracted from the compiled Windows launcher.
+- Actual Tk geometry for the Play page, including English/Russian, three window sizes and 100/125/150/175/200% scaling for the current launcher, including the longer project identity, workshop artwork/live title, keyboard navigation and minimum window size.
+- ImGui mouse, keyboard/controller activation, real dropdown/checkbox/numeric-field changes, settings round trips and compact overlay layout. Revision 16 adds 1,960 tab layouts across both languages, all upscalers, 100–200% scaling and viewports from 960×540 through 4K, including resize, child scrolling and the pinned footer.
+- Native and Windows-compiled cheat hooks, player/NPC selection, disabled paths, register preservation, missing player/world, and original 1.09 instruction signatures from a private local image. Private game bytes are not distributed.
+- Camera history through smooth motion, abrupt cuts, loading gaps, invalid inputs and recovery. Object-history allocations are preserved even if a cut is detected after a draw has reserved positions.
+- Revision 13 checks submitted camera snapshots, immediate index-content invalidation and reused allocations with unchanged bounds; unchanged meshes keep their cached range scans.
+- GPU fixtures for motion, color conversion and the analytical FSR FI/OF pipeline, including SDR/HDR10 and synchronization validation. Packaged logs state which revision produced each run.
+- Windows compilation/linking, runtime hashes, DLL import/export closure and reconstruction of the source tree from the included patch.
+- Pacing checks use the production helper at 30/60/65/75/90/120 FPS, with queued frames, 50 ms and five-second stalls, slow rendering, uncapped mode, changing caps and timer waits. Revision 14 adds 10,000-frame jitter checks per cap, reproducing the repeated timer delays from my Windows logs without cumulative FPS loss. Background tests cover pause/refocus and stopping while paused.
+- Revision 13 checks shared live real-FPS controls, fixed-timing restrictions, independent FG-output limits, preference migration and unsupported Anti-Lag controls. The production AMD adapter is exercised with captured Vulkan calls, including matching input/present IDs and presentation progress during an input wait.
+
+I check settings, hooks, resource handling and package integrity with automated tests, alongside gameplay on my Windows PC. The logs retain the environment and results of those checks. My own setup only covers one Windows/RTX configuration, so reports from other PCs are welcome, including when an optimization makes little difference or causes a regression.
+
+- ConstRam overwrite ordering: production command branch exercised with direct, recorder and worker copies, both draw-pipeline states and 512 source replacements per path.
+- Draw-thread copy publication: the real queue and pool preserve 384 short/medium/long burst snapshots before source replacement. Address/undefined-behavior sanitizers pass; leak checking is disabled in this test environment because its process metadata is restricted. These are host command/memory checks, separate from the Windows gameplay comparison.
+- Revision 17 vertex-table reuse: the production pointer reader, descriptor layout and pipeline/binding checks exercise changed mesh addresses, stride, size, format, number type, swizzle and secondary/instance streams. Unchanged register and flattened-resource snapshots let Revision 16 accept 1,024 stale pipelines and 1,025 stale bindings. The new checks reject all of them while retaining unchanged inputs.
+- Revision 17 CPU DMA: production fill/copy branches and completion waits run against the real draw queue and copy pool, with direct, private-batch, recorder and worker reads. Revision 16 corrupts 768 of 1,024 earlier snapshots; the corrected branches preserve all 1,024. GPU-modified/GDS paths still record GPU operations. Normal/serial diagnostic starts record their effective thread settings, preserve launcher preferences and leave profiling off for ordinary starts.
+
+- Revision 18 capture: the production F8 trigger and frame poll execute in the CPU helper check. The rebuilt Windows launcher payload is checked for isolated session paths, effective thread flags, preference preservation and byte-exact ZIP contents. I have now recorded all eight image pairs on my Windows 11 / RTX 5070 Ti. Frames 2, 4 and 7 contain extreme tree vectors, and those vectors match the object-motion attachment exactly.
+- Revision 19: 120 reordered/replaced foliage-batch cases reproduce the old mesh-only match and reject that history with the new model-list identity. Stable world transforms retain motion when camera/material fields change; ordinary character history stays available. The production depth-copy methods run in a Vulkan command-recording simulator for D32, D32+stencil and R32, reproducing a later UI overwrite and checking reuse, resize ownership and allocation failure. Address/undefined-behavior checks pass. This harness checks the commands and resource lifetime; my Revision 19 gameplay comparison now suggests the flashing is resolved on Windows 11 / RTX 5070 Ti, while frame pacing still needs attention.
+
+## Open issues and checks for the current build
+
+- **Crash while firing with damage/reduction and no-consume enabled:** still under investigation. Enable Advanced → Diagnostics → Developer profiling and crash diagnostics for a session log and crash dump when available.
+- **Uneven frame pacing, including NVIDIA FG/MFG:** I still notice inconsistent delivery after the flashing correction. Revision 20 reduces unnecessary queue-lock contention during CPU command preparation/retirement, while retaining the depth copy and SDK input fences. The recorded-call regression reproduces blocked presentation in Revision 19 and permits progress in all five host phases with the new scope; it does not establish a gameplay frametime improvement. I added an optional real-frame graph for the next comparison. Earlier timer-drift and post-stall protections remain. [Pacing and measurements](display-and-overlay.md#reading-the-graph).
+- **Character creation preview:** the upstream Windows port documents an empty preview, with the character appearing correctly after creation. No dedicated fix was found in Revision 10. Existing FaceGen readbacks are not evidence that the preview issue is resolved.
+- **World loading on some AMD GPUs:** an inherited upstream issue remains open. Native-port reports distinguish object-motion device loss, texture memory pressure and other failure paths. Some compatibility measures already exist in this code, but there is no basis to mark all AMD loading crashes fixed. See [the compatibility work](tatsunakyo-next.md#amd-loading-and-character-creation).
+- **Infinite stamina during continuous running:** revision 9 added continuous movement and direct/script guards after attack stamina was working. The hook tests execute 50 consecutive drain updates; the remaining check is sustained running through the affected gameplay states on the current build.
+- **FG HUD artifacts:** the game's HUD remains in interpolation input. Moving text can distort. Proper HUDless color and UI-alpha separation is follow-up work.
+- **Temporal transitions:** revision 10's new camera resets pass the production-history tests. Compare respawn, teleport, loading and fast normal camera movement in gameplay before considering the visual change confirmed on the main test PC.
+- **Hunter's Dream flashing:** my latest Revision 19 gameplay test suggests the issue is resolved on Windows 11 / RTX 5070 Ti with NVIDIA FG enabled. I am preserving its foliage model-list identity and reconstruction-time depth copy in Revision 20. Broader configurations still need feedback. The earlier capture showed extreme tree vectors while real scene/DLSS images looked normal. [Rendering investigation](tatsunakyo-next.md#flashing-assets-the-next-correction).
+- **AMD Anti-Lag 2:** the integration and its capability/input/presentation/lifetime checks are included in Revision 13. I need Radeon gameplay results for the driver path; an RTX run cannot cover it. It does not provide an AMD latency number for the overlay.
+- **XeSS quality choices:** The launcher checks cover the conditional quality rows and 84 real popup selections and actual ImGui selection/save checks for all seven modes. The SDK-contract fixture verifies seven quality modes at four output sizes with SDR/HDR initialization. Startup/live scene sizing, preference migration and frozen-resolution behavior pass. I would especially appreciate gameplay comparisons of the seven modes on Intel hardware; I do not own an Intel GPU.
+- **Hardware coverage:** broader NVIDIA, AMD and Intel results are welcome, including HDR, Alt-Tab and frame pacing. Unsupported SDK/hardware choices should fall back or display an explanation.
+
+The integrated Save Manager and proposed new cheats are also planned, alongside Dynamic NVIDIA MFG, XeSS FG, AMD ML FG and FG presets A/B. [The roadmap](tatsunakyo-next.md) distinguishes existing code, partial implementations and new work. These proposed additions are not selectable features in this package.
+
+Maintained by TatsunaKyo. Upstream and vendor credits are preserved.
+
+## Revision 20 checks
+
+I replay 6,144 raw frametime intervals through the production history, including ring wrap, hitches, peaks, pauses and invalid/backward timestamps. The actual ImGui controls cover graph toggle/save, visibility and twenty compact overlay layouts in English/Russian at 75–200% scaling, alongside the existing 1,960 menu layouts. The queue regression executes the production scheduler and sparse-binding methods with recorded Vulkan entry points: five blocked host phases permit presentation, and 505 calls each to submit, bind and present retain exclusive queue access and the sparse-wait dependency. Address/undefined-behavior checks pass; leak checking stays disabled in the restricted host environment.
+
+The launcher and native Windows components are rebuilt. My Revision 19 gameplay report is the available PC comparison; the new pacing change still needs a Revision 20 run on that same setup. I welcome results from other PCs as well.
+
+## Shared settings organization
+
+The Revision 21 checks compare the actual ImGui setting IDs with the compiled launcher's full-page ownership. A shared option must have the same category in both interfaces, and every complete launcher control has one owner. The GUI checks cover all seven settings pages, their horizontal bounds at the minimum window size, conditional DLSS/XeSS/FG rows and the Play-to-Overlay link. These are interface checks; the rendering/pacing changes and gameplay evidence retain their existing revision labels.

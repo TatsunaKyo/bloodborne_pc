@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 14
 
 I went back to the session logs after the FPS cap kept landing below the value I chose and assets were still flashing in Revision 13. This build corrects the timer drift, adds another safeguard to object motion history and fixes the missing NVIDIA FG inputs reported in that log. I also brought the launcher sidebar into line with The Crowned Workshop and added visual explanations to the README.

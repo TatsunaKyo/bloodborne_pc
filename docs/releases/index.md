@@ -1,0 +1,26 @@
+# The Crowned Workshop — Release notes
+
+Revision 21 is the latest published stable release; Revision 22 is the prepared infrastructure update. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
+
+- [windows-v1.6-tatsunakyo.22](windows-v1.6-tatsunakyo.22.md)
+- [windows-v1.6-tatsunakyo.21](windows-v1.6-tatsunakyo.21.md)
+- [windows-v1.6-tatsunakyo.20](windows-v1.6-tatsunakyo.20.md)
+- [windows-v1.6-tatsunakyo.19](windows-v1.6-tatsunakyo.19.md)
+- [windows-v1.6-tatsunakyo.18](windows-v1.6-tatsunakyo.18.md)
+- [windows-v1.6-tatsunakyo.17](windows-v1.6-tatsunakyo.17.md)
+- [windows-v1.6-tatsunakyo.16](windows-v1.6-tatsunakyo.16.md)
+- [windows-v1.6-tatsunakyo.15](windows-v1.6-tatsunakyo.15.md)
+- [windows-v1.6-tatsunakyo.14](windows-v1.6-tatsunakyo.14.md)
+- [windows-v1.6-tatsunakyo.13](windows-v1.6-tatsunakyo.13.md)
+- [windows-v1.6-tatsunakyo.12](windows-v1.6-tatsunakyo.12.md)
+- [windows-v1.6-tatsunakyo.11](windows-v1.6-tatsunakyo.11.md)
+- [windows-v1.6-tatsunakyo.10](windows-v1.6-tatsunakyo.10.md)
+- [windows-v1.6-tatsunakyo.9](windows-v1.6-tatsunakyo.9.md)
+- [windows-v1.6-tatsunakyo.8](windows-v1.6-tatsunakyo.8.md)
+- [windows-v1.6-tatsunakyo.7](windows-v1.6-tatsunakyo.7.md)
+- [windows-v1.6-tatsunakyo.6](windows-v1.6-tatsunakyo.6.md)
+- [windows-v1.6-tatsunakyo.5](windows-v1.6-tatsunakyo.5.md)
+- [windows-v1.6-tatsunakyo.4](windows-v1.6-tatsunakyo.4.md)
+- [windows-v1.6-tatsunakyo.3](windows-v1.6-tatsunakyo.3.md)
+- [windows-v1.6-tatsunakyo.2](windows-v1.6-tatsunakyo.2.md)
+- [windows-v1.6-tatsunakyo.1](windows-v1.6-tatsunakyo.1.md)

@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 Первая версия векторов движения объектов собрана, игра запущена, ошибок при старте нет. Но в самой игре я её ещё не проверял: шейдеры G-buffer с новым кодом компилируются только при загрузке уровня, так что главная проверка впереди.
 
 Как это работает:

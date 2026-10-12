@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 15
 
 Assets were still appearing and disappearing in my Revision 14 tests, so I went back through the rendering commands instead of stopping at motion history. This revision corrects a delayed geometry-read dependency, gives the launcher the workshop's full visual identity and replaces the outdated development plan with the current inventory and release order.

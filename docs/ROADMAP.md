@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Earlier technical reference. [The Crowned Workshop current guides](index.md) · [Current reports](known-issues.md). This page retains its original context and credits.
+
 > For the current Windows fork, see [The Crowned Workshop development plan](tatsunakyo-next.md). This page preserves the upstream renderer plan.
 
 # Нативный порт Bloodborne: что сделано и что дальше

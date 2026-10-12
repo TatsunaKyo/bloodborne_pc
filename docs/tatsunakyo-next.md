@@ -1,8 +1,10 @@
+[Current guides](index.md) · [Current reports](known-issues.md) · [Infrastructure plan](infrastructure-plan.md)
+
 # Where I am taking The Crowned Workshop
 
-Updated **12 October 2026**, against the `windows` branch and the Revision 20 preview. I checked the renderer, presentation code, launcher, input runtime, save mounting and cheat hooks so this page reflects the current build.
+Updated **12 October 2026**, after the stable Revision 21 and alongside Revision 22's repository work. I checked the renderer, presentation code, launcher, input runtime, save mounting and cheat hooks; the infrastructure revision preserves those gameplay implementations.
 
-My Revision 19 Hunter's Dream test now suggests the NVIDIA FG flashing is resolved. I am keeping its foliage-batch history and scene-depth preservation while improving frame pacing and adding a compact optional real-frame graph in Revision 20. The shooting crash, running stamina and Echoes reports also remain open; I want those under control before adding another wave of cheats.
+My Revision 19 Hunter's Dream test suggests the NVIDIA FG flashing is resolved. I am keeping its foliage-batch history and scene-depth preservation, together with Revision 20's pacing work and optional real-frame graph. The earlier shooting, running-stamina and Echoes reports need a current-build recheck before I add another wave of cheats; [Current reports](known-issues.md) distinguishes their status from confirmed failures.
 
 ## Current work and release order
 
@@ -14,8 +16,9 @@ My Revision 19 Hunter's Dream test now suggests the NVIDIA FG flashing is resolv
 | **18 — flashing image capture** | Capture eight scene-input/output frames before FG with F8, plus depth/motion and a render-pass trace. | Captured on my Windows 11 / RTX 5070 Ti: real scene and DLSS output look normal, but three frames contain extreme tree motion. | Complete; retain this evidence for the FG comparison. |
 | **19 — foliage motion and FG scene inputs** | Match the ordered tree model list when reusing vertex motion; freeze depth at reconstruction time before later UI passes. | The old match is reproduced; 120 changed-batch cases and the production depth recording/lifetime checks pass. Windows components and launcher are rebuilt for this preview. | My Windows 11 / RTX 5070 Ti comparison now suggests the flashing is resolved. Preserve the correction and continue the pacing work. |
 | **20 — pacing, frametime graph and documentation** | Keep queue serialization around actual Vulkan queue operations, add the optional graph and simplify the README around features. | Queue progress, history, shared graph settings and compact menu/OSD checks pass; Windows components rebuilt. | Compare frame delivery in the same Hunter's Dream view with FG off/on, keeping the Revision 19 visual fix. |
-| **21 — shared settings and feature introductions** | Match the seven launcher/menu categories, group the complete controls, keep Play shortcuts and improve feature introductions/infographics. | Compiled-launcher and real ImGui category/layout checks; preserve the Revision 19 visual correction and Revision 20 pacing/graph. | Finish this focused interface revision before the existing gameplay investigations. |
-| **Next — existing gameplay bugs** | Investigate firing with damage/reduction and kept ammunition; check sustained running stamina and Echoes awards. | Next after the rendering check. These runtime features already exist, and these reports remain unresolved. | Hook-context/lifetime checks, repeated firing/Blood Bullets/empty ammunition, sustained running and save/reload award checks on my Windows setup. |
+| **21 — shared settings and feature introductions** | Match the seven launcher/menu categories, group the complete controls, keep Play shortcuts and improve feature introductions/infographics. | Compiled-launcher and real ImGui category/layout checks; preserve the Revision 19 visual correction and Revision 20 pacing/graph. | Complete; stable Revision 21 is published. Preserve this layout in future revisions. |
+| **22 — updater, releases and documentation** | Correct legacy stable-tag recognition; derive release metadata and validate packages; add CI/report forms and current guide navigation. | Updater/package/publication regressions and actual GUI checks; rendering and gameplay scope unchanged. | Complete candidate and source publication; enable repository Issues/Actions and run the hosted workflows. |
+| **Next — existing gameplay bugs** | Investigate firing with damage/reduction and kept ammunition; check sustained running stamina and Echoes awards. | Next after the rendering check. These runtime features already exist; the earlier reports need a current-build recheck. | Hook-context/lifetime checks, repeated firing/Blood Bullets/empty ammunition, sustained running and save/reload award checks on my Windows setup. |
 | **Following — Save Manager, first version** | Verified pre-launch backups, manual closed-game snapshots, restore with rollback and retention. | Audited and scoped; no backup manager is shipped yet. | Interrupted copies, failed restore, locked files, disk-full/custom-path tests and game loads from restored saves. |
 | **P1 — frame delivery and image quality** | Tail frametimes, damaged shader-cache recovery, HUDless FG inputs and more reliable particle/transparent motion. | Scheduling/history fixes exist; remaining work is split into separate changes below. | Compare real and displayed cadence, HDR/SDR, FG off/on, resize and focus changes without adding extra latency. |
 | **P1 — PC input and ultrawide** | Remapping and relative mouse input first; aspect-aware HUD/FOV and cinematic policy afterwards. | Existing pad/keyboard and community aspect patches are useful foundations. | Reconnect/release/menu-capture tests and real 21:9/32:9 gameplay checks. |
@@ -23,6 +26,10 @@ My Revision 19 Hunter's Dream test now suggests the NVIDIA FG flashing is resolv
 | **P3 — vendor/backend extensions** | Dynamic MFG, XeSS FG/XeLL, AMD ML FG and FG model presets. | Feasibility work; blocked or incomplete public integration paths. | Supported vendor API and target-hardware results while preserving Vulkan and HDR compatibility. |
 
 I am keeping each revision small enough to compare with the previous one. Revisions 15 and 16 stay available with their original checksums. English and Russian remain the in-game menu languages; I have postponed the additional translations.
+
+## Repository work alongside gameplay
+
+Revision 22 addresses the verified updater/release-tooling problems and adds CI/reporting infrastructure. The main README now includes a roadmap and live-editing introduction, with current reports separated from hardware coverage and history. The [infrastructure plan](infrastructure-plan.md) keeps support archives, reviewed compatibility, the social preview and a possible documentation site in separate phases. Save Manager, native input, ultrawide/HUD and pacing remain on this gameplay roadmap.
 
 ## What is already available
 
@@ -41,7 +48,7 @@ I am keeping each revision small enough to compare with the previous one. Revisi
 
 ## P0 — rendering and compatibility
 
-### Flashing assets: the next correction
+### Flashing assets: retained investigation and correction
 
 Revision 13 and 14 addressed unsafe temporal inputs, but the objects still appeared and disappeared in my tests. I found an independent ordering problem in `Liverpool::ProcessCeUpdate`, in `gpu/shadps4/video_core/amdgpu/liverpool.cpp`: `DumpConstRam` drained the draw-recording stage before replacing guest memory, while a draw's actual vertex/index copy could still be waiting on the Vulkan recording thread or copy workers. Those copies could then read the replacement data.
 
@@ -57,7 +64,7 @@ The affected foliage shader draws lists of models using shared geometry. Culling
 
 I also moved scene-depth preservation to the reconstruction boundary. FG used to borrow the scene depth view until the final display copy, after the game's UI passes could reuse it. The new GPU copy preserves those exact depth values and keeps its owner alive across resolution changes. My latest same-view test with Revision 19 suggests the visible flashing is resolved on my PC. I now want smoother frame delivery; further interpolation/HUD work stays on the roadmap.
 
-The regression uses the actual `DrawPipe` and `BbCopy` pool. In 384 short/medium/long bursts, the old code leaves all 384 snapshots unfinished and eventually copies the replacement data into all 384. The corrected code completes the original snapshots in all cases. Address/undefined-behavior checks pass too. I keep the Hunter's Dream visual report open for the new-build comparison.
+The earlier copy-order regression uses the actual `DrawPipe` and `BbCopy` pool. In 384 short/medium/long bursts, the old code leaves all 384 snapshots unfinished and eventually copies the replacement data into all 384. The corrected code completes the original snapshots in all cases. Address/undefined-behavior checks pass too. Those checks remain separate from my later Hunter's Dream gameplay report, which indicates that the Revision 19 correction resolved the flashing.
 
 Upstream's [issue 44](https://github.com/deadinside28/bloodborne_pc/issues/44) also investigates ConstRam/vertex dependencies, with useful reports from NVIDIA and AMD users. This fork's existing unconditional draw drain means its missing host-copy completion needs its own correction; transplanting the newer upstream read-tracker patch would not be enough.
 
@@ -99,7 +106,7 @@ The community XML already contains 21:9 and 32:9 patches. That is useful, but th
 
 ## P2 — proposed cheats
 
-I checked all fourteen proposals against the runtime hooks and existing patches. The table below describes new work; these additions are not part of Revision 19. Difficulty estimates can change once the exact 1.09 hook and object lifetime are verified.
+I checked all fourteen proposals against the runtime hooks and existing patches. The table below describes planned additions, rather than features already shipped. Difficulty estimates can change once the exact 1.09 hook and object lifetime are verified.
 
 | Proposed cheat | Existing basis | Intended behavior and main dependency | Estimated work / order |
 |---|---|---|---|

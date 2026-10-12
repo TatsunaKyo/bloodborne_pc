@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne Windows v1.6 — TatsunaKyo Revision 11
 
 I started the roadmap with a small frame-pacing update. Revision 10 stays available with its original ZIP and source commit; this is a separate build so I can compare the two at the same settings.

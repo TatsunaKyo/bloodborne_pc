@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Earlier technical reference. [The Crowned Workshop current guides](index.md) · [Current reports](known-issues.md). This page retains its original context and credits.
+
 # Файловые моды
 
 В лаунчере появилась группа **Моды**: выбор папки, общий переключатель,

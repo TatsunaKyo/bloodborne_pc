@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne: The Crowned Workshop — Revision 21 preview
 
 I wanted the settings to be easier to find before launching and while playing. Both interfaces now use the same seven categories: **Image, Frames, Window, Overlay, Cheats, Effects and Advanced**. Reflex and Anti-Lag 2 are together in Frames, sharpening and object motion are in Image, model detail and game effects are in Effects, and background behavior stays in Window. Menu language is in Advanced.

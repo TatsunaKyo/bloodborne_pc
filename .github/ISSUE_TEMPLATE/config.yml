@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation and settings
+    url: https://github.com/TatsunaKyo/bloodborne_pc/blob/windows/docs/launcher-and-menu.md
+    about: Game dump layout, saves, launcher and live in-game controls.
+  - name: Current reports and hardware coverage
+    url: https://github.com/TatsunaKyo/bloodborne_pc/blob/windows/docs/known-issues.md
+    about: Separate current reports, earlier reports to recheck and unverified hardware.

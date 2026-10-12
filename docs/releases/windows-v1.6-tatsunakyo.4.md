@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne for Windows v1.6 — TatsunaKyo revision 4
 
 I fixed the controls that did not toggle in the in-game menu and replaced my background-pause implementation after it left the game unresponsive on return. The window's event thread now stays active while game work and rendering pause.

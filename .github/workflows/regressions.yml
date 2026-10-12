@@ -1,0 +1,38 @@
+name: Regression checks
+on:
+  push:
+    branches: [windows]
+  pull_request:
+    branches: [windows]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: regression-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ python3-yaml python3-tk python3-pil python3-pil.imagetk xvfb fonts-dejavu-core libvulkan-dev
+      - name: Run actual Python, renderer and UI regressions
+        run: xvfb-run -a -s '-screen 0 3200x2200x24' python3 tools/ci_regressions.py --gui
+      - name: Check documentation and workflow configuration
+        run: python3 tests/test_project_infrastructure.py
+      - name: Retain verification records
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: regression-records
+          path: out/verification
+          if-no-files-found: error
+          retention-days: 14

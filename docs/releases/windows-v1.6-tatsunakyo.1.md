@@ -1,3 +1,6 @@
+<!-- crowned-workshop-navigation -->
+> Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
+
 # Bloodborne for Windows v1.6 — TatsunaKyo revision 1
 
 Based on [Supermedo's Windows v1.6 port](https://github.com/Supermedo/bloodborne_pc/tree/windows-v1.6).
