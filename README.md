@@ -26,25 +26,48 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 
 ![DLSS, FSR and XeSS: input scene, reconstruction and display output](docs/assets/features/upscaling.png)
 
-The original port already offered DLSS, FSR and TAA. I added **XeSS Super Resolution** with its own seven quality modes, and a separate **DLSS model-preset selector: E, F, J, K, M and L**. You can change these in the launcher and in-game; the quick controls appear for the upscaler you select.
+I wanted more control over image quality and more choices for people playing on different GPUs. The original port already had DLSS, FSR and TAA; I added **XeSS Super Resolution** and a separate **DLSS model-preset selector**, with the same settings available in the launcher and while playing. The following shows all the upscaling options provided:
 
-[Upscalers, presets and XeSS resolution examples](docs/upscaling.md)
+| Upscaler | Available option |
+|---|---|
+| DLSS 3.7, 4 & 4.5 | Quality/render scale plus a separate model preset; requires a RTX GPU. |
+| FSR 3.1 | The existing reconstruction path, also used as a fallback if another provider fails. |
+| FSR 4 | Available with its shader assets and the required device features. |
+| XeSS Super Resolution 3.0.2 | The added Intel Vulkan integration, with seven dedicated quality modes for supported Intel and other GPUs. |
+| TAA / native AA | Temporal AA at the scene's native resolution. |
+
+For DLSS, I exposed the following presets exactly as separate choices:
+
+| Preset | Dropdown label |
+|---|---|
+| Default | Driver default |
+| E | E (CNN / legacy) |
+| F | F (CNN / legacy) |
+| J | J (Transformer 1st gen) |
+| K | K (Transformer 1st gen) |
+| M | M (Transformer 2nd gen) |
+| L | L (Transformer 2nd gen) |
+
+Be warned that XeSS uses different upscaling ratios when compared to DLSS and FSR — you can read more at  [Upscalers, presets and XeSS resolution examples](docs/upscaling.md)
 
 ### Frame Generation and Multi Frame Generation
 
 ![Real game frames and extra display frames, with SDR and HDR10 support](docs/assets/features/frame-generation.png)
 
-I added **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6, where supported)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler, and both paths support **SDR and HDR10**. You can choose FG on Play or while playing.
-
-[FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
+Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**, which many current integrations in other forks lack. You can activate FG both from the launcher and the in-game menu. I made sure that you can have different FPS limiting options so that one is used when you are not using FG while the other applies only when FG is activated. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
 
 ### NVIDIA Reflex and AMD Anti-Lag 2
 
 ![Independent latency controls for supported NVIDIA and AMD GPUs](docs/assets/features/latency.png)
 
-I made **Reflex** a separate Off / On / On + Boost choice, so you can use it without FG. NVIDIA FG enables Reflex automatically. I also integrated **AMD Anti-Lag 2** through the supported Radeon Vulkan driver interface.
+I added independent latency controls because choosing an upscaler or turning Frame Generation off should not remove the option to reduce the render queue. The launcher exposes them in Graphics; the in-game menu has them under Frames. I made **Reflex** a separate Off / On / On + Boost choice, so you can use it without FG. Be warned that NVIDIA FG enables Reflex automatically. I also integrated **AMD Anti-Lag 2** through the supported Radeon Vulkan driver interface.
 
-[Latency controls, supported hardware and measurements](docs/latency.md)
+| Control | Choices | Requirements |
+|---|---|---|
+| NVIDIA Reflex | Off, On, On + Boost | A supported NVIDIA GPU and driver reporting Reflex availability. |
+| AMD Anti-Lag 2 | Off, On | A supported Radeon GPU and driver exposing `VK_AMD_anti_lag`. |
+
+Intel XeSS Low Latency (XeLL) was/is planned but XeLL currently does not support Vulkan. You can read more here: [Latency controls, supported hardware and measurements](docs/latency.md)
 
 ### Exact FPS limits
 
