@@ -43,7 +43,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.20'
+VERSION = '1.6-tatsunakyo.21'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -783,6 +783,8 @@ class Launcher:
         s.configure('TFrame', background=PANEL)
         s.configure('Workshop.TFrame', background=CARD, borderwidth=1, relief='solid')
         s.configure('Workshop.TLabel', background=CARD, foreground=TEXT)
+        s.configure('Settings.TLabelframe', background=PANEL, bordercolor=LINE, relief='solid', borderwidth=1)
+        s.configure('Settings.TLabelframe.Label', background=PANEL, foreground=GOLD, font=('Georgia', 12))
         s.configure('WorkshopSection.TLabel', background=CARD, foreground=GOLD, font=('Georgia', 13))
         s.configure('TLabel', background=PANEL, foreground=TEXT)
         s.configure('Muted.TLabel', background=PANEL, foreground=MUTED, font=('Segoe UI', 9))
@@ -830,6 +832,23 @@ class Launcher:
             self.vars[key] = v
         return self.vars[key]
 
+    def track_setting(self, parent, key, widget):
+        category = getattr(parent, 'settings_category', None)
+        if category is not None:
+            if not hasattr(self, 'setting_locations'):
+                self.setting_locations = {}
+            self.setting_locations.setdefault(key, []).append((category, widget))
+        return widget
+
+    def settings_section(self, parent, title):
+        box = self.ttk.LabelFrame(parent, text=title, style='Settings.TLabelframe',
+                                  padding=(self.px(16), self.px(12)))
+        box.grid(row=self.next_row(parent), column=0, columnspan=2, sticky='ew', pady=(0, self.px(16)))
+        box.columnconfigure(0, minsize=self.px(200))
+        box.columnconfigure(1, weight=1)
+        box.settings_category = parent.settings_category
+        return box
+
     def choice(self, parent, key, store, options, width=38):
         """A combobox over (value, (english, russian)) pairs, kept in sync with its variable."""
         var = self.var(key, store)
@@ -844,7 +863,7 @@ class Launcher:
         show()
         box.bind('<<ComboboxSelected>>', lambda _e: var.set(values[box.current()]))
         var.trace_add('write', show)
-        return box
+        return self.track_setting(parent, key, box)
 
     def next_row(self, parent):
         return parent.grid_size()[1]
@@ -882,6 +901,9 @@ class Launcher:
         position = tk.DoubleVar()
         labels = {v: _(*text) for v, text in options or []}
         if options:
+            labels['-1'] = _('Auto', 'Авто')
+            labels['0'] = _('No cap', 'Без ограничения')
+        if options:
             entry = ttk.Combobox(holder, textvariable=draft, width=19,
                                  values=list(labels.values()), state='normal')
         else:
@@ -889,7 +911,7 @@ class Launcher:
                                increment=1, width=7)
         entry.pack(side='right', padx=(10, 0))
         slider = ttk.Scale(holder, from_=minimum, to=maximum, variable=position,
-                           length=self.px(290))
+                           length=self.px(160))
         slider.pack(side='left', fill='x', expand=True)
         anchor = [0, minimum]
 
@@ -959,17 +981,17 @@ class Launcher:
         if not hasattr(self, 'fps_cap_committers'):
             self.fps_cap_committers = []
         self.fps_cap_committers.append(commit)
-        return holder
+        return self.track_setting(parent, key, holder)
 
     def row(self, parent, title, widget, hint=None):
         ttk = self.ttk
         r = self.next_row(parent)
-        label = ttk.Label(parent, text=title)
+        label = ttk.Label(parent, text=title, wraplength=self.px(180), justify='left')
         label.grid(row=r, column=0, sticky='nw', padx=(0, 18), pady=(8, 0))
         widget.grid(row=r, column=1, sticky='w', pady=(5, 0))
         widget.row_label = label
         if hint:
-            widget.row_hint = ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(560), justify='left')
+            widget.row_hint = ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(410), justify='left')
             widget.row_hint.grid(row=r + 1, column=1, sticky='w', pady=(2, 2))
         return widget
 
@@ -984,9 +1006,9 @@ class Launcher:
         widget = ttk.Checkbutton(parent, text=title, variable=self.var(key, store))
         widget.grid(row=r, column=0, columnspan=2, sticky='w', pady=(4, 0))
         if hint:
-            ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(640), justify='left').grid(
+            ttk.Label(parent, text=hint, style='Muted.TLabel', wraplength=self.px(590), justify='left').grid(
                 row=r + 1, column=0, columnspan=2, sticky='w', padx=(26, 0))
-        return widget
+        return self.track_setting(parent, key, widget)
 
     def note(self, parent, text, top=12):
         self.ttk.Label(parent, text=text, style='Muted.TLabel', wraplength=self.px(680), justify='left').grid(
@@ -1027,6 +1049,8 @@ class Launcher:
         canvas = tk.Canvas(outer, bg=PANEL, highlightthickness=0, bd=0)
         bar = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
         inner = ttk.Frame(canvas, padding=(28, 0, 28, 24))
+        inner.settings_category = name
+        outer.viewport, outer.settings_body = canvas, inner
         inner.columnconfigure(1, weight=1)
         window = canvas.create_window(0, 0, window=inner, anchor='nw')
         inner.bind('<Configure>', lambda _e: canvas.configure(scrollregion=canvas.bbox('all')))
@@ -1067,14 +1091,25 @@ class Launcher:
         self.draw_emblem(self.brand_mark, self.px(22), self.px(22), self.px(36))
         tk.Frame(side, bg=LINE, height=1).pack(fill='x', padx=self.px(18), pady=(0, self.px(6)))
         self.nav, self.current_page = {}, None
-        for name, title in (('play', _('Play', 'Играть')), ('graphics', _('Graphics', 'Графика')),
-                            ('display', _('Display & FPS', 'Экран и FPS')), ('game', _('Game & effects', 'Игра и эффекты')),
-                            ('cheats', _('Cheats', 'Читы')), ('online', _('Online co-op', 'Онлайн-кооператив')),
-                            ('mods', _('Mods & patches', 'Моды и патчи')),
-                            ('advanced', _('Advanced', 'Дополнительно')),
-                            ('log', _('Log', 'Журнал'))):
-            item = tk.Label(side, text='  ' + title, bg=BG, fg=MUTED, anchor='w', font=('Segoe UI', 11),
-                            padx=self.px(12), pady=self.px(5), cursor='hand2', takefocus=True)
+        navigation = (
+            ('play', _('Play', 'Играть'), None),
+            ('image', _('Image', 'Изображение'), _('SETTINGS', 'НАСТРОЙКИ')),
+            ('frames', _('Frames', 'Кадры'), None),
+            ('window', _('Window', 'Окно'), None),
+            ('overlay', _('Overlay', 'Статистика'), None),
+            ('cheats', _('Cheats', 'Читы'), None),
+            ('effects', _('Effects', 'Эффекты'), None),
+            ('advanced', _('Advanced', 'Дополнительно'), None),
+            ('game', _('Game & files', 'Игра и файлы'), _('LAUNCHER', 'ЛАУНЧЕР')),
+            ('online', _('Online co-op', 'Онлайн-кооператив'), None),
+            ('mods', _('Mods & patches', 'Моды и патчи'), None),
+            ('log', _('Log', 'Журнал'), None))
+        for name, title, group in navigation:
+            if group:
+                tk.Label(side, text=group, bg=BG, fg=GOLD, anchor='w',
+                         font=('Segoe UI', 8), padx=self.px(18)).pack(fill='x', pady=(self.px(7), self.px(2)))
+            item = tk.Label(side, text='  ' + title, bg=BG, fg=MUTED, anchor='w', font=('Segoe UI', 10),
+                            padx=self.px(12), pady=self.px(3), cursor='hand2', takefocus=True)
             item.pack(fill='x')
             item.bind('<Button-1>', lambda _e, n=name: self.show(n))
             item.bind('<Return>', lambda _e, n=name: self.show(n))
@@ -1106,8 +1141,11 @@ class Launcher:
 
         self.pages = {}
         self.build_play()
-        self.build_graphics()
-        self.build_display()
+        self.build_image()
+        self.build_frames()
+        self.build_window()
+        self.build_overlay()
+        self.build_effects()
         self.build_game()
         self.build_cheats()
         self.build_online()
@@ -1133,14 +1171,14 @@ class Launcher:
                            text=('│ ' if n == name else '  ') + item.cget('text')[2:])
         if name == 'mods':
             self.refresh_lists()
-        elif name == 'graphics':
+        elif name == 'image':
             self.refresh_fsr4()
         elif name == 'play':
             self.refresh_status()
 
     def show_overlay_settings(self, _event=None):
-        self.show('display')
-        self.pages['display'].scroll_to_top()
+        self.show('overlay')
+        self.pages['overlay'].scroll_to_top()
         return 'break'
 
     def build_play(self):
@@ -1167,7 +1205,7 @@ class Launcher:
         quick.pack(fill='x')
         ttk.Label(quick, text=_('Quick settings', 'Основное'), style='Section.TLabel').grid(
             row=0, column=0, columnspan=2, sticky='w', pady=(0, 2))
-        self.row(quick, _('Frame rate', 'Частота кадров'), self.choice(quick, 'fps_mode', 'app', FPS_MODES, 26))
+        self.section(quick, _('Image', 'Изображение'), top=4)
         self.row(quick, _('Upscaler', 'Апскейлер'), self.choice(quick, 'upscaler', 'ini', UPSCALERS, 26))
         self.quick_preset_row = self.row(quick, _('Preset', 'Пресет'),
                                          self.choice(quick, 'preset', 'ini', PRESETS, 26))
@@ -1180,6 +1218,9 @@ class Launcher:
             self.show_row(self.quick_preset_row, provider != 'xess')
             self.show_row(self.quick_xess_row, provider == 'xess')
             self.show_row(self.quick_dlss_row, provider == 'dlss')
+        self.row(quick, _('Output', 'Разрешение'), self.choice(quick, 'output_res', 'ini', OUTPUTS, 26))
+        self.section(quick, _('Frames', 'Кадры'), top=8)
+        self.row(quick, _('Frame rate', 'Частота кадров'), self.choice(quick, 'fps_mode', 'app', FPS_MODES, 26))
         self.row(quick, _('Frame Generation', 'Генерация кадров'),
                  self.frame_generation_choice(quick, 26))
         quick_multiplier = self.choice(quick, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS, 26)
@@ -1193,7 +1234,7 @@ class Launcher:
                     widget.grid()
                 else:
                     widget.grid_remove()
-        self.row(quick, _('Output', 'Разрешение'), self.choice(quick, 'output_res', 'ini', OUTPUTS, 26))
+        self.section(quick, _('Window & overlay', 'Окно и статистика'), top=8)
         self.row(quick, _('Window mode', 'Режим окна'), self.choice(quick, 'window_mode', 'menu', WINDOW_MODES, 26))
         ttk.Checkbutton(quick, text=_('Show performance overlay', 'Показывать статистику'),
                         variable=self.var('show_fps', 'menu')).grid(
@@ -1205,10 +1246,6 @@ class Launcher:
             row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
         for event in ('<Button-1>', '<Return>', '<space>'):
             self.overlay_link.bind(event, self.show_overlay_settings)
-        ttk.Checkbutton(quick, text=_('Play online'), variable=self.var('online', 'app')).grid(
-            row=self.next_row(quick), column=1, sticky='w', pady=(4, 0))
-        ttk.Button(quick, text=_('Add to Steam'), command=self.add_to_steam).grid(
-            row=self.next_row(quick), column=1, sticky='w', pady=(10, 0))
         # Reserve every grid row before hiding optional controls. Hidden rows have
         # zero height, but must never be reused by Output or another setting.
         self.var('upscaler', 'ini').trace_add('write', show_upscaler_rows)
@@ -1264,7 +1301,7 @@ class Launcher:
                 pass
         if self.banner_image:
             c.create_image(0, 0, image=self.banner_image, anchor='nw', tags='workshop-art')
-        compact = h < self.px(160)
+        compact = h < self.px(205)
         x = self.px(26)
         if not compact:
             self.draw_emblem(c, x+self.px(18), self.px(33), self.px(38))
@@ -1278,16 +1315,16 @@ class Launcher:
         c.create_line(x, h-self.px(29), w-self.px(26), h-self.px(29), fill=LINE)
         info = game_info(self.var('game_dir', 'app').get())
         sub = (_('Game version {} · ready', 'Версия игры {} · готова').format(info[1]) if info
-               else _('Choose your game folder in Game & effects', 'Выберите папку игры в «Игра и эффекты»'))
+               else _('Choose your game folder in Game & files', 'Выберите папку игры в «Игра и файлы»'))
         c.create_text(x, h-self.px(15), text=sub, anchor='w', fill=TEXT,
                       font=('Segoe UI', 9), tags='workshop-type')
 
-    def build_graphics(self):
+    def build_image(self):
         ttk = self.ttk
-        f = self.scrolled_page('graphics', _('Graphics', 'Графика'),
-                               _('Stored in bbport.ini; the in-game menu (Insert or L3+R3) changes the same values.',
-                                 'Хранится в bbport.ini; в игре меняется через меню (Insert или L3+R3).'))
-        self.section(f, _('Upscaling', 'Апскейлинг'), top=4)
+        f = self.scrolled_page('image', _('Image', 'Изображение'),
+                               _('Upscaling, resolution and image tuning. Same category in the in-game menu.', 'Апскейлинг, разрешение и настройка изображения. Та же вкладка в меню игры.'))
+        page = f
+        f = self.settings_section(page, _('Upscaling & resolution', 'Апскейлинг и разрешение'))
         self.row(f, _('Upscaler', 'Апскейлер'), self.choice(f, 'upscaler', 'ini', UPSCALERS),
                  _("Temporal upscaling with the game's own motion vectors. FSR 4 needs its assets (below) and "
                    'a GPU with INT8 dot products; otherwise the game falls back to FSR 3.1 by itself.',
@@ -1300,7 +1337,7 @@ class Launcher:
                  self.choice(f, 'xess_preset', 'menu', XESS_PRESETS),
                  _('XeSS has its own ratios: Ultra Quality Plus ×1.3, Ultra Quality ×1.5, Quality ×1.7, Balanced ×2 and Performance ×2.3. Your DLSS/FSR quality is saved separately.',
                    'XeSS использует свои масштабы: Ultra Quality Plus ×1.3, Ultra Quality ×1.5, Quality ×1.7, Balanced ×2 и Performance ×2.3. Качество DLSS/FSR сохраняется отдельно.'))
-        self.row(f, _('DLSS render preset', 'Пресет модели DLSS'), self.dlss_preset_choice(f),
+        self.image_dlss_row = self.row(f, _('DLSS render preset', 'Пресет модели DLSS'), self.dlss_preset_choice(f),
                  _('Model hint, separate from render scale. '
                    'In-game changes apply on the next frame. '
                    'E/F are legacy; driver/profile overrides may supersede this choice.',
@@ -1315,18 +1352,65 @@ class Launcher:
                    'game restarts it). On: change output and preset in the game without a restart, at a cost.',
                    'Выкл.: разрешения кроме 1080p задаются патчем при запуске (быстрее). Вкл.: менять в игре '
                    'без перезапуска, но медленнее.'))
+        f = self.settings_section(page, _('Image tuning', 'Настройка изображения'))
         self.check(f, 'sharpen', 'ini', _('Sharpening (RCAS)', 'Резкость (RCAS)'))
         holder = ttk.Frame(f)
-        ttk.Scale(holder, from_=0.0, to=2.0, variable=self.var('sharpness', 'ini'), length=300).pack(side='left')
+        ttk.Scale(holder, from_=0.0, to=2.0, variable=self.var('sharpness', 'ini'), length=self.px(200)).pack(side='left')
         value = ttk.Label(holder, width=5)
         value.pack(side='left', padx=10)
         show = lambda *_a: value.configure(text=f'{self.vars["sharpness"].get():.2f}')
         self.vars['sharpness'].trace_add('write', show)
         show()
+        self.track_setting(f, 'sharpness', holder)
         self.row(f, _('Sharpness', 'Сила резкости'), holder)
         self.check(f, 'object_motion', 'ini', _('Object motion vectors', 'Векторы движения объектов'),
-                   _('Less ghosting on characters, cloth and weapons; costs about 10% FPS.',
-                     'Меньше гостинга на персонажах и одежде; стоит около 10% FPS.'))
+                   _('Improves motion history for characters, cloth and weapons. Restart the game after changing it.',
+                     'Улучшает историю движения персонажей, одежды и оружия. После изменения нужен перезапуск.'))
+        f = self.settings_section(page, _('FSR 4 assets', 'Ассеты FSR 4'))
+        self.fsr4_label = ttk.Label(f, text='', wraplength=self.px(590), justify='left')
+        self.fsr4_label.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')
+        holder = ttk.Frame(f)
+        holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(8, 0))
+        self.fsr4_button = ttk.Button(holder, text=_('Download FSR 4 assets', 'Скачать ассеты FSR 4'),
+                                      command=self.download_fsr4)
+        self.fsr4_button.pack(side='left')
+        self.fsr4_progress = ttk.Progressbar(holder, length=280, maximum=len(fsr4_files()))
+        self.fsr4_progress.pack(side='left', padx=12)
+        self.note(f, _("From FireBurn/Q2RTX on GitHub (built from AMD's MIT-licensed FidelityFX source), "
+                       'about 30 MB, into the fsr4_shaders folder of the port.',
+                       'С GitHub FireBurn/Q2RTX (собраны из MIT-исходников AMD FidelityFX), около 30 МБ, '
+                       'в папку fsr4_shaders порта.'), top=6)
+        def show_quality_rows(*_args):
+            provider = self.var('upscaler', 'ini').get()
+            xess = provider == 'xess'
+            self.show_row(self.graphics_preset_row, not xess)
+            self.show_row(self.graphics_xess_row, xess)
+            self.show_row(self.image_dlss_row, provider == 'dlss')
+        # Assign all grid rows before hiding either quality control or its help text.
+        self.var('upscaler', 'ini').trace_add('write', show_quality_rows)
+        show_quality_rows()
+
+    def build_frames(self):
+        ttk = self.ttk
+        f = self.scrolled_page('frames', _('Frames', 'Кадры'),
+                               _('Real-frame limits, generated output and latency controls.', 'Лимиты реальных кадров, генерация и задержка.'))
+        page = f
+        f = self.settings_section(page, _('Real game frames', 'Реальные кадры игры'))
+        self.row(f, _('Frame rate', 'Режим'), self.choice(f, 'fps_mode', 'app', FPS_MODES),
+                 _("Community patches for game version 1.09. Unlocked makes the game use the real frame time. "
+                   'Other game versions always run at 30 FPS (the patches would corrupt them).',
+                   'Патчи сообщества для версии 1.09. «Без ограничения» — игра использует реальное время кадра. '
+                   'Другие версии всегда работают в 30 FPS.'))
+        self.row(f, _('Frame cap (unlocked mode)', 'Ограничение FPS (режим без ограничения)'),
+                 self.fps_cap_control(f, 'real_fps_limit', 'menu', 30, 120, options=FRAME_CAPS),
+                 _("Auto follows the startup/display policy. No cap removes the real ceiling. Above about 120 FPS the game's movement timing breaks (running and rolling get slower, "
+                   'physics and animations can glitch): higher caps are at your own risk.',
+                   'Выше ~120 FPS ломается тайминг движения игры (бег и перекаты замедляются, возможны '
+                   'сбои физики и анимаций): более высокие значения — на ваш риск.'))
+        self.row(f, _('Frames ahead of the GPU', 'Кадров впереди GPU'), self.choice(f, 'frames_ahead', 'app', FRAMES_AHEAD),
+                 _('A shorter queue can reduce latency; more frames ahead can improve throughput on some configurations.',
+                   'Короткая очередь может снизить задержку; больше кадров впереди иногда повышает производительность.'))
+        f = self.settings_section(page, _('Frame Generation & output cap', 'Генерация кадров и лимит вывода'))
         self.row(f, _('Frame Generation', 'Генерация кадров'),
                  self.frame_generation_choice(f),
                  _('FSR FG adds one interpolated frame between real frames. Supports SDR and HDR10 with a temporal upscaler. The normal FPS limit counts real frames: 75 can produce 150 with FG 2x.',
@@ -1340,13 +1424,6 @@ class Launcher:
                  multiplier_choice,
                  _('NVIDIA FG requires a compatible GPU, driver and Hardware-accelerated GPU scheduling. Only multipliers supported by your GPU will run. SDR and HDR10 use the same FG path.',
                    'Нужны совместимые GPU, драйвер и планирование GPU с аппаратным ускорением. Работают только поддерживаемые GPU множители. Поддерживаются SDR и HDR10.'))
-        self.row(f, _('NVIDIA Reflex', 'NVIDIA Reflex'),
-                 self.choice(f, 'reflex', 'menu', REFLEX_MODES),
-                 _('Available independently of DLSS FG on supported NVIDIA GPUs. NVIDIA FG enables Reflex automatically; Boost is optional.',
-                   'Работает независимо от DLSS FG на совместимых GPU NVIDIA. NVIDIA FG включает Reflex автоматически; Boost необязателен.'))
-        self.amd_antilag_check = self.check(f, 'amd_antilag', 'menu', 'AMD Anti-Lag 2',
-                   _('Reduces input latency on supported Radeon GPUs through VK_AMD_anti_lag. Independent of the upscaler and FSR FG; unavailable drivers keep the normal path.',
-                     'Снижает задержку ввода на совместимых Radeon через VK_AMD_anti_lag. Независимо от апскейлера и FSR FG; без поддержки используется обычный режим.'))
         self.check(f, 'limit_generated_fps', 'menu',
                    _('Limit total FPS with Frame Generation', 'Лимит общих FPS с генерацией кадров'))
         holder = self.fps_cap_control(f, 'generated_fps_limit', 'menu', 30, 1000,
@@ -1354,43 +1431,59 @@ class Launcher:
         self.row(f, _('Total FPS cap', 'Общий лимит FPS'), holder,
                  _('Optional. Includes generated frames and can reduce the real frame rate. Generated frames do not advance game logic or physics.',
                    'Необязательный лимит включает промежуточные кадры и может снизить реальные FPS. Генерация не меняет физику и логику игры.'))
-        self.section(f, _('FSR 4 assets', 'Ассеты FSR 4'))
-        self.fsr4_label = ttk.Label(f, text='', wraplength=self.px(640), justify='left')
-        self.fsr4_label.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')
-        holder = ttk.Frame(f)
-        holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(8, 0))
-        self.fsr4_button = ttk.Button(holder, text=_('Download FSR 4 assets', 'Скачать ассеты FSR 4'),
-                                      command=self.download_fsr4)
-        self.fsr4_button.pack(side='left')
-        self.fsr4_progress = ttk.Progressbar(holder, length=280, maximum=len(fsr4_files()))
-        self.fsr4_progress.pack(side='left', padx=12)
-        self.note(f, _("From FireBurn/Q2RTX on GitHub (built from AMD's MIT-licensed FidelityFX source), "
-                       'about 30 MB, into the fsr4_shaders folder of the port.',
-                       'С GitHub FireBurn/Q2RTX (собраны из MIT-исходников AMD FidelityFX), около 30 МБ, '
-                       'в папку fsr4_shaders порта.'), top=6)
-        self.section(f, _('Detail', 'Детализация'))
-        self.row(f, _('Model detail (LOD)', 'Детализация моделей'), self.choice(f, 'model_lod', 'ini', LODS),
-                 _('A game patch (game version 1.09).', 'Патч игры (версия 1.09).'))
-        self.check(f, 'show_fps', 'menu', _('Show performance overlay', 'Показывать статистику'))
-        self.check(f, 'show_dlss_preset', 'menu',
-                   _('Show DLSS preset in overlay', 'Показывать пресет DLSS в статистике'))
-        def show_quality_rows(*_args):
-            xess = self.var('upscaler', 'ini').get() == 'xess'
-            self.show_row(self.graphics_preset_row, not xess)
-            self.show_row(self.graphics_xess_row, xess)
-        # Assign all grid rows before hiding either quality control or its help text.
-        self.var('upscaler', 'ini').trace_add('write', show_quality_rows)
-        show_quality_rows()
+        f = self.settings_section(page, _('Latency', 'Задержка'))
+        self.row(f, _('NVIDIA Reflex', 'NVIDIA Reflex'),
+                 self.choice(f, 'reflex', 'menu', REFLEX_MODES),
+                 _('Available independently of DLSS FG on supported NVIDIA GPUs. NVIDIA FG enables Reflex automatically; Boost is optional.',
+                   'Работает независимо от DLSS FG на совместимых GPU NVIDIA. NVIDIA FG включает Reflex автоматически; Boost необязателен.'))
+        self.amd_antilag_check = self.check(f, 'amd_antilag', 'menu', 'AMD Anti-Lag 2',
+                   _('Reduces input latency on supported Radeon GPUs through VK_AMD_anti_lag. Independent of the upscaler and FSR FG; unavailable drivers keep the normal path.',
+                     'Снижает задержку ввода на совместимых Radeon через VK_AMD_anti_lag. Независимо от апскейлера и FSR FG; без поддержки используется обычный режим.'))
 
-    def build_display(self):
+    def build_window(self):
         ttk = self.ttk
-        f = self.scrolled_page('display', _('Display & FPS', 'Экран и FPS'),
-                               _('Applied when the game starts.', 'Применяется при запуске игры.'))
-        self.version_warning(f)
-        self.section(f, _('Performance overlay', 'Статистика'), top=4)
+        f = self.scrolled_page('window', _('Window', 'Окно'),
+                               _('Window mode, HDR presentation and behavior when unfocused.', 'Режим окна, HDR и работа в фоне.'))
+        page = f
+        f = self.settings_section(page, _('Window & presentation', 'Окно и показ кадров'))
+        self.row(f, _('Window mode', 'Режим окна'), self.choice(f, 'window_mode', 'menu', WINDOW_MODES),
+                 _('Borderless uses the desktop resolution and refresh rate, with fast Alt-Tab.',
+                   'Режим без рамки использует разрешение и частоту рабочего стола, с быстрым Alt-Tab.'))
+        self.borderless_vsync_check = ttk.Checkbutton(f,
+            text=_('V-sync in borderless', 'V-sync без рамки'), variable=self.var('borderless_vsync', 'menu'))
+        self.track_setting(f, 'borderless_vsync', self.borderless_vsync_check)
+        self.borderless_vsync_check.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(4, 0))
+        self.note(f, _('Off: lowest presentation queueing (Immediate; tearing is possible). '
+                       'On: Mailbox without tearing, or FIFO if unavailable.',
+                       'Выкл.: минимальная очередь (Immediate; возможны разрывы). '
+                       'Вкл.: Mailbox без разрывов, либо FIFO.'), top=4)
+        self.presentation_choice = self.choice(f, 'present_mode', 'app', PRESENT_MODES)
+        self.row(f, _('Presentation', 'Режим показа кадров'), self.presentation_choice,
+                 _('Used in windowed/fullscreen modes. Borderless uses the V-sync option above.',
+                   'Для оконного и полноэкранного режимов. Без рамки используется V-sync выше.'))
+        self.vars['window_mode'].trace_add('write', lambda *_a: self.update_window_controls())
+        self.update_window_controls()
+        self.check(f, 'hdr', 'app', _('Allow HDR output', 'Разрешить HDR'),
+                   _('When HDR is on in Windows and the display supports it.',
+                     'Если HDR включён в Windows и монитор его поддерживает.'))
+        f = self.settings_section(page, _('Background behavior', 'Работа в фоне'))
+        self.row(f, _('When in background', 'В фоне'),
+                 self.choice(f, 'background_mode', 'menu', BACKGROUND_MODES),
+                 _('Pause the entire game on Windows or cap background rendering when the window loses focus. '
+                   'The foreground frame cap is kept.',
+                   'При потере фокуса: приостановить всю игру в Windows или ограничить FPS в фоне. '
+                   'Основной лимит FPS сохраняется.'))
+
+    def build_overlay(self):
+        ttk = self.ttk
+        f = self.scrolled_page('overlay', _('Overlay', 'Статистика'),
+                               _('Choose the performance information you want to see while playing.', 'Выберите статистику для показа во время игры.'))
+        page = f
+        f = self.settings_section(page, _('Performance overlay', 'Статистика производительности'))
         self.check(f, 'show_fps', 'menu', _('Show performance overlay', 'Показывать статистику'),
                    _('FPS, frame time and upscaler in the top-right corner.',
                      'FPS, время кадра и апскейлер в правом верхнем углу.'))
+        f = self.settings_section(page, _('Optional fields', 'Дополнительные поля'))
         self.check(f, 'show_dlss_preset', 'menu',
                    _('Show DLSS preset in overlay', 'Показывать пресет DLSS в статистике'),
                    _('Add the preset letter on the same line. K>M means K is active and M is pending. '
@@ -1409,54 +1502,32 @@ class Launcher:
                    _('Show PC latency in overlay', 'Показывать задержку ПК в статистике'),
                    _('Measured by NVIDIA Reflex, from simulation start to GPU completion. N/A means the driver has no valid sample. This excludes monitor and input-device latency.',
                      'Измеряется NVIDIA Reflex: от начала симуляции до завершения GPU. N/A означает отсутствие данных. Задержка монитора и устройства ввода не учитывается.'))
+        f = self.settings_section(page, _('Frametime graph', 'График времени кадров'))
         self.frametime_graph_check = self.check(f, 'show_frametime_graph', 'menu',
                    _('Show frametime graph in overlay', 'Показывать график времени кадров'),
                    _('A compact trace of the last 240 real-frame presentation intervals, with the latest and peak time. Generated frames are not included; this is not GPU render time or monitor latency.',
                      'Компактный график последних 240 интервалов показа реальных кадров, с текущим и пиковым временем. Сгенерированные кадры не включены; это не время рендера GPU и не задержка монитора.'))
-        self.section(f, _('Frame rate', 'Частота кадров'), top=4)
-        self.row(f, _('When in background', 'В фоне'),
-                 self.choice(f, 'background_mode', 'menu', BACKGROUND_MODES),
-                 _('Pause the entire game on Windows or cap background rendering when the window loses focus. '
-                   'The foreground frame cap is kept.',
-                   'При потере фокуса: приостановить всю игру в Windows или ограничить FPS в фоне. '
-                   'Основной лимит FPS сохраняется.'))
-        self.row(f, _('Frame rate', 'Режим'), self.choice(f, 'fps_mode', 'app', FPS_MODES),
-                 _("Community patches for game version 1.09. Unlocked makes the game use the real frame time. "
-                   'Other game versions always run at 30 FPS (the patches would corrupt them).',
-                   'Патчи сообщества для версии 1.09. «Без ограничения» — игра использует реальное время кадра. '
-                   'Другие версии всегда работают в 30 FPS.'))
-        self.row(f, _('Frame cap (unlocked mode)', 'Ограничение FPS (режим без ограничения)'),
-                 self.fps_cap_control(f, 'real_fps_limit', 'menu', 30, 120, options=FRAME_CAPS),
-                 _("Above about 120 FPS the game's movement timing breaks (running and rolling get slower, "
-                   'physics and animations can glitch): higher caps are at your own risk.',
-                   'Выше ~120 FPS ломается тайминг движения игры (бег и перекаты замедляются, возможны '
-                   'сбои физики и анимаций): более высокие значения — на ваш риск.'))
-        self.row(f, _('Frames ahead of the GPU', 'Кадров впереди GPU'), self.choice(f, 'frames_ahead', 'app', FRAMES_AHEAD),
-                 _('1 keeps frame pacing even; more can raise FPS when the graphics card is the limit.',
-                   '1 — ровная подача кадров; больше может поднять FPS, если упирается в видеокарту.'))
-        self.section(f, _('Window', 'Окно'))
-        self.row(f, _('Window mode', 'Режим окна'), self.choice(f, 'window_mode', 'menu', WINDOW_MODES),
-                 _('Borderless uses the desktop resolution and refresh rate, with fast Alt-Tab.',
-                   'Режим без рамки использует разрешение и частоту рабочего стола, с быстрым Alt-Tab.'))
-        self.borderless_vsync_check = ttk.Checkbutton(f,
-            text=_('V-sync in borderless', 'V-sync без рамки'), variable=self.var('borderless_vsync', 'menu'))
-        self.borderless_vsync_check.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(4, 0))
-        self.note(f, _('Off: lowest presentation queueing (Immediate; tearing is possible). '
-                       'On: Mailbox without tearing, or FIFO if unavailable.',
-                       'Выкл.: минимальная очередь (Immediate; возможны разрывы). '
-                       'Вкл.: Mailbox без разрывов, либо FIFO.'), top=4)
-        self.presentation_choice = self.choice(f, 'present_mode', 'app', PRESENT_MODES)
-        self.row(f, _('Presentation', 'Режим показа кадров'), self.presentation_choice,
-                 _('Used in windowed/fullscreen modes. Borderless uses the V-sync option above.',
-                   'Для оконного и полноэкранного режимов. Без рамки используется V-sync выше.'))
-        self.vars['window_mode'].trace_add('write', lambda *_a: self.update_window_controls())
-        self.update_window_controls()
-        self.check(f, 'hdr', 'app', _('Allow HDR output', 'Разрешить HDR'),
-                   _('When HDR is on in Windows and the display supports it.',
-                     'Если HDR включён в Windows и монитор его поддерживает.'))
-        self.row(f, _('In-game menu language', 'Язык внутриигрового меню'),
-                 self.choice(f, 'menu_language', 'menu', MENU_LANGUAGES),
-                 _('Language of the R3+L3 / Insert settings menu.', 'Язык меню настроек R3+L3 / Insert.'))
+
+    def build_effects(self):
+        ttk = self.ttk
+        f = self.scrolled_page('effects', _('Effects', 'Эффекты'),
+                               _('Game effects, detail, camera and gameplay patches for version 1.09. Restart required.', 'Эффекты, детализация, камера и патчи игры 1.09. Нужен перезапуск.'))
+        page = f
+        self.version_warning(f)
+        f = self.settings_section(page, _('Detail & visual effects', 'Детализация и эффекты'))
+        self.row(f, _('Model detail (LOD)', 'Детализация моделей'), self.choice(f, 'model_lod', 'ini', LODS),
+                 _('A game patch (game version 1.09).', 'Патч игры (версия 1.09).'))
+        for key, title, _on in EFFECTS:
+            self.check(f, key, 'ini', _(*title))
+        f = self.settings_section(page, _('Camera & gameplay extras', 'Камера и игровой процесс'))
+        for key, title, _on in EXTRAS:
+            self.check(f, key, 'ini', _(*title))
+        self.note(f, _('Effects and extras are game patches for version 1.09, applied at start.',
+                       'Эффекты и дополнения — патчи игры для версии 1.09, применяются при запуске.'))
+        for key, title, _on in TWEAKS:
+            self.check(f, key, 'ini', _(*title))
+
+
 
     def update_window_controls(self):
         borderless = self.var('window_mode', 'menu').get() == 'borderless'
@@ -1475,8 +1546,8 @@ class Launcher:
                     var.set(value == '1' if key in MENU_FLAGS else value)
 
     def build_game(self):
-        f = self.scrolled_page('game', _('Game & effects', 'Игра и эффекты'),
-                               _('Your game dump, saves and the game patches.', 'Дамп игры, сохранения и патчи игры.'))
+        f = self.scrolled_page('game', _('Game & files', 'Игра и файлы'),
+                               _('Your game dump, saves, player name and game language.', 'Дамп игры, сохранения, имя игрока и язык игры.'))
         self.section(f, _('Game', 'Игра'), top=4)
         self.folder(f, 'game_dir', _('Game folder', 'Папка игры'),
                     _('Choose the folder with eboot.bin', 'Выберите папку с eboot.bin'),
@@ -1490,15 +1561,6 @@ class Launcher:
         self.row(f, _('Game language', 'Язык игры'), self.choice(f, 'language', 'app', LANGUAGES))
         self.row(f, _('Player name', 'Имя игрока'), self.ttk.Entry(f, textvariable=self.var('player_name', 'app'), width=30),
                  _('Where the game shows the PSN name; empty: the default.', 'Где игра показывает имя PSN; пусто — по умолчанию.'))
-        self.section(f, _('Effects', 'Эффекты'))
-        self.version_warning(f)
-        for key, title, _on in EFFECTS:
-            self.check(f, key, 'ini', _(*title))
-        self.section(f, _('Extras', 'Дополнительно'))
-        for key, title, _on in EXTRAS:
-            self.check(f, key, 'ini', _(*title))
-        self.note(f, _('Effects and extras are game patches for version 1.09, applied at start.',
-                       'Эффекты и дополнения — патчи игры для версии 1.09, применяются при запуске.'))
 
     def build_cheats(self):
         f = self.scrolled_page('cheats', _('Cheats', 'Читы'),
@@ -1506,7 +1568,8 @@ class Launcher:
                                  'play-through.', 'Читы для версии 1.09. Отмеченные настройки требуют перезапуска. Для обычного '
                                  'прохождения оставьте их выключенными.'))
         self.version_warning(f)
-        self.section(f, _('Cheats', 'Читы'), top=4)
+        page = f
+        f = self.settings_section(page, _('Runtime cheats', 'Читы во время игры'))
         self.row(f, _('Player damage', 'Урон игрока'),
                  self.choice(f, 'cheat_damage', 'menu', CHEAT_MULTIPLIERS))
         self.row(f, _('Reduce enemy damage', 'Снизить урон врагов'),
@@ -1527,11 +1590,9 @@ class Launcher:
                      'Включая боеприпасы. Нужен предмет в инвентаре; продажа, выбрасывание и покупка работают как обычно.'))
         self.note(f, _('These choices can also be changed from the in-game menu. They are enabled only when the version 1.09 hooks pass verification.',
                       'Эти настройки можно менять в меню игры. Они доступны только после проверки кода версии 1.09.'))
+        f = self.settings_section(page, _('Startup cheats (restart required)', 'Читы при запуске (нужен перезапуск)'))
         for key, title, _on in CHEATS:
             self.check(f, key, 'ini', _(*title) + _(' (restart required)', ' (после перезапуска)'))
-        self.section(f, _('Gameplay tweaks', 'Изменения игрового процесса'))
-        for key, title, _on in TWEAKS:
-            self.check(f, key, 'ini', _(*title))
         # Enemy control and the free camera share their buttons: one at a time.
         control, camera = self.var('cheat_enemy_control', 'ini'), self.var('debug_camera', 'ini')
         control.trace_add('write', lambda *_a: control.get() and camera.set(False))
@@ -1616,7 +1677,11 @@ class Launcher:
         f = self.scrolled_page('advanced', _('Advanced', 'Дополнительно'),
                                _('Launcher options, performance switches and diagnostics.',
                                  'Настройки лаунчера, производительность и диагностика.'))
-        self.section(f, _('Launcher', 'Лаунчер'), top=4)
+        page = f
+        f = self.settings_section(page, _('Language & launcher', 'Язык и лаунчер'))
+        self.row(f, _('In-game menu language', 'Язык внутриигрового меню'),
+                 self.choice(f, 'menu_language', 'menu', MENU_LANGUAGES),
+                 _('Language of the R3+L3 / Insert settings menu.', 'Язык меню настроек R3+L3 / Insert.'))
         self.row(f, _('Launcher language', 'Язык лаунчера'), self.choice(f, 'ui_language', 'app', UI_LANGUAGES),
                  _('Applies when the launcher opens again.', 'Применится при следующем открытии лаунчера.'))
         self.check(f, 'close_on_play', 'app', _('Close the launcher when the game starts', 'Закрывать лаунчер при запуске игры'))
@@ -1640,13 +1705,13 @@ class Launcher:
         ttk.Label(holder, text=_('If the game only shows a black screen, this usually helps.',
                                  'Если игра показывает только чёрный экран, обычно это помогает.'),
                   style='Muted.TLabel').pack(side='left', padx=10)
-        self.section(f, _('Performance', 'Производительность'))
+        f = self.settings_section(page, _('Renderer', 'Рендер'))
         self.row(f, _('Two-stage GPU pipeline', 'Двухстадийный конвейер GPU'), self.choice(f, 'draw_pipe', 'app', DRAW_PIPE),
-                 _('20–30% faster; switch it off if the game is unstable.', 'Быстрее на 20–30%; при нестабильности выключите.'))
+                 _('Overlaps command preparation and GPU work. Switch it off when comparing an instability.', 'Совмещает подготовку команд с работой GPU. Выключите для сравнения при нестабильности.'))
         self.row(f, _('GPU readbacks', 'Чтение данных GPU'), self.choice(f, 'readbacks', 'app', READBACKS),
                  _('How exactly data the GPU writes is copied back for the game.',
                    'Насколько точно данные, записанные GPU, возвращаются игре.'))
-        self.section(f, _('Diagnostics', 'Для разработчика'))
+        f = self.settings_section(page, _('Diagnostics', 'Диагностика'))
         self.check(f, 'developer_profile', 'app', _('Developer profiling and crash diagnostics', 'Профилирование и диагностика сбоев'))
         ttk.Label(f, text=_('Off by default. Keeps one folder per run in the saves folder / diagnostics, with timings, settings, the exit code and a crash dump when available. Profiling can affect performance.',
                            'По умолчанию выключено. Сохраняет журнал, тайминги, настройки, код завершения и дамп сбоя в папке сохранений / diagnostics. Профилирование может снизить скорость.'),
@@ -1676,7 +1741,7 @@ class Launcher:
 
     def version_warning(self, parent):
         """A banner shown while the selected game is not version 1.09 (refresh_status)."""
-        label = self.ttk.Label(parent, style='Warning.TLabel', wraplength=self.px(640), justify='left', text=_(
+        label = self.ttk.Label(parent, style='Warning.TLabel', wraplength=self.px(590), justify='left', text=_(
             'Your game is version {}: these options are patches for 1.09 and are not applied; the game runs '
             'at 30 FPS. Update the dump to 1.09 to use them.',
             'Ваша игра версии {}: эти настройки — патчи для 1.09 и не применяются; игра работает в 30 FPS. '
@@ -1695,7 +1760,7 @@ class Launcher:
     def refresh_status(self):
         info = game_info(self.var('game_dir', 'app').get())
         if not info:
-            game = _('✗ No eboot.bin in the game folder (Game & effects)', '✗ В папке игры нет eboot.bin («Игра и эффекты»)')
+            game = _('✗ No eboot.bin in the game folder (Game & files)', '✗ В папке игры нет eboot.bin («Игра и файлы»)')
         elif info[1] == PATCH_VERSION:
             game = _('✓ Game version {}: every patch available', '✓ Версия игры {}: доступны все патчи').format(info[1])
         else:
@@ -1707,8 +1772,8 @@ class Launcher:
                 else _('• No saves yet: the game creates them in {}', '• Сохранений пока нет: игра создаст их в {}').format(user))
         missing = fsr4_missing()
         fsr4 = (_('✓ FSR 4 assets installed', '✓ Ассеты FSR 4 установлены') if not missing else
-                _('• FSR 4 assets missing (Graphics); FSR 3.1 is used meanwhile',
-                  '• Нет ассетов FSR 4 («Графика»); пока используется FSR 3.1'))
+                _('• FSR 4 assets missing (Image); FSR 3.1 is used meanwhile',
+                  '• Нет ассетов FSR 4 («Изображение»); пока используется FSR 3.1'))
         for key, text in (('game', game), ('saves', save), ('gpu', self.gpu_text), ('fsr4', fsr4)):
             self.checks[key].configure(text=text, foreground=MUTED if text.startswith('•') else
                                        '#d9a441' if text.startswith('⚠') else '#d36b5c' if text.startswith('✗') else TEXT)

@@ -24,9 +24,9 @@ For DLSS, I exposed the following presets exactly as separate choices:
 | M | M (Transformer 2nd gen) |
 | L | L (Transformer 2nd gen) |
 
-The letter selects the model hint; **Quality / Balanced / Performance / Ultra Performance** still controls the input resolution. I put the selector in **Play**, **Graphics** and the in-game menu so you can try another preset without restarting the game. Play shows it only with DLSS selected; Graphics disables it with another upscaler. Your saved choice stays available when you return to DLSS.
+The letter selects the model hint; **Quality / Balanced / Performance / Ultra Performance** still controls the input resolution. I put the selector in **Play**, **Image** and the in-game **Image** tab so you can try another preset without restarting the game. Play shows it only with DLSS selected; Image also hides it with another upscaler. Your saved choice stays available when you return to DLSS.
 
-I gave **XeSS its own quality dropdown** on Play, in Graphics and in the in-game menu. It appears when you select XeSS and includes Ultra Quality Plus and Ultra Quality. I keep your XeSS choice separate from DLSS/FSR quality, so switching upscalers does not overwrite it.
+I gave **XeSS its own quality dropdown** on Play, in Image and in the in-game menu. It appears when you select XeSS and includes Ultra Quality Plus and Ultra Quality. I keep your XeSS choice separate from DLSS/FSR quality, so switching upscalers does not overwrite it.
 
 The ratios below divide each output dimension to get the input size. These are the options used by this fork; XeSS uses Intel's modern quality ratios, so the same label can render fewer pixels than the DLSS/FSR option. The renderer rounds the resulting dimensions to even pixels for the game's half-resolution effects.
 

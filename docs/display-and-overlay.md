@@ -1,6 +1,6 @@
 # Display, FPS and the performance overlay
 
-These settings are shared between the launcher and the Insert / L3+R3 menu. **Customize overlay…** on Play opens Display & FPS at the overlay controls; the main overlay checkbox stays on Play.
+These settings are shared between the launcher and the Insert / L3+R3 menu. **Customize overlay…** on Play opens **Overlay** at its controls; the main overlay checkbox stays on Play.
 
 ## FPS limits
 
@@ -13,7 +13,7 @@ I keep the ordinary cap tied to real game frames. Frame Generation adds display 
 | 75 | x2 | 120 | 60, up to 120 output FPS |
 | 75 | x2 | 130 | 65, up to 130 output FPS |
 
-You can type an exact value or use the slider in both interfaces. Live changes require **Unlocked** game timing; sessions using a fixed timing patch retain that timing. Auto follows the startup/display policy, and No cap removes the real-frame ceiling. Your choice remains available when you return to the launcher.
+Find the two caps in **Frames** in both interfaces. You can type an exact value or drag in small steps. The launcher slider uses relative movement (one pixel per FPS, or four pixels per FPS with Shift) and arrow keys change the value by one. The in-game drag field also supports exact numeric entry beside it. Live changes require **Unlocked** game timing; sessions using a fixed timing patch retain that timing. Auto follows the startup/display policy, and No cap removes the real-frame ceiling. Your choice remains available when you return to the launcher.
 
 The optional **Limit total FPS with Frame Generation** accepts 30–1000 and derives a ceiling from the negotiated multiplier. Integer division can place output slightly below an indivisible value. The GPU, scene and monitor determine the practical rate. I recommend a real-frame cap of 120 or below because the original game's movement, animation and physics timing can misbehave at extreme rates. Generated frames do not advance game logic.
 
@@ -29,7 +29,7 @@ The basic overlay shows FPS, average interval and the upscaler. NVIDIA FG output
 | PC latency | A completed Reflex simulation-to-GPU report, or `N/A`. [Latency details](latency.md) |
 | Frametime graph | The last 240 real-frame presentation intervals, plus the latest time and the highest time still in the trace. |
 
-I keep the optional text on one line. The graph adds a shallow row below it, stays inside the compact overlay, and starts off. Turn on **Show frametime graph in overlay** in the launcher's Display & FPS page or the in-game Overlay tab.
+I keep the optional text on one line. The graph adds a shallow row below it, stays inside the compact overlay, and starts off. Turn on **Show frametime graph in overlay** in the **Overlay** in the launcher or in-game menu.
 
 ### Reading the graph
 
@@ -39,7 +39,7 @@ With NVIDIA FG, the top FPS number can be 120 while the graph reads about 16.7 m
 
 ## Window and background
 
-Choose **Windowed**, **Borderless fullscreen** or **Fullscreen (driver default)** from Play, Display & FPS or the in-game Window tab. Borderless uses the monitor's desktop resolution/refresh rate and makes Alt-Tab easier without a display-mode switch.
+Choose **Windowed**, **Borderless fullscreen** or **Fullscreen (driver default)** from Play, **Window** in the launcher or the in-game **Window** tab. Borderless uses the monitor's desktop resolution/refresh rate and makes Alt-Tab easier without a display-mode switch.
 
 With **V-sync in borderless** off, I request Immediate presentation for lower queueing; tearing is possible. On requests Mailbox, with FIFO as a fallback. Windows and driver settings affect the final presentation path, so compare these on your system.
 

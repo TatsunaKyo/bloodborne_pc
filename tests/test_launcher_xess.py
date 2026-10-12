@@ -51,9 +51,9 @@ with tempfile.TemporaryDirectory(prefix='bbport-xess-popup-') as directory:
             root.geometry(f'{round(1120*scale)}x{round(740*scale)}+0+0')
             try:
                 for page, box, generic in (('play', obj.quick_xess_row, obj.quick_preset_row),
-                                            ('graphics', obj.graphics_xess_row, obj.graphics_preset_row)):
+                                            ('image', obj.graphics_xess_row, obj.graphics_preset_row)):
                     obj.show(page)
-                    if page == 'graphics':
+                    if page == 'image':
                         obj.pages[page].scroll_to_top()
                     for provider in ('dlss', 'fsr3', 'taa', 'off', 'fsr4', 'xess'):
                         obj.vars['upscaler'].set(provider)
@@ -117,4 +117,4 @@ with tempfile.TemporaryDirectory(prefix='bbport-xess-popup-') as directory:
 
 output = source.parents[1] / 'out/verification/launcher-xess-revision15.json'
 output.write_text(json.dumps({'cases': results, 'checks': 'actual popup input, all seven entries, both pages, conditional rows/hints, independent saved quality, concurrent game changes'}, indent=2)+'\n')
-print(f'PASS: {len(results)} real XeSS popup selections on Play/Graphics in English/Russian at 100/150/200%; migration, visibility and independent saved preferences pass.')
+print(f'PASS: {len(results)} real XeSS popup selections on Play/Image in English/Russian at 100/150/200%; migration, visibility and independent saved preferences pass.')

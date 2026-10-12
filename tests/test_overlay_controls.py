@@ -73,6 +73,12 @@ ImRect language_rect, russian_rect, english_rect, window_rect, borderless_rect, 
 ImRect dlss_rect, preset_m_rect, preset_k_rect, osd_rect, osd_preset_rect, resolution_rect, background_rect, pause_rect, run_rect;
 std::map<std::string,ImRect> controls, tabs, buttons;
 std::string selected_tab;
+std::map<std::string,std::string> setting_categories;
+void TrackSetting(const char* key) {
+    assert(!selected_tab.empty());
+    const auto [it, inserted]=setting_categories.emplace(key,selected_tab);
+    assert(inserted || it->second==selected_tab);
+}
 std::map<std::string,ImGuiWindow*> control_windows;
 std::map<std::string,ImGuiID> control_ids;
 std::map<std::string,ImRect> selectables;
@@ -94,7 +100,7 @@ bool TrackedButton(const char* label) {
 bool TrackedCombo(const char* label,const char* preview) {
     bool result=ImGui::BeginCombo(label,preview);
     if (const char* key=std::strstr(label,"###")) {
-        controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID;
+        controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID; TrackSetting(key+3);
     }
     if (std::strstr(label,"###menu_language")) {
         language_rect=GImGui->LastItemData.Rect;
@@ -121,7 +127,7 @@ bool TrackedSelectable(const char* label,bool selected) {
 bool TrackedCheckbox(const char* label,bool* value) {
     const bool result=ImGui::Checkbox(label,value);
     const char* key=std::strstr(label,"###");
-    if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID; }
+    if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID; TrackSetting(key+3); }
     if (std::strstr(label,"###borderless_vsync")) vsync_rect=GImGui->LastItemData.Rect;
     if (std::strstr(label,"###show_fps")) osd_rect=GImGui->LastItemData.Rect;
     if (std::strstr(label,"###show_dlss_preset")) osd_preset_rect=GImGui->LastItemData.Rect;
@@ -131,22 +137,24 @@ bool TrackedCheckbox(const char* label,bool* value) {
 bool TrackedSlider(const char* label,float* value,float lo,float hi,const char* format) {
     bool result=ImGui::SliderFloat(label,value,lo,hi,format);
     const char* key=std::strstr(label,"###");
-    if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID; }
+    if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID; TrackSetting(key+3); }
     return result;
 }
 bool TrackedSliderInt(const char* label,int* value,int lo,int hi,const char* format) {
     bool result=ImGui::SliderInt(label,value,lo,hi,format);
     const char* key=std::strstr(label,"###");
-    if (key) {controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow;control_ids[key+3]=GImGui->LastItemData.ID;}
+    if (key) {controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow;control_ids[key+3]=GImGui->LastItemData.ID; TrackSetting(key+3);}
     return result;
 }
 bool TrackedDragInt(const char* label,int* value,float speed,int lo,int hi,const char* format,ImGuiSliderFlags flags) {
     const bool result=ImGui::DragInt(label,value,speed,lo,hi,format,flags);
+    TrackSetting(std::strstr(label,"###")+3);
     controls[std::strstr(label,"###")+3]=GImGui->LastItemData.Rect; control_windows[std::strstr(label,"###")+3]=GImGui->CurrentWindow;
     return result;
 }
 bool TrackedInputInt(const char* label,int* value,int step,int fast,ImGuiInputTextFlags flags) {
     const bool result=ImGui::InputInt(label,value,step,fast,flags);
+    TrackSetting(std::strstr(label,"###")+3);
     controls[std::strstr(label,"###")+3]=GImGui->LastItemData.Rect; control_windows[std::strstr(label,"###")+3]=GImGui->CurrentWindow;
     return result;
 }
@@ -840,6 +848,15 @@ int main(int argc,char** argv) {
 
     CheckMenuLayout();
     assert(restart_calls==0);
+    if (const char* path=std::getenv("BB_MENU_CAPTURE_DIR")) {
+        std::ofstream out(std::filesystem::path(path)/"settings-categories.json");
+        out<<"{"; bool first=true;
+        for(const auto& [key,tab] : setting_categories) {
+            if(!first) out<<","; first=false;
+            out<<"\""<<key<<"\":\""<<tab<<"\"";
+        }
+        out<<"}\n";
+    }
     ImGui::DestroyContext();
     std::puts("PASS: actual ImGui real-FPS mode/drag/exact entry/save, fixed-timing restriction and supported/unsupported Anti-Lag controls; all seven XeSS quality modes independently of DLSS/FSR; conditional quality controls; basic/compact DLSS OSD; all seven active DLSS model hints and pending changes stay on one row with the original window height; shared settings survive saves; both languages/all upscalers tested; no restart from OSD choices.");
 }

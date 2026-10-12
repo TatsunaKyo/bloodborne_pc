@@ -4,7 +4,7 @@ I publish the full rebuilt package so the launcher and renderer stay together. T
 
 ## Files and release page
 
-Use **Bloodborne-Windows-v1.6-TatsunaKyo-Revision-20.zip** and its **.zip.sha256** file. The prepared release page delivered with them contains the title, description, exact source commit and archive checksum. The same information is in **Crowned-Workshop-Revision-20-Release.json**, with the text in **Crowned-Workshop-Revision-20-Release.md**.
+Use **Bloodborne-Windows-v1.6-TatsunaKyo-Revision-21.zip** and its **.zip.sha256** file. The prepared release page delivered with them contains the title, description, exact source commit and archive checksum. The same information is in **Crowned-Workshop-Revision-21-Release.json**, with the text in **Crowned-Workshop-Revision-21-Release.md**.
 
 1. Open the prepared page and review the preview.
 2. Attach the full ZIP and its SHA256 file.

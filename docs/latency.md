@@ -1,6 +1,6 @@
 # Reflex and AMD Anti-Lag 2
 
-I added independent latency controls because choosing an upscaler or turning Frame Generation off should not remove the option to reduce the render queue. The launcher exposes them in Graphics; the in-game menu has them under Frames.
+I added independent latency controls because choosing an upscaler or turning Frame Generation off should not remove the option to reduce the render queue. Both interfaces keep them in **Frames**, beside FG and frame limiting.
 
 | Control | Choices | Requirements |
 |---|---|---|

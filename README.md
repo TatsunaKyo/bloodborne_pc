@@ -2,7 +2,7 @@
 
 # Bloodborne: The Crowned Workshop
 
-**Current revision: v1.6, revision 20 (preview).** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Release notes](docs/releases/windows-v1.6-tatsunakyo.20.md) · [Development roadmap](docs/tatsunakyo-next.md)
+**Current revision: v1.6, revision 21 (preview).** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Release notes](docs/releases/windows-v1.6-tatsunakyo.21.md) · [Development roadmap](docs/tatsunakyo-next.md)
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. I want to make Bloodborne more comfortable to play on a modern Windows PC, with more graphics choices, better window controls and settings you can change during play. This project would NOT be possible without the original work and the people involved.
 
@@ -14,7 +14,7 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 ## Getting started
 
 1. Download the full Windows ZIP from Releases and extract it into a new folder.
-2. Open **Bloodborne.exe** and choose your game folder under **Game & effects**.
+2. Open **Bloodborne.exe** and choose your game folder under **Game & files**.
 3. Choose your resolution and graphics settings, then press **PLAY**.
 4. Press **Insert** or **L3+R3** in-game to change the port's settings.
 
@@ -32,7 +32,7 @@ I wanted more control over image quality and more choices for people playing on 
 |---|---|
 | DLSS 3.7, 4 & 4.5 | Quality/render scale plus a separate model preset; requires a RTX GPU. |
 | FSR 3.1 | The existing reconstruction path, also used as a fallback if another provider fails. |
-| FSR 4 | Available with its shader assets and the required device features. |
+| FSR 4 / 4.1.1 | Additional reconstruction paths, available with their shader assets and the required device features. |
 | XeSS 3.0.2 | The added Intel Vulkan integration, with seven dedicated quality modes for supported Intel and other GPUs. |
 | TAA / native AA | Temporal AA at the scene's native resolution. |
 
@@ -54,13 +54,13 @@ Be warned that XeSS uses different upscaling ratios when compared to DLSS and FS
 
 ![Real game frames and extra display frames, with SDR and HDR10 support](docs/assets/features/frame-generation.png)
 
-Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**, which many current integrations in other forks lack. You can activate FG both from the launcher and the in-game menu. I made sure that you can have different FPS limiting options so that one is used when you are not using FG while the other applies only when FG is activated. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
+Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**; I wanted HDR users to have the same FG choices. You can activate FG both from the launcher and the in-game menu. I kept the normal FPS limit tied to real game frames, with or without FG, and added an optional second limit for the complete FG output. This lets you control the game rate and the generated display rate separately. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
 
 ### NVIDIA Reflex and AMD Anti-Lag 2
 
 ![Independent latency controls for supported NVIDIA and AMD GPUs](docs/assets/features/latency.png)
 
-I added independent latency controls because choosing an upscaler or turning Frame Generation off should not remove the option to reduce the render queue. The launcher exposes them in Graphics; the in-game menu has them under Frames. I made **Reflex** a separate Off / On / On + Boost choice, so you can use it without FG. Be warned that NVIDIA FG enables Reflex automatically. I also integrated **AMD Anti-Lag 2** through the supported Radeon Vulkan driver interface.
+I added independent latency controls because choosing an upscaler or turning Frame Generation off should not remove the option to reduce the render queue. Both interfaces keep these controls in **Frames**, alongside FG and the frame limits. I made **Reflex** a separate Off / On / On + Boost choice, so you can use it without FG. Be warned that NVIDIA FG enables Reflex automatically. I also integrated **AMD Anti-Lag 2** through the supported Radeon Vulkan driver interface.
 
 | Control | Choices | Requirements |
 |---|---|---|
@@ -69,67 +69,117 @@ I added independent latency controls because choosing an upscaler or turning Fra
 
 Intel XeSS Low Latency (XeLL) was/is planned but XeLL currently does not support Vulkan. You can read more here: [Latency controls, supported hardware and measurements](docs/latency.md)
 
-### Exact FPS limits
+### Frame limits and background control
 
-![Separate real and generated FPS limits, with exact number fields](docs/assets/features/fps-limits.png)
+![Separate real and output FPS caps, exact number controls and background Pause/30/60 modes](docs/assets/features/fps-limits.png)
 
-I added **75 FPS**, live real-frame limits and exact number fields alongside the sliders. You can also enable a separate FG output cap: 75 real FPS with x2 can produce up to 150 output FPS; an output cap of 120 lowers the real ceiling to 60.
+I wanted to choose the frame rate I actually use, including **75 FPS**, without fighting a slider that jumps hundreds of frames at the slightest movement. Both interfaces let you **type an exact number** and make small adjustments by dragging. The launcher also supports arrow-key steps and finer dragging with Shift. The real-frame cap can change while playing with Unlocked timing, and your choice is kept when you return to the launcher.
 
-[Real versus output FPS, live changes and safe timing](docs/display-and-overlay.md#fps-limits)
+The normal cap controls **real game frames**. The optional **FG output cap** includes the generated frames and works alongside it. A 75 FPS real cap therefore does not prevent x2 FG from displaying up to 150 FPS:
+
+| Real cap | FG | Optional output cap | What the limits allow |
+|---|---|---|---|
+| 75 FPS | Off | Off | Up to 75 real FPS. |
+| 75 FPS | x2 | Off | Up to 75 real and 150 output FPS. |
+| 75 FPS | x2 | 120 FPS | Up to 60 real and 120 output FPS. |
+| 75 FPS | x2 | 130 FPS | Up to 65 real and 130 output FPS. |
+
+The optional output field accepts **30–1000 FPS**; the negotiated FG multiplier and your system determine what can be reached. I keep the real-frame slider between 30 and 120 because extreme real rates can affect Bloodborne's movement and physics. Generated frames do not advance that logic.
+
+I also added a choice for when you Alt-Tab or leave the game in the background. There is no reason to keep rendering at full speed if you would rather save the power:
+
+| Background mode | What happens while the window is unfocused |
+|---|---|
+| Keep running | Keeps your normal frame policy and FG. |
+| **Pause game and rendering** | Pauses game work and rendering, while the window remains able to receive focus again. |
+| **30 FPS** | Limits real background frames to 30, or your lower foreground cap. |
+| **60 FPS** | Limits real background frames to 60, or your lower foreground cap. |
+
+FG is suspended during the background pause or limit, and your foreground settings return when you come back. Frame limits are in **Frames** and background behavior is in **Window**, with the same categories in both interfaces.
+
+[Frame-limit behavior and timing details](docs/display-and-overlay.md#fps-limits) · [Focus, pause and presentation](docs/display-and-overlay.md#window-and-background)
 
 ### A compact overlay you can customize
 
-![Choose the fields in a compact optional overlay](docs/assets/features/overlay.png)
+![Keep the basic readout or choose preset, resolution, FG, latency and a small real-frame graph](docs/assets/features/overlay.png)
 
-Keep the basic readout, hide it, or add the **DLSS preset letter, input/output resolution, active FG mode and Reflex PC latency**. I also added an optional small **frametime graph** so uneven real-frame delivery is visible. The extra text stays on one line; the graph adds one shallow row when enabled.
+I wanted the overlay to be useful without covering more of the game than necessary. You can keep the original basic readout, hide it completely, or choose which extra fields you want:
 
-[Overlay options and what the frametime graph measures](docs/display-and-overlay.md#performance-overlay)
+- **DLSS preset letter**, without the longer CNN/Transformer descriptions.
+- **Input and output resolution**, so you can see the scene size and reconstructed output.
+- **Active FG provider and multiplier**, based on the running mode.
+- **Reflex PC latency**, when the driver supplies a valid measurement.
+- A small **frametime graph**, with the latest and peak real-frame interval, to make uneven delivery visible.
 
-### Borderless fullscreen and background behavior
+The optional text stays on one line. The graph adds one shallow row only when enabled, and starts off. Play keeps **Show performance overlay**, with **Customize overlay…** taking you directly to **Overlay** in the launcher; the in-game tab has the same name.
 
-![Window modes and optional background pause or FPS limits](docs/assets/features/window.png)
+[Overlay fields and how to read the frametime graph](docs/display-and-overlay.md#performance-overlay)
 
-I added **Borderless fullscreen** for easier Alt-Tab and a choice of what happens in the background: keep running, pause the game and rendering, or limit it to 30 / 60 FPS. These options are available in the launcher and in-game.
+### Borderless fullscreen
+
+![Borderless desktop presentation and optional background pause or frame limits](docs/assets/features/window.png)
+
+I added **Borderless fullscreen** because I wanted to switch between the game and other windows comfortably. It uses the desktop resolution and refresh rate, alongside the original Windowed and Fullscreen choices. You can select it before launch or change window mode while playing.
+
+Borderless has its own **V-sync** choice. Off requests Immediate presentation for lower queueing; On requests Mailbox, with FIFO as a fallback. Windows, your driver and display still affect the final latency. The background Pause / 30 / 60 options above are useful here too, and all these controls live in **Window** in both interfaces.
 
 [Window modes, V-sync and background settings](docs/display-and-overlay.md#window-and-background)
 
 ### Temporal stability and renderer optimizations
 
-![Reset old temporal history after a camera cut](docs/assets/features/temporal.png)
+![Refresh temporal history after a scene change while retaining normal movement history](docs/assets/features/temporal.png)
 
-I've worked on motion history, camera resets and unnecessary renderer overhead to improve image stability and frame delivery. I can't guarantee an FPS increase on different configurations yet. Testing from other users is very welcome.
+I've worked on the motion history used by the upscalers and FG, on resetting old history after camera cuts or teleports, and on unnecessary renderer overhead. The aim is to keep moving objects more stable, avoid carrying one scene into another and give ready frames less CPU work to wait behind. Ordinary movement keeps its temporal accumulation so the image can continue to recover detail.
 
-[Quality and renderer work](docs/quality-and-performance.md) · [Performance comparisons](docs/performance.md)
+I have made these optimization changes, but I can't guarantee they will increase FPS on different configurations yet. Testing from other users is very welcome. The guides explain the individual changes and comparisons, including the FG inputs and the remaining pacing work.
+
+[Image quality and renderer work](docs/quality-and-performance.md) · [Performance comparisons](docs/performance.md)
 
 ### Optional cheats
 
-![Optional combat, movement and survival cheats](docs/assets/features/cheats.png)
+![Combat and movement multipliers plus optional stamina, consumable and fall-damage controls](docs/assets/features/cheats.png)
 
-I added **damage, incoming-damage reduction, Blood Echoes and movement multipliers**, plus **Infinite Stamina, consumables/ammunition kept on use and No Fall Damage** alongside the original patches. The runtime choices are shared between the launcher and in-game menu. They start off; the guide tracks the reports that still need work.
+I added runtime choices alongside the original startup cheats, so you can adjust them from the launcher or while playing:
 
-[Cheat choices, behavior and current limitations](docs/cheats.md)
+| Added choice | Available settings |
+|---|---|
+| Player damage | Off, x2, x4, x8, x16. |
+| Incoming enemy damage reduction | Off, x2, x4, x8, x16; x2 halves received damage without changing the defense stat. |
+| Blood Echoes gained | Off, x2, x4, x8, x16. |
+| Movement speed | Off, x1.5, x2, x4, x8, x16. |
+| Infinite Stamina | Optional toggle. |
+| Consumables / ammunition kept on use | Optional toggle; you still need to own the item. |
+| No Fall Damage | Optional toggle for normal falls; scripted deaths still apply. |
+
+They start off and share the **Cheats** category in both interfaces. I am still working on the reports involving sustained running stamina, Echoes awards and firing with several cheats enabled together; the guide keeps those details visible. Startup patches retain their restart requirement.
+
+[Cheat behavior and current limitations](docs/cheats.md)
 
 ### A compact English in-game menu
 
-![Open shared in-game settings with Insert or L3 plus R3](docs/assets/features/in-game.png)
+![Seven matching settings categories, available in English or Russian with Insert or L3+R3](docs/assets/features/in-game.png)
 
-I translated the menu into **English**, retained Russian, and arranged it into **seven tabs** so you can reach a setting without searching through one long page. The menu and launcher share your saved preferences.
+I translated the port's settings menu into **English**, retained Russian, and replaced the long page with **seven tabs**: Image, Frames, Window, Overlay, Cheats, Effects and Advanced. Press **Insert** or **L3+R3** to open it. Close and restart controls stay within reach, with a layout that adapts to the available space.
 
-[Menu tabs, live settings and restart requirements](docs/launcher-and-menu.md#in-game-settings)
+Those seven categories now match the launcher. If you find Reflex under Frames before launching, you find it under Frames during play too. Sharpening stays in Image, background behavior in Window, and model detail/game effects in Effects. Both interfaces use the same saved preferences, and settings that need a restart tell you so.
+
+[Shared categories, live settings and restart requirements](docs/launcher-and-menu.md#in-game-settings)
 
 ### The Crowned Workshop launcher
 
-![The Crowned Workshop launcher: quick choices and detailed graphics settings](docs/assets/features/launcher.png)
+![Play quick choices lead to seven organized settings pages with shared preferences](docs/assets/features/launcher.png)
 
-I redesigned the launcher around my workshop, lantern and crowned TK emblem. Play keeps the quick choices together, with conditional DLSS/XeSS controls and a separate NVIDIA multiplier. Detailed settings live on their own pages.
+I redesigned the launcher around my workshop, lantern and crowned TK emblem, and organized the settings so the visual identity also makes it easier to use. The sidebar separates the seven shared **Settings** pages from the launcher tools, and bordered sections separate related controls within a page.
 
-[Launcher tour and screenshots](docs/launcher-and-menu.md#the-launcher)
+**Play** keeps the quick choices together, grouped into image, frames and window/overlay. The DLSS model selector appears only when DLSS is selected, XeSS has its own quality selector, and NVIDIA FG shows its multiplier on a separate row. Each complete setting has one home in the detailed pages; Play is a shortcut to those same preferences. **Game & files**, mods, online setup and logs remain launcher tools.
+
+[Launcher tour, category table and screenshots](docs/launcher-and-menu.md#the-launcher)
 
 ### Optional developer diagnostics
 
 ![Optional developer profiling with session logs and crash information](docs/assets/features/diagnostics.png)
 
-I added an opt-in profiler that keeps session logs, settings, timings and Windows crash details when available. It starts off and can be enabled from **Advanced → Diagnostics** when investigating a problem.
+I added an opt-in profiler so a crash or performance report can include more than a description of what happened. It keeps a separate session folder with logs, settings, timings and Windows crash details when available. Enable **Advanced → Diagnostics** before reproducing a problem; it starts off for normal play because profiling can add overhead.
 
 [Diagnostics and useful bug reports](docs/performance.md#comparing-a-change-during-play)
 

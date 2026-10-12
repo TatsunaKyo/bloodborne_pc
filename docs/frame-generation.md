@@ -1,6 +1,6 @@
 # Frame Generation and Multi Frame Generation
 
-I added analytical FSR 3.1.6 Frame Generation and an experimental NVIDIA DLSS FG/MFG backend using Streamline 2.14.1 and its production DLSS-G 310.9.1 runtime. I kept FG independent of the upscaler choice and off by default. Select it on Play or Graphics in the launcher or in the Insert / L3+R3 menu. A temporal upscaler is needed: DLSS, XeSS, FSR 3.1, FSR 4 or native-resolution TAA. FSR FG is not restricted to AMD cards or FSR upscaling.
+I added analytical FSR 3.1.6 Frame Generation and an experimental NVIDIA DLSS FG/MFG backend using Streamline 2.14.1 and its production DLSS-G 310.9.1 runtime. I kept FG independent of the upscaler choice and off by default. Select it on Play or **Frames** in the launcher, or in **Frames** in the Insert / L3+R3 menu. A temporal upscaler is needed: DLSS, XeSS, FSR 3.1, FSR 4 or native-resolution TAA. FSR FG is not restricted to AMD cards or FSR upscaling.
 
 ## SDR, HDR and scene inputs
 

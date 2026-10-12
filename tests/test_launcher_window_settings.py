@@ -62,7 +62,7 @@ tk_api = types.SimpleNamespace(
     BooleanVar=lambda **kwargs: tk.BooleanVar(master=interpreter, **kwargs),
     StringVar=lambda **kwargs: tk.StringVar(master=interpreter, **kwargs),
     DoubleVar=lambda **kwargs: tk.DoubleVar(master=interpreter, **kwargs))
-ttk_api = types.SimpleNamespace(Frame=Widget, Label=Widget, Combobox=Widget,
+ttk_api = types.SimpleNamespace(Frame=Widget, LabelFrame=Widget, Entry=Widget, Label=Widget, Combobox=Widget,
                                 Checkbutton=Widget, Button=Widget, Scale=Widget, Spinbox=Widget, Progressbar=Widget)
 
 
@@ -75,14 +75,20 @@ def build(settings):
     obj.menu_baseline = dict(obj.menu)
     obj.vars, obj.pages, obj.content = {}, {}, Widget()
     obj.mod_order, obj.patch_vars = [], {}
-    obj.scrolled_page = lambda *args: Widget()
+    def scrolled_page(name, *_args):
+        widget = Widget(); widget.settings_category = name; return widget
+    obj.scrolled_page = scrolled_page
     obj.version_warning = lambda *args: None
     obj.refresh_status = lambda *args: None
     obj.build_play()
     home_choice = next(w for w in Widget.nodes if 'values' in w.kwargs and
                        w.kwargs['values'][0] in ('Windowed', 'Оконный'))
-    obj.build_graphics()
-    obj.build_display()
+    obj.build_image()
+    obj.build_frames()
+    obj.build_window()
+    obj.build_overlay()
+    obj.build_effects()
+    obj.build_advanced()
     display_choice = [w for w in Widget.nodes if 'values' in w.kwargs and
                       w.kwargs['values'][0] in ('Windowed', 'Оконный')][-1]
     obj.build_cheats()
@@ -257,7 +263,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             obj.vars['dlss_preset'].set('default')
             overlay_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
                               w.kwargs['variable'] is obj.vars['show_fps']]
-            assert len(overlay_checks) == 3  # Play, Graphics, Display & FPS.
+            assert len(overlay_checks) == 2  # Play and Overlay.
             for box in overlay_checks:
                 previous_flag = obj.vars['show_fps'].get()
                 box.invoke()
@@ -267,7 +273,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             obj.vars['show_fps'].set(True)
             preset_overlay_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
                                      w.kwargs['variable'] is obj.vars['show_dlss_preset']]
-            assert len(preset_overlay_checks) == 2  # Graphics and Display & FPS.
+            assert len(preset_overlay_checks) == 1  # Overlay.
             assert obj.overlay_link.parent is obj.quick_dlss_row.parent
             assert all(event in obj.overlay_link.bindings for event in ('<Button-1>', '<Return>', '<space>'))
             assert not any(box.parent is obj.quick_dlss_row.parent for box in preset_overlay_checks)
@@ -283,7 +289,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
             obj.vars['show_dlss_preset'].set(False)
             graph_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
                             w.kwargs['variable'] is obj.vars['show_frametime_graph']]
-            assert len(graph_checks) == 1  # Display & FPS, linked from Play.
+            assert len(graph_checks) == 1  # Overlay, linked from Play.
             assert not obj.vars['show_frametime_graph'].get()
             for enabled in (True, False):
                 graph_checks[0].invoke()
@@ -375,7 +381,7 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
         if previous is None: os.environ.pop('BB_CONFIG', None)
         else: os.environ['BB_CONFIG'] = previous
 
-print('PASS: launcher controls in Play/Graphics/Display, seven DLSS presets enabled only with DLSS selected, '
+print('PASS: launcher controls in Play/Image/Frames/Window/Overlay, seven DLSS presets enabled only with DLSS selected, '
       'exact E/F/J/K/M/L order, presets independent of quality/resolution, '
       'shared OSD and preset visibility switches, basic overlay by default, legacy FPS/fullscreen migration, '
       'preservation of concurrent in-game changes, '

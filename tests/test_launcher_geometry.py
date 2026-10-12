@@ -118,30 +118,57 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                                         'upscaler':provider, 'fg':fg, 'control_rectangles':rects,
                                         'font':text_font.actual(), 'font_metrics':text_font.metrics(),
                                         'root_rectangle':rectangle(root), 'link_rectangle':rectangle(obj.overlay_link)})
+                    owners = {key: [category for category, _widget in locations]
+                              for key, locations in obj.setting_locations.items()}
+                    assert all(len(locations) == 1 for locations in owners.values()), owners
+                    mapping_file = source.parents[1] / 'out/verification/menu21/settings-categories.json'
+                    assert mapping_file.is_file(), 'Run the ImGui category fixture before the compiled launcher geometry test.'
+                    native = json.loads(mapping_file.read_text())
+                    shared = set(owners).intersection(native)
+                    assert len(shared) >= 35, (len(shared), owners, native)
+                    assert all(owners[key][0] == native[key] for key in shared), {
+                        key: (owners[key], native[key]) for key in shared if owners[key][0] != native[key]}
+                    for category in ('image', 'frames', 'window', 'overlay', 'cheats', 'effects', 'advanced'):
+                        obj.show(category); root.update()
+                        view = rectangle(obj.pages[category].viewport)
+                        for key, locations in obj.setting_locations.items():
+                            for owner, widget in locations:
+                                if owner == category and widget.winfo_ismapped():
+                                    bounds = rectangle(widget)
+                                    assert bounds[0] >= view[0] and bounds[0]+bounds[2] <= view[0]+view[2], (language, scale, size, category, key, bounds, view)
+                    (source.parents[1] / f'out/verification/launcher-categories-revision{revision}.json').write_text(
+                        json.dumps({'owners':owners, 'shared_count':len(shared), 'shared_native':{key:native[key] for key in sorted(shared)}}, indent=2)+'\n')
                     # Clicking the link returns to the overlay group even after scrolling.
                     root.focus_force()
-                    obj.nav['graphics'].focus_set()
+                    obj.nav['image'].focus_set()
                     root.update()
-                    assert root.focus_get() == obj.nav['graphics']
-                    obj.nav['graphics'].event_generate('<Return>')
+                    assert root.focus_get() == obj.nav['image']
+                    obj.nav['image'].event_generate('<Return>')
                     root.update()
-                    assert obj.current_page == 'graphics'
-                    obj.show('display')
-                    obj.pages['display'].scroll(100)
+                    assert obj.current_page == 'image'
+                    obj.show('overlay')
+                    obj.pages['overlay'].scroll(100)
                     obj.show('play')
                     root.update()
                     obj.overlay_link.event_generate('<Button-1>')
                     root.update()
-                    assert obj.current_page == 'display'
-                    # The new graph is a real shared checkbox on Display & FPS.
+                    assert obj.current_page == 'overlay'
+                    # The new graph is a real shared checkbox on Overlay.
                     graph = obj.frametime_graph_check
                     assert graph.grid_info()['column'] == 0 and graph.grid_info()['columnspan'] == 2
-                    assert graph.winfo_width() <= obj.pages['display'].winfo_width()
+                    assert graph.winfo_width() <= obj.pages['overlay'].winfo_width()
                     previous = obj.vars['show_frametime_graph'].get()
                     graph.invoke(); root.update()
                     assert obj.vars['show_frametime_graph'].get() != previous
                     graph.invoke(); root.update()
                     assert obj.vars['show_frametime_graph'].get() == previous
+                    if language == 'en' and scale == 1.0 and size == (1280, 850):
+                        from PIL import ImageGrab
+                        for page in ('image','frames','window','overlay','cheats','effects','advanced'):
+                            obj.show(page); obj.pages[page].scroll_to_top(); root.update()
+                            bounds=rectangle(root)
+                            ImageGrab.grab(bbox=(bounds[0],bounds[1],bounds[0]+bounds[2],bounds[1]+bounds[3]),
+                                           xdisplay=os.environ['DISPLAY']).save(source.parents[1] / f'out/verification/launcher-{page}-revision{revision}.png')
                     obj.show('play')
                     root.update()
                     if language == 'en' and scale == 1.5 and size == (1280, 850):

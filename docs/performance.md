@@ -10,6 +10,6 @@ Use the same save, location, camera direction, output resolution, cap and FG mod
 
 For more detail, Advanced offers frame statistics and GPU pass timing in the log. Advanced → Diagnostics also offers per-session developer profiling and crash diagnostics. These are optional and add overhead, so leave them off for normal play. Logs are written under the chosen saves folder, or `user/` beside the launcher. The upscaler passes are labeled with their provider.
 
-I kept the default one-frame GPU queue because I want low latency. You can try a larger Frames ahead value if it helps your configuration, but check the extra delay as well. I've reduced the repeated renderer work I found; I still welcome gameplay comparisons from other PCs to see how much that helps in practice.
+I kept the default one-frame GPU queue because I want low latency. You can try a larger **Frames → Frames ahead of the GPU** value if it helps your configuration, but check the extra delay as well. I've reduced the repeated renderer work I found; I still welcome gameplay comparisons from other PCs to see how much that helps in practice.
 
 I test gameplay on my Windows 11 / RTX setup. [Testing and known issues](testing.md) collects that coverage and the remaining checks.

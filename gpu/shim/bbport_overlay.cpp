@@ -471,11 +471,31 @@ void ImageSettings() {
               "игры остаётся в 1080p — на Steam Deck и старых видеокартах это заметно медленнее. "
               "Выключена: всё рисуется в разрешении пресета, смена — через перезапуск. Авто "
               "включает её на мощных дискретных видеокартах. Применяется после перезапуска игры."));
+    Section(Text("Image tuning", "Настройка изображения"));
+    ImGui::BeginDisabled(!upscaler_on);
+    Checkbox(Text("Sharpening (RCAS)###sharpen", "Резкость (RCAS)###sharpen"), s.sharpen);
+    ImGui::BeginDisabled(!s.sharpen);
+    Slider(Text("Sharpness###sharpness", "Сила резкости###sharpness"), s.sharpness, 0.0f, 2.0f);
+    Hint(Text("Up to 1: the upscaler's own sharpening (RCAS). Above 1: adds another RCAS pass. "
+              "Ctrl+click the slider to enter an exact value.",
+              "До 1 — резкость самого апскейлера (RCAS). Выше 1 добавляется ещё один проход RCAS."
+              " Ctrl+клик по ползунку — ввести точное значение."));
+    ImGui::EndDisabled();
+    Checkbox(Text("Object motion vectors###object_motion",
+                  "Векторы движения объектов###object_motion"), s.object_motion);
+    Hint(Text("Accurate vectors for animated objects: clothing and weapons break up less during "
+              "motion. Static scenes do not receive an extra pass. Changes take effect after "
+              "restarting the game.",
+              "Точные векторы для анимированных объектов: одежда и оружие меньше рассыпаются при "
+              "движении. Статичная сцена не получает дополнительный проход. Изменение применяется"
+              " после перезапуска игры."));
+    ImGui::EndDisabled();
+
 }
 
 void FrameSettings() {
     auto& s = BbSettings::Get();
-    Section(Text("Frame limits and latency", "Лимиты кадров и задержка"));
+    Section(Text("Real game frames", "Реальные кадры игры"));
     ImGui::BeginDisabled(!s.variable_frame_time);
     const int real_cap = s.real_fps_limit;
     const char* cap_modes[] = {Text("Launcher / display policy", "Настройка запуска / монитора"),
@@ -509,9 +529,10 @@ void FrameSettings() {
     Hint(s.variable_frame_time ?
         Text("Counts real game frames; FG can add frames above this cap. Changes are shared with the launcher. Keep real FPS at or below 120 for the game's timing.",
              "Лимит реальных кадров; FG может добавлять кадры сверх него. Общая настройка с лаунчером. Для тайминга игры рекомендуется не выше 120 FPS.") :
-        Text("Choose Unlocked under Display & FPS in the launcher to change game FPS live. This session uses a fixed game-timing patch.",
-             "Выберите Unlocked в разделе Display & FPS лаунчера для изменения FPS в игре. В этой сессии используется фиксированный тайминг."));
+        Text("Choose Unlocked under Frames in the launcher to change game FPS live. This session uses a fixed game-timing patch.",
+             "Выберите Unlocked в разделе Frames лаунчера для изменения FPS в игре. В этой сессии используется фиксированный тайминг."));
     const bool upscaler_on = s.upscaler != BbSettings::UpscalerOff;
+    Section(Text("Frame Generation and output cap", "Генерация кадров и лимит вывода"));
     const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG"};
     const int fg=std::clamp(s.frame_generation.load(),0,2);
     if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
@@ -538,24 +559,6 @@ void FrameSettings() {
         else if (s.frame_generation_active>1) ImGui::Text(Text("NVIDIA FG active: %dx","NVIDIA FG активна: %dx"),s.frame_generation_active.load());
         else ImGui::TextUnformatted(Text("NVIDIA FG: waiting for valid scene frames","NVIDIA FG: ожидание кадров сцены"));
     }
-    const char* reflex_modes[]={Text("Off","Выключено"),Text("On","Включено"),"On + Boost"};
-    const int reflex=std::clamp(s.reflex.load(),0,2);
-    ImGui::BeginDisabled(!s.reflex_supported);
-    if (ImGui::BeginCombo("NVIDIA Reflex###reflex",reflex_modes[reflex])) {
-        for(int i=0;i<3;++i) if(ImGui::Selectable(reflex_modes[i],i==reflex)) Store(s.reflex,i,true);
-        ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
-    Hint(Text("Reflex works independently of NVIDIA FG. NVIDIA FG enables Reflex automatically; Boost is optional. Unsupported choices are disabled.",
-              "Reflex работает независимо от NVIDIA FG. Генерация NVIDIA включает Reflex автоматически; Boost необязателен. Неподдерживаемые настройки недоступны."));
-    ImGui::BeginDisabled(!s.amd_antilag_supported);
-    Checkbox("AMD Anti-Lag 2###amd_antilag",s.amd_antilag);
-    ImGui::EndDisabled();
-    Hint(s.amd_antilag_supported ?
-        Text("Reduces input latency through the Radeon Vulkan driver. Works independently of the upscaler and FSR FG.",
-             "Снижает задержку ввода через драйвер Radeon Vulkan. Работает независимо от апскейлера и FSR FG.") :
-        Text("AMD Anti-Lag 2 needs a Radeon GPU and a driver with VK_AMD_anti_lag support.",
-             "AMD Anti-Lag 2 требует Radeon и драйвер с поддержкой VK_AMD_anti_lag."));
     Hint(Text("FSR FG adds one interpolated frame between real frames, in SDR or HDR10. The normal FPS limit counts real frames: 75 can produce 150 with FG 2x. Background FPS caps disable generation.",
               "FSR FG добавляет промежуточный кадр в SDR или HDR10. Обычный лимит относится к реальным кадрам: 75 даёт до 150 с FG 2x. При лимите FPS в фоне генерация отключается."));
     Checkbox(Text("Limit total FPS with Frame Generation###limit_generated_fps",
@@ -585,46 +588,31 @@ void FrameSettings() {
         else ImGui::TextUnformatted(s.frame_generation_active==2 ? Text("FSR FG active: 2x","FSR FG активна: 2x") :
                                   Text("FSR FG: waiting for valid scene frames","FSR FG: ожидание кадров сцены"));
     }
+    Section(Text("Latency", "Задержка"));
+    const char* reflex_modes[]={Text("Off","Выключено"),Text("On","Включено"),"On + Boost"};
+    const int reflex=std::clamp(s.reflex.load(),0,2);
+    ImGui::BeginDisabled(!s.reflex_supported);
+    if (ImGui::BeginCombo("NVIDIA Reflex###reflex",reflex_modes[reflex])) {
+        for(int i=0;i<3;++i) if(ImGui::Selectable(reflex_modes[i],i==reflex)) Store(s.reflex,i,true);
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    Hint(Text("Reflex works independently of NVIDIA FG. NVIDIA FG enables Reflex automatically; Boost is optional. Unsupported choices are disabled.",
+              "Reflex работает независимо от NVIDIA FG. Генерация NVIDIA включает Reflex автоматически; Boost необязателен. Неподдерживаемые настройки недоступны."));
+    ImGui::BeginDisabled(!s.amd_antilag_supported);
+    Checkbox("AMD Anti-Lag 2###amd_antilag",s.amd_antilag);
+    ImGui::EndDisabled();
+    Hint(s.amd_antilag_supported ?
+        Text("Reduces input latency through the Radeon Vulkan driver. Works independently of the upscaler and FSR FG.",
+             "Снижает задержку ввода через драйвер Radeon Vulkan. Работает независимо от апскейлера и FSR FG.") :
+        Text("AMD Anti-Lag 2 needs a Radeon GPU and a driver with VK_AMD_anti_lag support.",
+             "AMD Anti-Lag 2 требует Radeon и драйвер с поддержкой VK_AMD_anti_lag."));
+
 }
 
 void WindowSettings() {
     auto& s = BbSettings::Get();
-    Section(Text("Window and focus", "Окно и фокус"));
-    static const char* languages[] = {"English", "Русский"};
-    int language = s.menu_language;
-    if (ImGui::BeginCombo(Text("Menu language###menu_language", "Язык меню###menu_language"),
-                          languages[language])) {
-        for (int i = 0; i < BbSettings::MenuLanguageCount; ++i) {
-            if (ImGui::Selectable(languages[i], i == language)) {
-                Store(s.menu_language, i, true);
-            }
-        }
-        ImGui::EndCombo();
-    }
-
-    const char* background_modes[] = {
-        Text("Keep running###background_run", "Продолжать работу###background_run"),
-        Text("Pause game and rendering###background_pause", "Приостановить игру и рендер###background_pause"),
-        "30 FPS", "60 FPS",
-    };
-    int background = s.background_mode;
-    if (ImGui::BeginCombo(Text("When in background###background_mode", "В фоне###background_mode"),
-                          background_modes[background])) {
-        for (int i = 0; i < 4; ++i) {
-            if (ImGui::Selectable(background_modes[i], i == background)) {
-                Store(s.background_mode, i, true);
-                // Save before focus can be lost, rather than waiting for menu close.
-                BbSettings::Save();
-                dirty = false;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    Hint(Text("When the window loses focus: keep running, pause the entire game on Windows, "
-              "or cap background rendering. Your foreground frame cap is kept.",
-              "При потере фокуса: продолжать, приостановить всю игру в Windows "
-              "или ограничить FPS в фоне. Основной лимит FPS сохраняется."));
-
+    Section(Text("Window and presentation", "Окно и показ кадров"));
     const char* window_modes[] = {
         Text("Launcher setting###window_launcher", "Настройка лаунчера###window_launcher"),
         Text("Windowed###window_windowed", "Оконный###window_windowed"),
@@ -652,6 +640,31 @@ void WindowSettings() {
                   "Вкл: Mailbox, если поддерживается, иначе FIFO. Задержка зависит от Windows и драйвера."));
     }
 
+    Section(Text("Background behavior", "Работа в фоне"));
+    const char* background_modes[] = {
+        Text("Keep running###background_run", "Продолжать работу###background_run"),
+        Text("Pause game and rendering###background_pause", "Приостановить игру и рендер###background_pause"),
+        "30 FPS", "60 FPS",
+    };
+    int background = s.background_mode;
+    if (ImGui::BeginCombo(Text("When in background###background_mode", "В фоне###background_mode"),
+                          background_modes[background])) {
+        for (int i = 0; i < 4; ++i) {
+            if (ImGui::Selectable(background_modes[i], i == background)) {
+                Store(s.background_mode, i, true);
+                // Save before focus can be lost, rather than waiting for menu close.
+                BbSettings::Save();
+                dirty = false;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    Hint(Text("When the window loses focus: keep running, pause the entire game on Windows, "
+              "or cap background rendering. Your foreground frame cap is kept.",
+              "При потере фокуса: продолжать, приостановить всю игру в Windows "
+              "или ограничить FPS в фоне. Основной лимит FPS сохраняется."));
+
+
 }
 
 void OverlaySettings() {
@@ -662,6 +675,7 @@ void OverlaySettings() {
               "Hide it without disabling this settings menu.",
               "FPS, время кадра и апскейлер в правом верхнем углу. "
               "Отключение не скрывает это меню настроек."));
+    Section(Text("Optional fields", "Дополнительные поля"));
     Checkbox(Text("Show DLSS preset in overlay###show_dlss_preset",
                   "Показывать пресет DLSS в статистике###show_dlss_preset"), s.show_dlss_preset);
     Hint(Text("Add the preset letter on the same line. K>M means K is active and M is pending. "
@@ -678,6 +692,7 @@ void OverlaySettings() {
                   "Показывать задержку ПК в статистике###show_latency"),s.show_latency);
     Hint(Text("Reflex measures simulation start to GPU completion. N/A means there is no valid driver sample. Monitor and input-device latency are not included.",
               "Reflex измеряет время от начала симуляции до завершения GPU. N/A: нет данных драйвера. Задержка монитора и устройства ввода не учитывается."));
+    Section(Text("Frametime graph", "График времени кадров"));
     Checkbox(Text("Show frametime graph in overlay###show_frametime_graph",
                   "Показывать график времени кадров###show_frametime_graph"),s.show_frametime_graph);
     Hint(Text("Last 240 real-frame presentation intervals, latest and peak time. Generated frames are not included. This is not GPU render time or monitor latency.",
@@ -686,7 +701,7 @@ void OverlaySettings() {
 
 void CheatSettings() {
     auto& s = BbSettings::Get();
-    Section(Text("Cheats", "Читы"));
+    Section(Text("Runtime cheats", "Читы во время игры"));
     const auto multiplier = [&](const char* label, std::atomic<int>& target,
                                 uint32_t feature, bool motion = false) {
         const char* const* labels = motion ? BbSettings::MovementMultipliers : BbSettings::CheatMultipliers;
@@ -736,17 +751,22 @@ void CheatSettings() {
 
 void AdvancedSettings() {
     auto& s = BbSettings::Get();
+    Section(Text("Menu language", "Язык меню"));
+    static const char* languages[] = {"English", "Русский"};
+    int language = s.menu_language;
+    if (ImGui::BeginCombo(Text("Menu language###menu_language", "Язык меню###menu_language"),
+                          languages[language])) {
+        for (int i = 0; i < BbSettings::MenuLanguageCount; ++i) {
+            if (ImGui::Selectable(languages[i], i == language)) {
+                Store(s.menu_language, i, true);
+            }
+        }
+        ImGui::EndCombo();
+    }
+
     const bool taa = s.upscaler == BbSettings::UpscalerTaa;
     ImGui::BeginDisabled(s.upscaler == BbSettings::UpscalerOff);
     Section(Text("Reconstruction and motion", "Реконструкция и движение"));
-    Checkbox(Text("Sharpening (RCAS)###sharpen", "Резкость (RCAS)###sharpen"), s.sharpen);
-    ImGui::BeginDisabled(!s.sharpen);
-    Slider(Text("Sharpness###sharpness", "Сила резкости###sharpness"), s.sharpness, 0.0f, 2.0f);
-    Hint(Text("Up to 1: the upscaler's own sharpening (RCAS). Above 1: adds another RCAS pass. "
-              "Ctrl+click the slider to enter an exact value.",
-              "До 1 — резкость самого апскейлера (RCAS). Выше 1 добавляется ещё один проход RCAS."
-              " Ctrl+клик по ползунку — ввести точное значение."));
-    ImGui::EndDisabled();
     Checkbox(Text("Subpixel jitter###jitter", "Субпиксельный сдвиг (jitter)###jitter"), s.jitter);
     Hint(Text("Each frame shifts the scene by a fraction of a pixel, letting the upscaler combine"
               " several frames to recover more detail. Without jitter, only history-based "
@@ -773,14 +793,6 @@ void AdvancedSettings() {
     }
     ImGui::EndDisabled();
     ImGui::EndDisabled();
-    Checkbox(Text("Character motion vectors###object_motion",
-                  "Векторы движения персонажей###object_motion"), s.object_motion);
-    Hint(Text("Accurate vectors for animated objects: clothing and weapons break up less during "
-              "motion. Static scenes do not receive an extra pass. Changes take effect after "
-              "restarting the game.",
-              "Точные векторы для анимированных объектов: одежда и оружие меньше рассыпаются при "
-              "движении. Статичная сцена не получает дополнительный проход. Изменение применяется"
-              " после перезапуска игры."));
     bool show_motion = s.debug_view == BbSettings::DebugMotion;
     if (ImGui::Checkbox(Text("Show motion vectors (debug)###show_motion",
                              "Показать векторы движения (отладка)###show_motion"), &show_motion)) {

@@ -50,3 +50,7 @@ Maintained by TatsunaKyo. Upstream and vendor credits are preserved.
 I replay 6,144 raw frametime intervals through the production history, including ring wrap, hitches, peaks, pauses and invalid/backward timestamps. The actual ImGui controls cover graph toggle/save, visibility and twenty compact overlay layouts in English/Russian at 75–200% scaling, alongside the existing 1,960 menu layouts. The queue regression executes the production scheduler and sparse-binding methods with recorded Vulkan entry points: five blocked host phases permit presentation, and 505 calls each to submit, bind and present retain exclusive queue access and the sparse-wait dependency. Address/undefined-behavior checks pass; leak checking stays disabled in the restricted host environment.
 
 The launcher and native Windows components are rebuilt. My Revision 19 gameplay report is the available PC comparison; the new pacing change still needs a Revision 20 run on that same setup. I welcome results from other PCs as well.
+
+## Shared settings organization
+
+The Revision 21 checks compare the actual ImGui setting IDs with the compiled launcher's full-page ownership. A shared option must have the same category in both interfaces, and every complete launcher control has one owner. The GUI checks cover all seven settings pages, their horizontal bounds at the minimum window size, conditional DLSS/XeSS/FG rows and the Play-to-Overlay link. These are interface checks; the rendering/pacing changes and gameplay evidence retain their existing revision labels.

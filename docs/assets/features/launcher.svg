@@ -1,23 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="460" viewBox="0 0 1000 460" role="img" aria-labelledby="title desc">
-<title id="title">THE CROWNED WORKSHOP</title><desc id="desc">The launcher carries TatsunaKyo’s identity, credits the original Windows port and shows dedicated DLSS or XeSS quality controls when selected.</desc>
-<rect width="1000" height="460" fill="#12100f"/>
-<rect x="12" y="12" width="976" height="436" rx="4" fill="none" stroke="#655341"/>
-<path d="M32 100H968M32 365H968" stroke="#5c4e40"/>
-<g transform="translate(896 31) scale(.22)" color="#d6c1a1"><ns0:g xmlns:ns0="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500" role="img" aria-labelledby="title desc"><title id="title">QUICK START, CLEAR SETTINGS</title><desc id="desc">Play retains quick choices. Full settings have one category each, grouped sections and matching in-game names.</desc><rect width="1000" height="500" fill="#0c0f12"/><rect x="12" y="12" width="976" height="476" rx="5" fill="none" stroke="#49453d"/><g transform="translate(895 24) scale(.23)" color="#d6c1a1"><ns0:g xmlns:ns0="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter">
     <ns0:path id="crown" d="M54 74L47 34L90 54L128 18L166 54L209 34L202 74M58 87H198" />
     <ns0:path id="workshop-arch" d="M47 218V153Q47 122 128 101Q209 122 209 153V218" />
     <ns0:path id="initial-t" d="M75 137H137M106 137V216" />
     <ns0:path id="initial-k" d="M151 137V216M186 137L151 174L189 216" />
     <ns0:path id="workbench" d="M40 237H216M57 237V246M199 237V246" />
   </ns0:g>
-</g>
-<text x="42" y="77" text-anchor="start" fill="#d6c1a1" font-family="DejaVu Serif" font-size="44">THE CROWNED WORKSHOP</text>
-<rect x="60" y="145" width="390" height="194" rx="4" fill="#1b1714" stroke="#5c4e40"/><path d="M76 321V161H434" fill="none" stroke="#aa8f6e" stroke-opacity=".3"/>
-<text x="255" y="231" text-anchor="middle" fill="#d6c1a1" font-family="DejaVu Serif" font-size="44">Play</text>
-<text x="255" y="295" text-anchor="middle" fill="#b3a48f" font-family="DejaVu Sans" font-size="32">Quick choices</text>
-<rect x="550" y="145" width="390" height="194" rx="4" fill="#1b1714" stroke="#5c4e40"/><path d="M566 321V161H924" fill="none" stroke="#aa8f6e" stroke-opacity=".3"/>
-<text x="745" y="231" text-anchor="middle" fill="#d6c1a1" font-family="DejaVu Serif" font-size="44">Graphics</text>
-<text x="745" y="295" text-anchor="middle" fill="#b3a48f" font-family="DejaVu Sans" font-size="32">Fine adjustments</text>
-<path d="M474 238H523M510 226L523 238L510 250" fill="none" stroke="#8d7964" stroke-width="3"/>
-<text x="500" y="418" text-anchor="middle" fill="#f1e9dc" font-family="DejaVu Sans" font-size="32">Conditional selectors · Scalable layout</text>
-</svg>
+</g><text x="34" y="77" font-family="DejaVu Serif" font-size="39" text-anchor="start" fill="#d6c1a1">QUICK START, CLEAR SETTINGS</text><path d="M34 103H966" stroke="#49453d"/><rect x="34" y="132" width="310" height="258" rx="5" fill="#171c21" stroke="#49453d"/><rect x="394" y="132" width="572" height="258" rx="5" fill="#171c21" stroke="#49453d"/><path d="M355 258h26m-12-10l12 10-12 10" fill="none" stroke="#d6c1a1" stroke-width="3"/><text x="55" y="185" font-family="DejaVu Serif" font-size="39" text-anchor="start" fill="#d6c1a1">PLAY</text><text x="55" y="243" font-family="DejaVu Sans" font-size="32" text-anchor="start" fill="#efe6d8">Quick choices</text><text x="55" y="301" font-family="DejaVu Sans" font-size="32" text-anchor="start" fill="#efe6d8">Start the game</text><text x="415" y="183" font-family="DejaVu Sans" font-size="32" text-anchor="start" fill="#d6c1a1">SEVEN SETTINGS PAGES</text><text x="415" y="237" font-family="DejaVu Sans" font-size="31" text-anchor="start" fill="#efe6d8">Image / Frames / Window</text><text x="415" y="289" font-family="DejaVu Sans" font-size="31" text-anchor="start" fill="#efe6d8">Overlay / Cheats / Effects</text><text x="415" y="341" font-family="DejaVu Sans" font-size="31" text-anchor="start" fill="#efe6d8">Advanced</text><text x="34" y="463" font-family="DejaVu Sans" font-size="30" text-anchor="start" fill="#b9b0a2">One full page per option · Shared preferences</text></svg>
