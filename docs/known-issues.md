@@ -10,8 +10,6 @@ There is no newer confirmed reproduction attached to the older reports below. I 
 
 | Earlier report to recheck | What to compare |
 |---|---|
-| Crash after firing with damage/reduction and kept consumables | Same shot/ammunition state, named cheat combination, revision and optional diagnostics. |
-| Infinite Stamina during sustained running | Attacks already worked in the reported test; compare continuous sprinting with the current verified hooks. |
 | Blood Echoes multiplier | Award source, selected multiplier and the value before/after the award. |
 | Uneven delivery with NVIDIA FG | Same scene, real/output caps, HDR, upscaler and FG mode; distinguish real-frame graph from displayed-frame measurements. |
 
