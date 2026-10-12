@@ -1,7 +1,8 @@
 # The Crowned Workshop — Release notes
 
-Revision 21 is the latest published stable release; Revision 22 is the prepared infrastructure update. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
+Revision 21 is the latest published stable release. Revision 22 prepared the updater/release infrastructure; Revision 23 adds Support Report and Save Manager. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
 
+- [Revision 23 — Support Report and Save Manager](windows-v1.6-tatsunakyo.23.md)
 - [windows-v1.6-tatsunakyo.22](windows-v1.6-tatsunakyo.22.md)
 - [windows-v1.6-tatsunakyo.21](windows-v1.6-tatsunakyo.21.md)
 - [windows-v1.6-tatsunakyo.20](windows-v1.6-tatsunakyo.20.md)

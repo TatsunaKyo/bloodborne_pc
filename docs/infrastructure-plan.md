@@ -8,7 +8,7 @@ I checked the audit against the repository and published assets on 12 October 20
 | Release script is stale | `prepare_release.py` was tied to Revision 15; the publishing guide still introduced Revision 20. | Revision 22 derives metadata from the package identity, exact source/tree, matching notes and checksum. |
 | Missing CI and report forms | No `.github` files were present; repository Issues were disabled. | Regression/build/release workflows and report forms are included. Hosted regression CI passes; Issues still needs enabling. |
 | Current-problem page mixes statuses | Fixed flashing, inherited reports, old cheat reports and untested hardware were listed together. | Current reports, compatibility, test methods and dated history now have separate pages. |
-| Existing diagnostics | Session logs, settings, timings and crash capture already exist. | Extend them with a reviewed/redacted support archive; do not build a second profiler. |
+| Existing diagnostics | Session logs, settings, timings and crash capture already exist. | Revision 23 reuses them in the inspected Support Report ZIP; hardware submissions stay unreviewed. |
 
 ## P0 — Revision 22
 
@@ -28,7 +28,9 @@ The opening follows my supplied layout: the existing banner, centered title and 
 
 I want genuine gameplay screenshots alongside the illustrations. The supplied navigation concept is a layout example, not gameplay evidence; I will use actual reviewed captures for that gallery.
 
-The next support-report change should extend the existing diagnostics with GPU/driver, Windows build, revision/build identity, a whitelist of renderer preferences, timings and selected logs. It should redact personal paths and account/token fields, exclude game/save files and raw memory dumps by default, and let the player inspect the ZIP locally before sharing. Tests must include fake credentials, usernames, custom paths and missing/corrupt diagnostics. No automatic submission is planned.
+Revision 23 adds [Generate Support Report](support-reports.md), with Windows/GPU/driver and build identity, validated settings, bounded recent logs and existing measurements. The launcher shows each sanitized file before export, leaves the anonymous CPU/RAM profile optional and exports a verified ZIP for manual attachment. The privacy/archive tests include malformed inputs, credentials, custom paths and terminated exports.
+
+The optional hardware JSON has its own submission schema and remains unreviewed. Only reviewed gameplay evidence can enter the confirmed compatibility database.
 
 Reviewed hardware reports can populate the compatibility JSON/table. Keep the raw report's provenance and review state; only a maintainer-approved gameplay result becomes a confirmed row. CI can validate the schema and generated table, but compilation or a recorded-call test is not a hardware result.
 
@@ -40,4 +42,8 @@ Evaluate MkDocs Material with the existing guides after the release path is reli
 
 ## Gameplay priorities remain
 
-The existing [gameplay roadmap](tatsunakyo-next.md) stays active: check the remaining Echoes and pacing reports, add Save Manager, improve native input, support ultrawide/HUD placement and continue HUDless-FG work. Each change gets its own regression coverage before it joins a release.
+The existing [gameplay roadmap](tatsunakyo-next.md) stays active: check the remaining Echoes and pacing reports, extend the first Save Manager, improve native input, support ultrawide/HUD placement and continue HUDless-FG work. Each change gets its own regression coverage before it joins a release.
+
+## Save protection: first implementation
+
+Revision 23 includes [Save Manager](save-manager.md): pre-launch backups, named closed-game snapshots, verified restore/rollback, configurable automatic retention and the existing custom saves selection. Native/launcher OS leases protect the save writer, and interrupted restoration is recovered before the next launch. Named profiles and coordinated live snapshots remain separate later work. Native mouse/remapping and measured pacing comparisons against Revision 21 are the next PC priorities.

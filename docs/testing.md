@@ -21,3 +21,9 @@ Use the same scene and settings when comparing revisions. Include the revision, 
 I mark an issue resolved when the relevant result supports it. Old reports, inherited upstream reports, untested hardware and confirmed current regressions should not share one undifferentiated list.
 
 [Historical test records through Revision 21](history/testing-through-21.md) retain the individual regression counts and environments. [Performance](performance.md), [current reports](known-issues.md), [hardware coverage](compatibility.md) and [contributing](../CONTRIBUTING.md) explain the next checks.
+
+## Support Report and Save Manager
+
+`tests/test_support_report.py` checks bounded collection, missing/malformed logs, credentials and custom paths, optional hardware submissions, ZIP integrity and interrupted exports. `tests/test_save_manager.py` checks complete save/metadata/memory snapshots, retention, rollback, corrupt/unsafe archives, locked writers and processes killed at three restore stages. The native lease fixture exercises the same C guard linked into the game, together with the Python manager.
+
+The two actual Tk dialog tests exercise inspection/export, named snapshots, restoration, source-folder scope and compact/high-DPI layouts. Windows infrastructure CI also executes the real Windows file-sharing cases and the frozen launcher self-test. These checks use disposable fixtures; the maintainer gameplay configuration and evidence remain in [Compatibility](compatibility.md).

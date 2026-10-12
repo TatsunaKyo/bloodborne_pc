@@ -40,7 +40,7 @@ jobs:
         shell: msys2 {0}
         run: |
           bash build.sh
-          ninja -C out/gpu -j2 frame-limits-test frame-pacing-test background-pause-test temporal-history-test motion-history-test xess-presets-test amd-antilag-test camera-motion-test
+          ninja -C out/gpu -j2 frame-limits-test frame-pacing-test background-pause-test temporal-history-test motion-history-test xess-presets-test amd-antilag-test camera-motion-test save-access-test
       - name: Execute Windows regressions
         shell: msys2 {0}
         run: |
@@ -49,6 +49,9 @@ jobs:
           for test in frame-limits frame-pacing background-pause temporal-history motion-history xess-presets amd-antilag camera-motion; do
             ./out/gpu/${test}-test.exe | tee -a out/verification/native-windows-tests.log
           done
+          export BB_SAVE_ACCESS_TEST="$(cygpath -w "$PWD/out/gpu/save-access-test.exe")"
+          "$WINPYTHON" tests/test_support_report.py
+          "$WINPYTHON" tests/test_save_manager.py
       - name: Compile the Windows launcher
         shell: msys2 {0}
         run: bash packaging/windows/package.sh --launcher-only

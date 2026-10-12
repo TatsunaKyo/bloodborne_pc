@@ -210,6 +210,18 @@ def main():
         # GPU caches (shaders, pipelines) beside the saves; read before main(), so set here.
         user_dir = Path(env.get('BB_USER_DIR', data / 'user')).resolve()
         user_dir.mkdir(parents=True, exist_ok=True)
+        # This precedes bb-probe and its startup sound-flag edit. The same path
+        # also covers headless launch and an in-game Apply and restart.
+        from save_manager import prepare_launch, SaveManagerError, SaveBusyError
+        try:
+            backup = prepare_launch(user_dir, automatic=env.get('BB_SAVE_AUTO_BACKUP', '0') == '1',
+                                    retention=int(env.get('BB_SAVE_BACKUP_RETENTION', '10')))
+        except (OSError, SaveManagerError, SaveBusyError, ValueError) as error:
+            fail(f'Save Manager: {error}\nThe game was not started. Check the saves/backup folder or recover the interrupted restore in the launcher.')
+        if backup['recovered']:
+            print('Save Manager: ' + backup['recovered'])
+        if backup['snapshot']:
+            print('Save Manager: pre-launch snapshot created and verified')
         env.setdefault('BB_GPU_USER_DIR', str(user_dir))
         if env.get('BB_ONLINE') == '1':
             online_overrides(env, user_dir)

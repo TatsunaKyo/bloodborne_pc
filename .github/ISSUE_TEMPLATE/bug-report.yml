@@ -32,4 +32,4 @@ body:
     validations: {required: true}
   - type: textarea
     id: evidence
-    attributes: {label: Logs or screenshots, description: "Attach reviewed logs/screenshots here. Developer diagnostics are optional under Advanced; a support archive generator is planned."}
+    attributes: {label: Support Report or screenshots, description: "Use Advanced → Diagnostics → Generate Support Report (also in Log). Inspect it, export the ZIP and attach it here manually. Copy its summary into the hardware/settings fields. Saves, game files and private memory dumps are excluded."}

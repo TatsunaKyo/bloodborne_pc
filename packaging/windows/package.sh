@@ -26,7 +26,7 @@ out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check PyIns
 # The scripts run inside Bloodborne.exe (--script): the standard modules they import come along.
 hidden=()
 for module in argparse base64 collections hashlib json re shutil struct tempfile xml.etree.ElementTree \
-              urllib.request ctypes.wintypes; do
+              urllib.request ctypes.wintypes dataclasses datetime ipaddress contextlib support_report support_report_ui save_access save_manager save_manager_ui; do
     hidden+=(--hidden-import "$module")
 done
 out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed \

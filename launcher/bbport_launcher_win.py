@@ -43,7 +43,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.22'
+VERSION = '1.6-tatsunakyo.23'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -177,7 +177,7 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'vk_validation': False, 'developer_profile': False, 'extra_env': '', 'close_on_play': False,
                 'check_updates': True, 'online': False, 'online_server': 'srv.shadps4.net:31313',
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
-                'online_community': COMMUNITY_SERVER}
+                'online_community': COMMUNITY_SERVER, 'save_auto_backup': True, 'save_backup_retention': 10}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'xess_preset': '2', 'show_fps': '1', 'show_dlss_preset': '0',
                  'show_resolution': '0', 'show_frame_generation': '0', 'show_latency': '0', 'show_frametime_graph': '0',
@@ -491,6 +491,8 @@ def game_environment(s):
     env['BB_FULLSCREEN'] = '1' if s['fullscreen'] else '0'
     env['BB_LAUNCHER_WINDOW_MODE'] = launcher_window_mode(s)
     env['BB_PRESENT_MODE'] = s['present_mode']
+    env['BB_SAVE_AUTO_BACKUP'] = '1' if s.get('save_auto_backup', True) else '0'
+    env['BB_SAVE_BACKUP_RETENTION'] = str(s.get('save_backup_retention', 10))
     if s['hdr']:
         env['BB_HDR'] = '1'
     # 75 uses the variable frame-time patch, not a fixed 60/90 timing patch.
@@ -1558,6 +1560,12 @@ class Launcher:
                     _('Choose the saves folder', 'Выберите папку сохранений'),
                     _('Empty: {} (shader caches are kept there too).',
                       'Пусто: {} (там же кэш шейдеров).').format(DATA_DIR / 'user'), on_change=self.refresh_status)
+        self.ttk.Button(f, text=_('Open Save Manager…', 'Открыть менеджер сохранений…'),
+                        command=self.open_save_manager).grid(row=self.next_row(f), column=0, columnspan=2,
+                                                              sticky='w', pady=(8, 4))
+        self.ttk.Label(f, text=_('Automatic pre-launch backups, named snapshots and verified restore with rollback. Save operations require a closed game.',
+                                'Резервные копии перед запуском, именованные снимки и проверенное восстановление. Операции требуют закрытой игры.'),
+                       style='Muted.TLabel', wraplength=self.px(590)).grid(row=self.next_row(f), column=0, columnspan=2, sticky='we', pady=(0, 12))
         self.row(f, _('Game language', 'Язык игры'), self.choice(f, 'language', 'app', LANGUAGES))
         self.row(f, _('Player name', 'Имя игрока'), self.ttk.Entry(f, textvariable=self.var('player_name', 'app'), width=30),
                  _('Where the game shows the PSN name; empty: the default.', 'Где игра показывает имя PSN; пусто — по умолчанию.'))
@@ -1720,6 +1728,12 @@ class Launcher:
         self.check(f, 'gpu_profile', 'app', _('GPU time per pass in the log', 'Профиль GPU в журнале'))
         self.check(f, 'vk_validation', 'app', _('Vulkan validation layers (needs the Vulkan SDK; much slower)',
                                                 'Слои валидации Vulkan (нужен Vulkan SDK; сильно замедляет)'))
+        self.ttk.Button(f, text=_('Generate Support Report…', 'Создать отчёт для поддержки…'),
+                        command=self.generate_support_report).grid(row=self.next_row(f), column=0, columnspan=2,
+                                                                   sticky='w', pady=(12, 4))
+        self.ttk.Label(f, text=_('Inspect sanitized diagnostics and an optional anonymous hardware profile before exporting a ZIP. Nothing is uploaded.',
+                                'Просмотрите очищенную диагностику и необязательный анонимный профиль перед экспортом ZIP. Ничего не загружается.'),
+                       style='Muted.TLabel', wraplength=self.px(590)).grid(row=self.next_row(f), column=0, columnspan=2, sticky='we')
         self.row(f, _('Extra variables', 'Доп. переменные'), ttk.Entry(f, textvariable=self.var('extra_env', 'app'), width=58),
                  _('NAME=value pairs separated by spaces (README lists them).', 'Пары ИМЯ=значение через пробел (список в README).'))
 
@@ -1732,12 +1746,35 @@ class Launcher:
         ttk.Label(top, text=_('Log', 'Журнал'), font=('Georgia', 20)).pack(side='left')
         ttk.Button(top, text=_('Copy', 'Копировать'), command=self.copy_log).pack(side='right')
         ttk.Button(top, text=_('Clear', 'Очистить'), command=lambda: self.set_log('')).pack(side='right', padx=6)
+        ttk.Button(top, text=_('Generate Support Report…', 'Создать отчёт для поддержки…'),
+                   command=self.generate_support_report).pack(side='right', padx=6)
         self.log = tk.Text(page, wrap='none', bg='#0a0908', fg='#cfc6b8', insertbackground=TEXT, relief='flat',
                            font=('Consolas', 9), padx=8, pady=6, state='disabled', highlightthickness=0)
         bar = ttk.Scrollbar(page, command=self.log.yview)
         self.log.configure(yscrollcommand=bar.set)
         bar.pack(side='right', fill='y')
         self.log.pack(fill='both', expand=True)
+
+    def support_report_context(self):
+        """Read current UI/preferences without changing game, mod or launcher files."""
+        app, ini, menu = dict(self.app), dict(self.ini), dict(self.menu)
+        stores = {'app': app, 'ini': ini, 'menu': menu}
+        for key, var in self.vars.items():
+            try:
+                value = var.get()
+            except self.tk.TclError:
+                continue
+            stores[var.store][key] = value
+        return {'port_dir': PORT_DIR, 'user_dir': Path(app.get('user_dir') or DATA_DIR / 'user'),
+                'settings': app, 'ini': ini, 'menu': menu, 'revision': VERSION}
+
+    def generate_support_report(self):
+        from support_report_ui import open_support_report
+        return open_support_report(self)
+
+    def open_save_manager(self):
+        from save_manager_ui import open_save_manager
+        return open_save_manager(self)
 
     def version_warning(self, parent):
         """A banner shown while the selected game is not version 1.09 (refresh_status)."""
@@ -1784,7 +1821,7 @@ class Launcher:
             else:
                 label.grid_remove()
         if not self.process:
-            self.play_button.configure(state='normal' if info else 'disabled')
+            self.play_button.configure(state='normal' if info and not getattr(self, 'save_busy', False) else 'disabled')
             self.status.configure(text=self.summary() if info else _('Choose the game folder first.',
                                                                      'Сначала выберите папку игры.'), fg=MUTED)
 
@@ -1965,7 +2002,7 @@ class Launcher:
 
     # ---- game process ------------------------------------------------------------------------
     def play(self):
-        if self.process:
+        if self.process or getattr(self, 'save_busy', False):
             return
         online, npid = self.var('online', 'app'), self.var('online_npid', 'app')
         if not online.get() and npid.get().strip():

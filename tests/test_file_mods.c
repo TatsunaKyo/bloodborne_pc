@@ -48,6 +48,9 @@ int main(void) {
     assert(!unlink(link) && !unlink(source) && !rmdir(game));
     const char *dirs[]={"temp0","download0","data"};
     for (int i=0;i<3;++i) { char p[1024]; snprintf(p,sizeof(p),"%s/%s",user,dirs[i]); assert(!rmdir(p)); }
+    bb_save_access_release();
+    char lease_path[1024]; snprintf(lease_path,sizeof(lease_path),"%s/.crowned-workshop-save.lock",user);
+    assert(!unlink(lease_path));
     assert(!rmdir(user) && !rmdir(root));
     puts("Guest mod files: reads, stat, merged listing, readonly assets and writable saves PASS");
 }

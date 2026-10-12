@@ -23,4 +23,4 @@ body:
     validations: {required: true}
   - type: textarea
     id: logs
-    attributes: {label: Reviewed logs or captures, description: "Attach relevant evidence without account details, saves or game files."}
+    attributes: {label: Support Reports or reviewed captures, description: "Generate and inspect a Support Report for each compared revision from Advanced → Diagnostics or Log. Attach the exported ZIPs manually. Keep the scene/settings matched; no report is uploaded automatically."}

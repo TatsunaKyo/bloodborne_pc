@@ -21,7 +21,7 @@ from prepare_release import prepare
 
 ROOT=Path(__file__).resolve().parents[1]
 TESTS=('frame-limits-test','frame-pacing-test','background-pause-test','temporal-history-test',
-       'motion-history-test','xess-presets-test','amd-antilag-test','camera-motion-test')
+       'motion-history-test','xess-presets-test','amd-antilag-test','camera-motion-test','save-access-test')
 
 
 def git(*args):

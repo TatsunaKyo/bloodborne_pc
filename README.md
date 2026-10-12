@@ -173,6 +173,14 @@ They start off and share the **Cheats** category in both interfaces. The [curren
 
 [Cheat behavior and current limitations](docs/cheats.md)
 
+### Save Manager
+
+I added **Save Manager** to protect progress before a new session or an experimental change. Open it from **Game & files** to create named snapshots or restore a verified backup with a rollback copy of your current saves. It preserves the original save files, metadata and save memory, including custom saves locations.
+
+Automatic backups run before launching and start on, with ten snapshots kept by default. You can adjust that limit from one to one hundred; manual and rollback copies are kept. Save operations require a closed game, and an interrupted restore is recovered before the next launch.
+
+[Save Manager: backup settings, restoration and recovery](docs/save-manager.md)
+
 ### The Crowned Workshop launcher
 
 ![Play quick choices lead to seven organized settings pages with shared preferences](docs/assets/features/launcher.png)
@@ -205,6 +213,10 @@ For live upscaler quality/output changes, enable **Image → Live resolution cha
 
 I added an opt-in profiler so a crash or performance report can include more than a description of what happened. It keeps a separate session folder with logs, settings, timings and Windows crash details when available. Enable **Advanced → Diagnostics** before reproducing a problem; it starts off for normal play because profiling can add overhead.
 
+I also added **Generate Support Report**, available in Diagnostics and Log. It brings the useful information together, removes personal paths and credentials, and lets you inspect every included file before exporting a ZIP. The anonymous CPU/RAM profile is optional, and you choose whether to attach the report to GitHub yourself.
+
+[Support Report contents, privacy and hardware submissions](docs/support-reports.md)
+
 [Diagnostics and useful bug reports](docs/performance.md#comparing-a-change-during-play)
 
 The original mod/patch loading, keyboard/controller support, shortcuts, shader-cache tools, game effects and beta online co-op remain available, with their original credits.
@@ -223,7 +235,7 @@ I test the revisions on my **Windows 11 PC with a GeForce RTX 5070 Ti**. This is
 I am keeping the existing gameplay work active while making the fork easier to maintain:
 
 - **Release reliability:** updater compatibility, verified complete packages, CI and useful report forms.
-- **Save Manager:** automatic backups, snapshots, restore with rollback and profiles.
+- **Save Manager:** extend the shipped backup/restore tools with named save profiles and further save protection.
 - **PC input:** full remapping, native mouse camera and controller/UI consistency.
 - **Ultrawide and HUD:** aspect-aware FOV, interface placement and cinematic handling.
 - **Frame pacing and image quality:** real/displayed cadence, shader-cache resilience and HUDless FG.

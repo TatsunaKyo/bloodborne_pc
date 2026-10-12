@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The Crowned Workshop unreviewed hardware submission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project", "port_revision", "hardware", "settings", "status", "reviewed", "evidence"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "project": {"const": "Bloodborne: The Crowned Workshop"},
+    "port_revision": {"type": "string", "maxLength": 80},
+    "hardware": {"type": "object"},
+    "settings": {"type": "object"},
+    "status": {"const": "unverified"},
+    "reviewed": {"const": false},
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "gameplay_minutes", "scene", "result", "reference"],
+      "properties": {
+        "kind": {"enum": ["not-provided", "gameplay-report"]},
+        "gameplay_minutes": {"type": ["number", "null"], "minimum": 0},
+        "scene": {"type": "string", "maxLength": 1000},
+        "result": {"enum": ["not-provided", "worked", "partially-worked", "failed"]},
+        "reference": {"type": "string", "maxLength": 1000}
+      }
+    }
+  }
+}

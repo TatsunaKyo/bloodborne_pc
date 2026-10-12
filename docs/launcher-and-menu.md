@@ -57,3 +57,9 @@ The launcher and menu share `bbport.menu.ini`. Saving from the launcher preserve
 I corrected the ignored-checkbox handling and check real clicks, keyboard/controller navigation and both menu languages. The launcher layout is checked at 100–200% scaling. [Testing](testing.md) records the current checks.
 
 More detail: [Upscaling](upscaling.md) · [Frame Generation](frame-generation.md) · [Display and overlay](display-and-overlay.md) · [Cheats](cheats.md) · [Diagnostics](performance.md)
+
+## Support and save tools
+
+**Generate Support Report** is in Advanced → Diagnostics and Log. It reuses existing diagnostics, shows a sanitized file preview and exports a verified ZIP for manual sharing. [Contents and privacy](support-reports.md)
+
+**Open Save Manager** is in Game & files beside the saves-folder selection. It provides pre-launch backups, named snapshots, verified restore/rollback and retention for that selected location. Save operations require a closed game. [Backups and recovery](save-manager.md)

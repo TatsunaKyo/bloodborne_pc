@@ -14,6 +14,6 @@ My main gameplay PC runs Windows 11 with a GeForce RTX 5070 Ti. I welcome result
 | Intel gameplay, XeSS SR | Unverified | Seven quality modes, initialization contracts, scene sizing and shared controls are checked; Intel gameplay remains unverified. |
 | Windows 10 and other monitors/drivers | Unverified | Supported platform target; broader current-build results are welcome. |
 
-The public seed records are in [hardware/compatibility.json](hardware/compatibility.json). Only reviewed results should become confirmed rows. A future support-report generator can make submissions easier, but it must not automatically turn an uploaded report or successful compilation into a gameplay confirmation.
+The public seed records are in [hardware/compatibility.json](hardware/compatibility.json). Only reviewed results should become confirmed rows. [Generate Support Report](support-reports.md) now provides an optional anonymous JSON submission, which stays unreviewed until actual gameplay evidence is reviewed.
 
 Provider requirements and fallbacks: [Upscaling](upscaling.md), [FG](frame-generation.md) and [latency](latency.md). For existing reports rather than coverage gaps, use [Current reports](known-issues.md).

@@ -5,6 +5,7 @@
  * Paths containing ".." components are rejected rather than normalized. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "save_access.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,6 +85,11 @@ void runtime_file_configure(const char *app0,const char *user) {
     runtime_file_mount("/hostapp",app0);
     const char *writable[]={"temp0","download0","data"};
     mkdir(user,0755);
+    char save_message[256];
+    if (bb_save_access_acquire(user, save_message, sizeof(save_message))) {
+        fprintf(stderr, "Runtime: %s\n", save_message);
+        exit(EXIT_FAILURE);
+    }
     for (int i=0;i<3;++i) {
         snprintf(path,sizeof(path),"%s/%s",user,writable[i]);
         mkdir(path,0755);

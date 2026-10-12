@@ -15,6 +15,7 @@ I wanted the added controls to be useful while the game is running. Open **Inser
 | Runtime cheat choices | Can be enabled/disabled live after the 1.09 hooks are verified. Gameplay reports are tracked separately. |
 | Sharpening and reconstruction diagnostics | Change while the temporal reconstruction path is active. |
 | English / Russian menu language | Changes immediately, independently of launcher/game language. |
+| Save Manager | Backups and restoration are launcher tools that require a closed game. Automatic backup choices apply at the next launch. |
 
 Some choices prepare the game before it starts: **object motion vectors, model detail, game-effect patches, original startup cheats, mods, game timing patches and the live-resolution policy itself**. HDR permission, renderer startup switches and developer profiling are also selected before launch. The menu labels the relevant restart cases; I keep those distinctions explicit rather than promising that every startup patch is a live toggle.
 
