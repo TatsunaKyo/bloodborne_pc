@@ -228,6 +228,23 @@ int main() {
     assert(settings.dlss_preset == 13);
     Env("BB_DLSS_PRESET", nullptr);
     Env("BB_CONFIG", nullptr);
+    // Optional graph is independent of overlay visibility and survives launcher rewrites.
+    Env("BB_CONFIG",config.string().c_str());
+    for (bool graph : {false,true}) for (bool visible : {false,true}) {
+        settings.show_frametime_graph=graph;
+        settings.show_fps=visible;
+        Save();
+        { std::ofstream file(config); file << "upscaler=dlss\nshow_fps=1\n"; }
+        settings.show_frametime_graph=!graph;
+        settings.show_fps=!visible;
+        Load();
+        assert(settings.show_frametime_graph==graph && settings.show_fps==visible);
+    }
+    { std::ofstream file(menu); file << "show_frametime_graph=invalid\n"; }
+    Load();assert(!settings.show_frametime_graph);
+    std::filesystem::remove(menu);
+    Load();assert(!settings.show_frametime_graph);
+    Env("BB_CONFIG", nullptr);
     std::filesystem::remove_all(directory);
     std::puts("PASS: basic overlay by default, independent preset/OSD visibility persistence after launcher rewrites, all seven compact labels and preset IDs, language/window/V-sync round trips, invalid/reserved values, legacy FPS migration and environment overrides.");
 }

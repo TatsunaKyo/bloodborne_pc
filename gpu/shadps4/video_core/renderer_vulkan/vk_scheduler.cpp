@@ -395,7 +395,6 @@ void Scheduler::AllocateWorkerCommandBuffers() {
 }
 
 void Scheduler::SubmitExecution(SubmitInfo& info) {
-    std::scoped_lock lk{submit_mutex};
     const u64 signal_value = work_semaphore.NextTick();
 
 #if TRACY_GPU_ENABLED
@@ -447,8 +446,14 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     };
 
     ImGui::Core::TextureManager::Submit();
-    auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
-    ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    {
+        // QueueSubmit/QueuePresent share a VkQueue and need external synchronization.
+        // Recorder/copy waits and command-pool retirement are local to this scheduler;
+        // holding the queue lock through those waits delays an already-ready present.
+        std::scoped_lock lk{submit_mutex};
+        const auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+        ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    }
 
     work_semaphore.Refresh();
     AllocateWorkerCommandBuffers();

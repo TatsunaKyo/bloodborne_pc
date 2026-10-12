@@ -107,6 +107,7 @@ struct Values {
     std::atomic<bool> show_dlss_preset{false};
     std::atomic<bool> show_resolution{false};
     std::atomic<bool> show_frame_generation{false}, show_latency{false};
+    std::atomic<bool> show_frametime_graph{false};
     /// Reflex driver measurement: simulation start to GPU render completion, not frame time.
     std::atomic<float> pc_latency_ms{-1.0f};
     std::atomic<int> background_mode{BackgroundRun};

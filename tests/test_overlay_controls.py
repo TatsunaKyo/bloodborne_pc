@@ -35,6 +35,8 @@ print(f'Checked {len(pairs)} bilingual strings and their printf formats; {len(st
 text_and_open=source[source.index('const char* Text('):source.index('ImGuiKey KeyFromSdl')]
 menu=source[source.index('// Marks the settings dirty'):source.index('// The game\'s text dialog', source.index('// Marks the settings dirty'))]
 fps=source[source.index('void FpsCounter()'):source.index('} // namespace\n\nvoid SavePendingSettings')]
+present=source[source.index('void RecordPresent('):source.index('void Render(vk::CommandBuffer',source.index('void RecordPresent('))]
+focus=source[source.index('    case SDL_EVENT_WINDOW_FOCUS_GAINED:'):source.index('    case SDL_EVENT_KEY_DOWN:',source.index('bool HandleEvent('))]
 # Instrument only the scratch copy to record the real controls' positions and IDs.
 menu=menu.replace('ImGui::BeginCombo(', 'TrackedCombo(').replace('ImGui::Selectable(', 'TrackedSelectable(').replace('ImGui::Checkbox(', 'TrackedCheckbox(').replace('ImGui::SliderFloat(', 'TrackedSlider(').replace('ImGui::SliderInt(', 'TrackedSliderInt(')
 menu=menu.replace('ImGui::BeginTabItem(', 'TrackedTab(').replace('ImGui::Button(', 'TrackedButton(')
@@ -51,7 +53,9 @@ prefix=r'''#include <algorithm>
 #include <string>
 #include <vector>
 #include <map>
+#include <mutex>
 #include "bbport_settings.h"
+#include "bbport_frametime.h"
 #include "bbcheats.h"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -59,6 +63,10 @@ prefix=r'''#include <algorithm>
 std::atomic<bool> menu_open{true};
 bool dirty=false;
 float base_scale=1.0f, frame_ms_avg=16.666f;
+BbFrameMetrics::RealFrameHistory real_frame_history;
+std::mutex imgui_mutex;
+bool initialized=true,l3_down=false,r3_down=false;
+constexpr int SDL_EVENT_WINDOW_FOCUS_GAINED=1,SDL_EVENT_WINDOW_FOCUS_LOST=2;
 int restart_calls=0;
 extern "C" void runtime_restart() { ++restart_calls; }
 ImRect language_rect, russian_rect, english_rect, window_rect, borderless_rect, windowed_rect, vsync_rect;
@@ -394,7 +402,7 @@ void CaptureMenu(const std::filesystem::path& directory,const char* name) {
         std::ofstream raw(directory/(std::string(name)+".atlas"),std::ios::binary);
         raw.write(reinterpret_cast<const char*>(atlas),width*height*4);
     }
-    auto* window=ImGui::FindWindowByName("###bbport_settings");
+    auto* window=ImGui::FindWindowByName(std::strncmp(name,"frametime",9)==0 ? "##fps" : "###bbport_settings");
     std::ofstream out(directory/(std::string(name)+".json"));
     out<<"{\"display\":["<<data->DisplaySize.x<<","<<data->DisplaySize.y<<"],\"atlas\":["<<width<<","<<height
        <<"],\"window\":["<<window->Pos.x<<","<<window->Pos.y<<","<<window->Size.x<<","<<window->Size.y<<"],\"lists\":[";
@@ -702,6 +710,65 @@ int main(int argc,char** argv) {
     s.pc_latency_ms=-1;osd=OsdFrame();assert(osd.find("PC:N/A")!=std::string::npos);
     s.show_frame_generation=s.show_latency=s.show_resolution=false;
     s.frame_generation=BbSettings::FrameGenerationOff;s.frame_generation_active=0;
+    // Toggle the production graph widget, save/reload it, and bound its OSD size.
+    SetOpen(true);Frame();Frame();
+    TestBoolean("show_frametime_graph",s.show_frametime_graph);
+    // Execute the production present filter and focus branch, including a pause
+    // too short to reach the history's long-gap reset.
+    real_frame_history.Reset();
+    s.window_focused=true;
+    RecordPresent(true,true);RecordPresent(true,true);
+    assert(real_frame_history.Size()==1);
+    RecordPresent(false,true);assert(real_frame_history.Size()==1);
+    FocusEvent(SDL_EVENT_WINDOW_FOCUS_LOST);assert(!real_frame_history.Size());
+    FocusEvent(SDL_EVENT_WINDOW_FOCUS_GAINED);
+    RecordPresent(true,true);assert(!real_frame_history.Size());
+    RecordPresent(true,true);assert(real_frame_history.Size()==1);
+    RecordPresent(true,false);assert(!real_frame_history.Size());
+    RecordPresent(true,true);RecordPresent(true,true);
+    s.window_focused=false;RecordPresent(true,true);assert(!real_frame_history.Size());
+    s.window_focused=true;
+    auto now=BbFrameMetrics::RealFrameHistory::Clock::time_point{};
+    real_frame_history.Reset();real_frame_history.Present(now);
+    for(int i=0;i<240;++i) {
+        now+=std::chrono::microseconds(i==100 ? 55000 : 16667);
+        real_frame_history.Present(now);
+    }
+    int graph_layouts=0;
+    for(int language : {BbSettings::MenuEnglish,BbSettings::MenuRussian})
+    for(float scale : {0.75f,1.0f,1.25f,1.5f,2.0f})
+    for(bool extra : {false,true}) {
+        s.menu_language=language;base_scale=scale;
+        ImGui::GetStyle().FontScaleMain=scale;
+        io.DisplaySize={1280*scale,720*scale};
+        s.show_frame_generation=s.show_latency=s.show_resolution=extra;
+        s.frame_generation=extra ? BbSettings::FrameGenerationNvidia : BbSettings::FrameGenerationOff;
+        s.frame_generation_active=extra ? 2 : 0;s.nvidia_output_fps=extra ? 120.0f : -1.0f;
+        s.nvidia_real_fps=extra ? 60.0f : -1.0f;
+        s.show_frametime_graph=false;OsdFrame();OsdFrame();
+        auto* window=ImGui::FindWindowByName("##fps");
+        const float normal_height=window->Size.y;
+        s.show_frametime_graph=true;
+        const auto graph_text=OsdFrame();OsdFrame();
+        assert(window->Size.y<=normal_height+50*scale+8);
+        assert(window->Size.x<=521*scale);
+        assert(window->Pos.x>=0 && window->Pos.x+window->Size.x<=io.DisplaySize.x+1);
+        assert(real_frame_history.Peak()==55.0f); // the hitch survives plotting.
+        if(scale==1.0f) if(const char* path=std::getenv("BB_MENU_CAPTURE_DIR")) {
+            const std::string name=std::string("frametime-")+(extra ? "full-" : "")+
+                (language==BbSettings::MenuEnglish ? "en" : "ru");
+            CaptureMenu(std::filesystem::path(path),name.c_str());
+        }
+        s.show_fps=false;assert(OsdFrame().empty());s.show_fps=true;
+        s.show_frametime_graph=false;OsdFrame();OsdFrame();
+        assert(window->Size.y==normal_height);
+        ++graph_layouts;
+    }
+    std::printf("PASS: %d compact frametime OSD layouts, both languages, 75-200%%; graph toggle/save, raw hitch and unchanged height when off.\n",graph_layouts);
+    base_scale=1;ImGui::GetStyle().FontScaleMain=1;io.DisplaySize={1920,1080};
+    s.show_frametime_graph=s.show_frame_generation=s.show_latency=s.show_resolution=false;
+    s.frame_generation=BbSettings::FrameGenerationOff;s.frame_generation_active=0;
+    s.nvidia_output_fps=s.nvidia_real_fps=-1;
     SetOpen(true);
     // Exercise the menu's conditional layouts across all upscalers and resolutions.
     for (int language : {BbSettings::MenuEnglish,BbSettings::MenuRussian}) {
@@ -779,7 +846,8 @@ int main(int argc,char** argv) {
 '''
 # Check all constant widget label pairs against the actual Dear ImGui hash implementation.
 main=main.replace('    IMGUI_CHECKVERSION();', id_checks+'\n    IMGUI_CHECKVERSION();')
-(scratch / 'overlay_smoke.cpp').write_text(prefix+text_and_open+menu+fps+main)
+(scratch / 'overlay_smoke.cpp').write_text(prefix+text_and_open+menu+fps+present+
+    'bool FocusEvent(int type) { auto& io=ImGui::GetIO(); struct { int type; } event{type}; switch(type) {\n'+focus+'default:return false;} }\n'+main)
 
 command=shlex.split(args.compiler)+['-std=c++20','-O1','-pthread','-Igpu','-Igpu/shim','-Igpu/third_party/imgui',str(scratch/'overlay_smoke.cpp'),'gpu/shim/bbport_settings.cpp']+[str(p.relative_to(root)) for p in (root/'gpu/third_party/imgui').glob('imgui*.cpp') if p.name!='imgui_demo.cpp']+['-o',str(scratch/'overlay-test')]
 subprocess.run(command,cwd=root,check=True)

@@ -1,22 +1,40 @@
-# Frame Generation and Reflex
+# Frame Generation and Multi Frame Generation
 
 I added analytical FSR 3.1.6 Frame Generation and an experimental NVIDIA DLSS FG/MFG backend using Streamline 2.14.1 and its production DLSS-G 310.9.1 runtime. I kept FG independent of the upscaler choice and off by default. Select it on Play or Graphics in the launcher or in the Insert / L3+R3 menu. A temporal upscaler is needed: DLSS, XeSS, FSR 3.1, FSR 4 or native-resolution TAA. FSR FG is not restricted to AMD cards or FSR upscaling.
 
+## SDR, HDR and scene inputs
+
 HDR support was a requirement for me. Both paths accept SDR and HDR10. FSR captures PQ HDR10 color into linear half-float at 80 nits per unit, runs AMD's real optical-flow and frame-interpolation passes, and encodes the generated frame back to PQ. Highlights are preserved above SDR white. NVIDIA receives the actual SDR or HDR10 swapchain image, copied depth and motion vectors, jitter and camera transforms; HDR is not silently replaced with SDR. I also avoid allocating the full-resolution FSR color and interpolation buffers on NVIDIA's path, keeping only depth/motion copies and a one-pixel descriptor placeholder. Runtime errors appear in the in-game menu and `user/last_run.log`.
+
+## Hardware and current choices
 
 NVIDIA requires a supported RTX GPU, driver and Hardware-accelerated GPU scheduling which you can enable from the Graphics tab in Windows settings. Its API reports the supported number of generated frames; the request is clamped to that capability. The launcher offers 2x through 6x, and unsupported in-game entries are disabled once the device reports its limits. This is fixed-rate MFG. NVIDIA Dynamic MFG, on the other hand, by its own current public integration requires D3D12 and does not support Vulkan ([Streamline 2.14.1 guide](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideDLSS_G.md)). Intel XeSS FG likewise requires D3D12 and as such is not supported; XeSS Super Resolution does support Vulkan and is, in fact, included by taking advantage of SDK 3.0.2 ([Intel guide](https://github.com/intel/xess/blob/v3.0.2/doc/xess_fg_developer_guide_english.md)). AMD's ML FG is not implemented on this path. Missing runtimes or unsupported hardware keep normal real-frame presentation.
 
+## Latency controls
+
 I made Reflex a separate Off, On and On + Boost setting so you can use it with FG off and any upscaler. NVIDIA FG automatically enables low-latency Reflex; Boost remains optional. Simulation, render submission and presentation markers are attached to actual host submissions, and Reflex sleep runs on the submitting thread after releasing the submission lock. It does not sleep on the GPU completion thread. I disabled the SDK's display-rate limiter so it cannot reinterpret the ordinary game FPS cap.
+
+The separate [latency guide](latency.md) covers Reflex, AMD Anti-Lag 2 and the PC-latency readout.
+
+## Real-frame and output limits
 
 I kept the normal FPS limit tied to real game frames. Selecting 75 allows up to 150 output frames with 2x FG, subject to GPU throughput and the monitor. For a separate output limit, **Limit total FPS with Frame Generation** has an optional checkbox, drag control and editable integer field from 30 to 1000. It derives a real-frame ceiling from the negotiated multiplier without raising the game's own ceiling: 75 real FPS plus a 120 total cap at 2x gives 60 real FPS. Integer division can place the total slightly below an indivisible value. Generated frames do not advance physics or game logic. I recommend keeping the real-frame limit at 120 or below because the original game logic can misbehave at extreme rates. The output cap can be set as high as 1000, but the practical rate depends on the GPU, monitor and scene.
 
+## Focus, lifetime and history
+
 Background Pause, 30 FPS and 60 FPS modes disable generation while unfocused. Keep running preserves FG and the optional total cap. History resets after a pause, resolution change, scene reset or SDR/HDR transition. Revision 10 also forwards camera discontinuities and DLSS/XeSS feature recreation to FG, with previous camera values seeded from the current frame. NVIDIA input-completion fences are waited before buffers are reused or released, and generation is drained before focus, fullscreen and swapchain changes.
+
+## Overlay, frame timing and the HUD
 
 The game HUD remains in the interpolation input, so moving text and UI can show artifacts. The port's own FSR overlay/menu is composed after interpolation. On the NVIDIA path those elements are in the final tagged backbuffer. Revision 8 measures NVIDIA output using `numFramesActuallyPresented`, consumed exactly once after each presentation. The menu also shows real FPS separately. The OSD only reports generated output when the counter confirms an active multiplier. Optional FG/provider and PC-latency fields fit on the same line. PC latency comes from completed Reflex reports (simulation start to GPU completion), with N/A for unavailable/stale samples; it excludes the display and input device.
 
-My Revision 18 Hunter's Dream capture showed extreme object vectors on the trees while the real scene and DLSS output looked normal; I also confirmed that switching NVIDIA FG off removes the flashing. Revision 19 matches the ordered model list in that foliage path before reusing its vertex positions. I now copy scene depth at reconstruction time, before the game's later interface passes can reuse its buffer. The final FG snapshot reads that preserved depth, and frame owners keep the image/view alive during resolution changes. The same-view Windows/RTX comparison remains the check before I close this visual report.
+The optional [frametime graph](display-and-overlay.md#reading-the-graph) records real-frame presentation intervals, including with FG active. NVIDIA exposes a generated-output count rather than individual display timestamps, so I keep the graph labeled Real. For generated display cadence, NVIDIA recommends FrameView's displayed-image timing.
+
+My Revision 18 Hunter's Dream capture showed extreme object vectors on the trees while the real scene and DLSS output looked normal; I also confirmed that switching NVIDIA FG off removes the flashing. Revision 19 matches the ordered model list in that foliage path before reusing its vertex positions. I now copy scene depth at reconstruction time, before the game's later interface passes can reuse its buffer. The final FG snapshot reads that preserved depth, and frame owners keep the image/view alive during resolution changes. My Revision 19 comparison now suggests the flashing is resolved on Windows 11 / RTX 5070 Ti. I keep those input protections while working on the remaining frame-pacing inconsistency.
 
 **FG presets A/B remain pending.** I need a supported model-selection path and evidence that it changes the FG model before offering the choice. This is separate from Streamline's UI recomposition option, which needs genuine HUDless color and matching UI color/alpha buffers that this revision does not yet supply. DLSS super-resolution presets E/F/J/K/M/L remain available as before.
+
+## Testing and further work
 
 I test gameplay on my Windows 11 / RTX 5070 Ti PC. I also check the FSR pipeline separately: the actual capture shader and FI/OF passes ran on Lavapipe with Khronos Vulkan validation 1.4.341. Tests cover SDR, depth/motion readbacks, generated pixels, history, resize and ownership. HDR tests check 500/1000/2000-nit decoding, generated highlights above SDR white, PQ re-encoding and HDR-to-SDR reset. The run completed with zero validation errors and warnings. Those headless checks cover the pipeline; desktop presentation and broader hardware results are tracked in [Testing and known issues](testing.md).
 

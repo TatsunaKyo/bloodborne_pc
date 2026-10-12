@@ -34,6 +34,10 @@ void SavePendingSettings();
 /// Present thread: draws into `view` (layout ColorAttachmentOptimal).
 void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent);
 
+/// Present thread: timestamp successful new game-frame presents, including when OSD is off.
+/// Generated FSR presents, blank/reused frames and failed presents never count as real frames.
+void RecordPresent(bool real_frame, bool presented);
+
 /// The menu is open or a text entry is shown: the game's input is held neutral.
 bool CapturesInput();
 

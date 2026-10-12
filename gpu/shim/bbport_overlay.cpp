@@ -14,6 +14,7 @@
 
 #include <SDL3/SDL.h>
 #include "bbport_settings.h"
+#include "bbport_frametime.h"
 #include "../bbcheats.h"
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
@@ -64,6 +65,7 @@ float base_scale = 1.0f;
 // Present rate for the FPS counter.
 std::chrono::steady_clock::time_point last_present{};
 float frame_ms_avg = 0.0f;
+BbFrameMetrics::RealFrameHistory real_frame_history;
 
 const char* Text(const char* english, const char* russian) {
     return BbSettings::Get().menu_language == BbSettings::MenuRussian ? russian : english;
@@ -676,6 +678,10 @@ void OverlaySettings() {
                   "Показывать задержку ПК в статистике###show_latency"),s.show_latency);
     Hint(Text("Reflex measures simulation start to GPU completion. N/A means there is no valid driver sample. Monitor and input-device latency are not included.",
               "Reflex измеряет время от начала симуляции до завершения GPU. N/A: нет данных драйвера. Задержка монитора и устройства ввода не учитывается."));
+    Checkbox(Text("Show frametime graph in overlay###show_frametime_graph",
+                  "Показывать график времени кадров###show_frametime_graph"),s.show_frametime_graph);
+    Hint(Text("Last 240 real-frame presentation intervals, latest and peak time. Generated frames are not included. This is not GPU render time or monitor latency.",
+              "Последние 240 интервалов показа реальных кадров, текущее и пиковое время. Сгенерированные кадры не включены. Это не время рендера GPU и не задержка монитора."));
 }
 
 void CheatSettings() {
@@ -1078,6 +1084,28 @@ void FpsCounter() {
     }
     ImGui::TextUnformatted(line);
     ImGui::SetWindowFontScale(1.0f);
+    if (s.show_frametime_graph) {
+        // A shallow trace under the existing row, bounded to the same compact OSD.
+        const float limit=std::min(520.0f*base_scale,viewport->WorkSize.x-pad*2.0f);
+        const float width=std::clamp(ImGui::CalcTextSize(line).x,300.0f*base_scale,
+                                    std::max(300.0f*base_scale,limit-ImGui::GetStyle().WindowPadding.x*2.0f));
+        char caption[96];
+        if (real_frame_history.Size()) {
+            std::snprintf(caption,sizeof(caption),Text("Real: %.1fms | peak %.1fms", "Реал.: %.1fмс | пик %.1fмс"),
+                          real_frame_history.Latest(),real_frame_history.Peak());
+        } else {
+            std::snprintf(caption,sizeof(caption),"%s",Text("Real frames: waiting", "Реальные кадры: ожидание"));
+        }
+        ImGui::SetWindowFontScale(0.85f);
+        ImGui::TextDisabled("%s",caption);
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PushStyleColor(ImGuiCol_PlotLines,ImVec4(0.84f,0.70f,0.43f,1.0f));
+        ImGui::PlotLines("##real_frametime",[](void* data,int index) {
+            return static_cast<BbFrameMetrics::RealFrameHistory*>(data)->At(std::size_t(index));
+        },&real_frame_history,int(real_frame_history.Size()),0,nullptr,0.0f,
+            real_frame_history.PlotCeiling(),ImVec2(width,32.0f*base_scale));
+        ImGui::PopStyleColor();
+    }
     ImGui::End();
 }
 
@@ -1174,6 +1202,9 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_WINDOW_FOCUS_GAINED:
     case SDL_EVENT_WINDOW_FOCUS_LOST:
         io.AddFocusEvent(event.type == SDL_EVENT_WINDOW_FOCUS_GAINED);
+        // Clear even a short pause: rendering may stop before another unfocused
+        // present is recorded, so its duration must not appear as a gameplay hitch.
+        real_frame_history.Reset();
         if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) l3_down = r3_down = false;
         return false; // WindowSDL also updates the background frame-cap policy.
     case SDL_EVENT_KEY_DOWN:
@@ -1273,6 +1304,16 @@ void SetTextEntry(bool active, const std::string& prompt, const std::string& tex
     text_entry_active = active;
     text_entry_prompt = prompt;
     text_entry_text = text;
+}
+
+void RecordPresent(bool real_frame, bool presented) {
+    std::scoped_lock lock{imgui_mutex};
+    if (!initialized) return;
+    if (!presented || !BbSettings::Get().window_focused) {
+        real_frame_history.Reset();
+    } else if (real_frame) {
+        real_frame_history.Present();
+    }
 }
 
 void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {

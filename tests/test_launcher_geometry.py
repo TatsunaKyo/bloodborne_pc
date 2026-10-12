@@ -25,6 +25,7 @@ launcher.Launcher.detect_gpu = lambda self: None
 launcher.Launcher.check_update = lambda self: None
 original_tk = tk.Tk
 results = []
+revision = launcher.VERSION.rsplit('.', 1)[-1]
 
 def rectangle(widget):
     return (widget.winfo_rootx(), widget.winfo_rooty(), widget.winfo_width(), widget.winfo_height())
@@ -132,19 +133,28 @@ with tempfile.TemporaryDirectory(prefix='bbport-geometry-') as directory:
                     obj.overlay_link.event_generate('<Button-1>')
                     root.update()
                     assert obj.current_page == 'display'
+                    # The new graph is a real shared checkbox on Display & FPS.
+                    graph = obj.frametime_graph_check
+                    assert graph.grid_info()['column'] == 0 and graph.grid_info()['columnspan'] == 2
+                    assert graph.winfo_width() <= obj.pages['display'].winfo_width()
+                    previous = obj.vars['show_frametime_graph'].get()
+                    graph.invoke(); root.update()
+                    assert obj.vars['show_frametime_graph'].get() != previous
+                    graph.invoke(); root.update()
+                    assert obj.vars['show_frametime_graph'].get() == previous
                     obj.show('play')
                     root.update()
                     if language == 'en' and scale == 1.5 and size == (1280, 850):
                         from PIL import ImageGrab
                         bounds=rectangle(root)
                         ImageGrab.grab(bbox=(bounds[0],bounds[1],bounds[0]+bounds[2],bounds[1]+bounds[3]),
-                                       xdisplay=os.environ['DISPLAY']).save(source.parents[1] / 'out/verification/launcher-play-revision15.png')
+                                       xdisplay=os.environ['DISPLAY']).save(source.parents[1] / f'out/verification/launcher-play-revision{revision}.png')
             finally:
                 for callback in root.tk.call('after', 'info'):
                     root.after_cancel(callback)
                 root.destroy()
     tk.Tk = original_tk
 
-output = source.parents[1] / 'out/verification/launcher-geometry-revision15.json'
+output = source.parents[1] / f'out/verification/launcher-geometry-revision{revision}.json'
 output.write_text(json.dumps({'cases':results, 'checks':'real Tk widgets: complete sidebar identity, visible navigation, aligned columns, distinct rows, conditional controls and overlay link'},indent=2)+'\n')
 print(f'PASS: {len(results)} real Tk layouts in English/Russian at 100/125/150/175/200% scaling; readable sidebar identity, visible navigation, no overlapping dropdowns, matching columns, correct conditional labels and working overlay link.')

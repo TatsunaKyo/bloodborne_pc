@@ -281,6 +281,16 @@ with tempfile.TemporaryDirectory(prefix='bbport-launcher-') as directory:
                 assert launcher.load_menu()['show_fps'] == '1'
                 assert obj.vars['dlss_preset'].get() == 'default'
             obj.vars['show_dlss_preset'].set(False)
+            graph_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
+                            w.kwargs['variable'] is obj.vars['show_frametime_graph']]
+            assert len(graph_checks) == 1  # Display & FPS, linked from Play.
+            assert not obj.vars['show_frametime_graph'].get()
+            for enabled in (True, False):
+                graph_checks[0].invoke()
+                obj.collect()
+                assert obj.vars['show_frametime_graph'].get() == enabled
+                assert launcher.load_menu()['show_frametime_graph'] == ('1' if enabled else '0')
+                assert launcher.load_menu()['show_fps'] == '1'
             resolution_checks = [w for w in Widget.nodes if 'variable' in w.kwargs and
                                  w.kwargs['variable'] is obj.vars['show_resolution']]
             assert len(resolution_checks) == 1

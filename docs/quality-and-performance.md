@@ -25,7 +25,7 @@ Revision 10 spread periodic scans across frames. After the flashing-assets repor
 
 The draw pipeline copies read-only constants before the recording thread binds them. I now decode the camera and compare small-skeleton palettes from those same snapshots. Reading the live guest address later could give motion tracking a newer camera than the one used to render the image.
 
-A point behind the previous camera has no valid reprojection. I reject that case and vectors that would overflow the FP16 motion texture before they enter reconstruction or FG. The GPU fixture covers behind-camera points, stale/nonfinite object vectors and excessive camera/object vectors. I am keeping the flashing report open until the affected gameplay scenes have been compared.
+A point behind the previous camera has no valid reprojection. I reject that case and vectors that would overflow the FP16 motion texture before they enter reconstruction or FG. The GPU fixture covers behind-camera points, stale/nonfinite object vectors and excessive camera/object vectors. My Revision 19 Hunter's Dream comparison now suggests the flashing is resolved; I keep its corrections while checking the remaining pacing inconsistency.
 
 ## Remaining quality work
 
@@ -46,3 +46,11 @@ The flashing remained in my Revision 14 tests. In Revision 15 I found that drain
 I found that a draw could leave a small geometry copy in its thread's private batch. The command thread then drained the draw queue and waited for host copies, but that wait could not see the unpublished batch. I now hand over those copies at the end of a queued burst, before marking the draw work drained. The existing completion wait can finish them before the guest replaces their source data.
 
 The test uses the actual queue and copy pool: all 384 old cases copied replacement data, and the corrected path preserves the original data in all 384. The copies stay batched, and the threaded renderer, constant ring and upscalers remain enabled. The Hunter's Dream is my first gameplay comparison for this build.
+
+## Queue-lock contention and real-frame pacing
+
+In Revision 20 I moved the shared Vulkan queue lock away from command-recording and host-copy waits. The render and presentation schedulers share one queue, so their actual `QueueSubmit`, `QueueBindSparse` and `QueuePresent` calls still serialize. CPU preparation and local retirement can now proceed without preventing an already-ready frame from being presented. The sparse-binding callback takes its own queue lock and retains the timeline wait consumed by the render submission.
+
+I reproduced the contention by holding five different preparation/retirement phases in the production submission methods. Revision 19 blocks presentation in each one; the new scope allows it to proceed. Recorded Vulkan calls still serialize, and the recorder/copy completions remain before the command-buffer submission. This removes a source of unnecessary delay; the gameplay comparison will tell me how much it helps my scene. The reconstruction-time depth copy and NVIDIA input-completion fences stay in place.
+
+I also added the optional [frametime graph](display-and-overlay.md#reading-the-graph) so ordinary real-frame spikes can be seen without enabling the developer profiler. Its raw presentation intervals complement the FG output count and Reflex latency report.

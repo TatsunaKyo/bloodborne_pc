@@ -145,6 +145,7 @@ void Load() {
     v.show_resolution = false;
     v.show_frame_generation = false;
     v.show_latency = false;
+    v.show_frametime_graph = false;
     v.background_mode = BackgroundRun;
     v.frame_generation = FrameGenerationOff;
     v.limit_generated_fps = false;
@@ -203,6 +204,8 @@ void Load() {
                 v.show_frame_generation = value == "1";
             } else if (key == "show_latency") {
                 v.show_latency = value == "1";
+            } else if (key == "show_frametime_graph") {
+                v.show_frametime_graph = value == "1";
             } else if (key == "show_resolution") {
                 v.show_resolution = value == "1";
             } else if (key == "background_mode") {
@@ -378,6 +381,7 @@ void Save() {
                      int(v.limit_generated_fps.load()),v.generated_fps_limit.load());
         std::fprintf(file,"show_frame_generation=%d\nshow_latency=%d\n",
                      int(v.show_frame_generation.load()),int(v.show_latency.load()));
+        std::fprintf(file,"show_frametime_graph=%d\n",int(v.show_frametime_graph.load()));
         std::fprintf(file, "cheat_damage=%s\ncheat_incoming=%s\ncheat_echoes=%s\ncheat_movement=%s\n"
                           "cheat_infinite_stamina=%d\ncheat_no_consume=%d\n",
                      CheatMultiplierKeys[std::clamp(v.cheat_damage.load(), 0, 4)],

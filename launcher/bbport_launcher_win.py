@@ -43,7 +43,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.19'
+VERSION = '1.6-tatsunakyo.20'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -180,13 +180,13 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'online_community': COMMUNITY_SERVER}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'xess_preset': '2', 'show_fps': '1', 'show_dlss_preset': '0',
-                 'show_resolution': '0', 'show_frame_generation': '0', 'show_latency': '0',
+                 'show_resolution': '0', 'show_frame_generation': '0', 'show_latency': '0', 'show_frametime_graph': '0',
                  'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1',
                  'amd_antilag': '0', 'real_fps_limit': '-1',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
                  'cheat_infinite_stamina': '0', 'cheat_no_consume': '0', 'cheat_no_fall_damage': '0'}
 MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution',
-              'show_frame_generation', 'show_latency',
+              'show_frame_generation', 'show_latency', 'show_frametime_graph',
               'cheat_infinite_stamina', 'cheat_no_consume', 'cheat_no_fall_damage', 'limit_generated_fps', 'amd_antilag'}
 CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
 MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
@@ -1409,6 +1409,10 @@ class Launcher:
                    _('Show PC latency in overlay', 'Показывать задержку ПК в статистике'),
                    _('Measured by NVIDIA Reflex, from simulation start to GPU completion. N/A means the driver has no valid sample. This excludes monitor and input-device latency.',
                      'Измеряется NVIDIA Reflex: от начала симуляции до завершения GPU. N/A означает отсутствие данных. Задержка монитора и устройства ввода не учитывается.'))
+        self.frametime_graph_check = self.check(f, 'show_frametime_graph', 'menu',
+                   _('Show frametime graph in overlay', 'Показывать график времени кадров'),
+                   _('A compact trace of the last 240 real-frame presentation intervals, with the latest and peak time. Generated frames are not included; this is not GPU render time or monitor latency.',
+                     'Компактный график последних 240 интервалов показа реальных кадров, с текущим и пиковым временем. Сгенерированные кадры не включены; это не время рендера GPU и не задержка монитора.'))
         self.section(f, _('Frame rate', 'Частота кадров'), top=4)
         self.row(f, _('When in background', 'В фоне'),
                  self.choice(f, 'background_mode', 'menu', BACKGROUND_MODES),

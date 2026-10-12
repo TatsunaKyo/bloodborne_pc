@@ -757,9 +757,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         scheduler.Flush(info);
 
         // Present to swapchain.
+        bool presented;
         {
             std::scoped_lock submit_lock{Scheduler::submit_mutex};
-            const bool presented=BbNvidia::Present(frame,[&] {
+            presented=BbNvidia::Present(frame,[&] {
                 BbAmd::BeforePresent(frame->amd_token, final && is_game_frame && !is_reusing_frame);
                 return swapchain.Present();
             });
@@ -767,6 +768,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 swapchain.Recreate(window.GetWidth(), window.GetHeight());
             }
         }
+        BbOverlay::RecordPresent(final && is_game_frame && !is_reusing_frame,presented);
     };
     if (!is_game_frame || is_reusing_frame) frame_generation->Invalidate();
     const bool generated = is_game_frame && !is_reusing_frame &&
