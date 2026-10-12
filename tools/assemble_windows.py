@@ -47,13 +47,13 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
             old=next(n.split('/')[0] for n in z.namelist() if n.endswith('/BUILD-IDENTITY.json'))
             z.extractall(temp/'baseline')
         shutil.copytree(temp/'baseline'/old,stage)
-        for name in ('source','docs','scripts','tools','launcher','_internal'):
+        for name in ('source','docs','scripts','tools','launcher','_internal','.github'):
             shutil.rmtree(stage/name,ignore_errors=True)
         shutil.copy2(launcher/'Bloodborne.exe',stage/'Bloodborne.exe')
         shutil.copytree(launcher/'_internal',stage/'_internal')
-        for name in ('docs','scripts','tools','patches','launcher'):
+        for name in ('docs','scripts','tools','patches','launcher','.github'):
             shutil.copytree(ROOT/name,stage/name,dirs_exist_ok=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
-        for name in ('README.md','LICENSE','run.py'):shutil.copy2(ROOT/name,stage/name)
+        for name in ('README.md','LICENSE','run.py','CONTRIBUTING.md','SECURITY.md'):shutil.copy2(ROOT/name,stage/name)
         shutil.copy2(ROOT/'packaging/windows/bbport.menu.ini',stage/'bbport.menu.ini')
         shutil.copy2(ROOT/'packaging/windows/README-Windows.txt',stage/'README-Windows.txt')
         # Do not keep historical test programs under the names of a new build.
