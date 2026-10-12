@@ -48,7 +48,8 @@ For DLSS, I exposed the following presets exactly as separate choices:
 | M | M (Transformer 2nd gen) |
 | L | L (Transformer 2nd gen) |
 
-Be warned that XeSS uses different upscaling ratios when compared to DLSS and FSR — you can read more at  [Upscalers, presets and XeSS resolution examples](docs/upscaling.md)
+> [!TIP]
+> Be warned that XeSS uses different upscaling ratios when compared to DLSS and FSR — you can read more at [Upscalers, presets and XeSS resolution examples](docs/upscaling.md)
 
 ### HDR-ready Frame Generation and Multi Frame Generation
 
