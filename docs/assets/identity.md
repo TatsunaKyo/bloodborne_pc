@@ -17,7 +17,7 @@ The crowned TK emblem combines my initials, an open crown, a Gothic workshop arc
 
 The PNG banner is used in the README because it displays consistently on GitHub, including mobile. The SVG lettering remains editable; it uses Georgia with DejaVu Serif as a fallback. To export after an edit, install CairoSVG and Pillow and run `python tools/export_brand_assets.py` from the repository. The two paintings stay unchanged when the SVG is exported.
 
-Art direction and project identity: TatsunaKyo. The workshop paintings were created for this brief using image generation; typography, emblem and exports are editable project assets. See [the artwork prompts](artwork-prompts.md) for the brief. The original game and upstream port keep their own credits.
+Art direction and project identity: TatsunaKyo. The workshop paintings follow my brief; typography, emblem and exports are editable project assets. See [the artwork prompts](artwork-prompts.md) for the brief. The original game and upstream port keep their own credits.
 
 ## README feature diagrams
 

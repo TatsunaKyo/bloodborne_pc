@@ -1,6 +1,6 @@
 # Temporal stability and renderer performance
 
-In Revision 10, I focused on two things: stop stale history carrying across unrelated scenes, and remove repeated renderer work that I could identify in the code. The underlying bbport/shadPS4 renderer and vendor integrations retain their credits.
+I focused on stopping stale history from carrying across unrelated scenes and removing repeated work from the renderer. The current build also includes the foliage-history and preserved-depth corrections that resolved the Hunter's Dream flashing in my Windows 11 / RTX 5070 Ti test. The underlying bbport/shadPS4 renderer and vendor integrations retain their credits.
 
 ## Shared camera reset
 
@@ -39,13 +39,13 @@ For the main gameplay configuration and open regression checks, see [Testing](te
 
 ## ConstRam and geometry reads
 
-The flashing remained in my Revision 14 tests. In Revision 15 I found that draining the draw queue before `DumpConstRam` did not complete the deferred vertex/index copies. The dump could overwrite their guest source while those reads were still queued on the Vulkan recorder or copy workers. I added the existing host-copy completion wait before that overwrite, preserving the constant ring and threaded path. The production-branch regression reproduces 2,048 damaged snapshots out of 3,072 with the previous code and zero with the correction. My Revision 15 test improved, but I still see flashing in the Hunter's Dream. This dependency is shared by the rendering paths.
+Draining the draw queue before `DumpConstRam` did not complete deferred vertex/index copies. The dump could overwrite their guest source while those reads were still queued on the Vulkan recorder or copy workers. I added the existing host-copy completion wait before that overwrite, preserving the constant ring and threaded path. The production-branch regression reproduces 2,048 damaged snapshots out of 3,072 with the previous code and zero with the correction. This was one part of the investigation; the later foliage/depth correction resolved the visible flashing in my affected-scene comparison.
 
 ## Draw-thread copies in Revision 16
 
 I found that a draw could leave a small geometry copy in its thread's private batch. The command thread then drained the draw queue and waited for host copies, but that wait could not see the unpublished batch. I now hand over those copies at the end of a queued burst, before marking the draw work drained. The existing completion wait can finish them before the guest replaces their source data.
 
-The test uses the actual queue and copy pool: all 384 old cases copied replacement data, and the corrected path preserves the original data in all 384. The copies stay batched, and the threaded renderer, constant ring and upscalers remain enabled. The Hunter's Dream is my first gameplay comparison for this build.
+The test uses the actual queue and copy pool: all 384 old cases copied replacement data, and the corrected path preserves the original data in all 384. The copies stay batched, and the threaded renderer, constant ring and upscalers remain enabled. The dated comparisons are kept in [the test history](history/testing-through-21.md); [current reports](known-issues.md) describes the remaining pacing work.
 
 ## Queue-lock contention and real-frame pacing
 

@@ -2,6 +2,8 @@
 
 I added player damage, incoming enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina, consumables kept after use and No Fall Damage. I put them alongside the original cheats so you can choose them before starting or change them while playing from Insert / L3+R3. All seven start off. The shared menu preferences preserve your choices when the launcher rewrites its graphics settings.
 
+The [current reports](known-issues.md) include the remaining Blood Echoes multiplier check. Earlier shooting and sprint-stamina investigations are kept in the [test history](history/testing-through-21.md).
+
 | Choice | Values | Behavior |
 | --- | --- | --- |
 | Player damage | Off, x2, x4, x8, x16 | Multiplies the final damage of player hits against other actors. |
@@ -24,8 +26,8 @@ On an x86-64 Linux host, compile with `gcc -O2 -mavx -I src tests/test_cheats.c 
 
 In Revision 8, I added the missing ordinary stamina setter and animation/attack guards, plus both normal Echoes reward stores. Tests using the privately supplied image execute the complete original stamina setters and reward/balance writes, including player vs NPC behavior, regeneration and negative costs. The test reads those bytes only from the optional local input; they are not redistributed. For No Fall Damage, I use the player's verified built-in guard without changing gravity or defense stats.
 
-In Revision 9, I added the remaining continuous movement, direct character/script and state synchronization guards. Running bypasses the attack setter, which is why my earlier fix missed it. The optional private-image test executes 50 consecutive drain updates, the original inline script update and the complete character setter, with the cheat on and off for both player and NPCs. The same tests pass against the Windows-compiled runtime object. I keep the sustained-running gameplay check open on the shared testing page until the affected gameplay states are confirmed.
+In Revision 9, I added the remaining continuous movement, direct character/script and state synchronization guards. Running bypasses the attack setter, which is why my earlier fix missed it. The optional private-image test executes 50 consecutive drain updates, the original inline script update and the complete character setter, with the cheat on and off for both player and NPCs. The same tests pass against the Windows-compiled runtime object.
 
-I am still investigating the crash after firing with damage/reduction and no-consume enabled together. To help capture it, turn on Advanced → Diagnostics → Developer profiling and crash diagnostics in the launcher. Each run keeps its own log/settings/exit code folder, and fatal Windows faults try to write a minidump with registers and active cheat values. I leave this off by default for ordinary play.
+For a new cheat-related report, turn on Advanced → Diagnostics → Developer profiling and crash diagnostics in the launcher before reproducing it. Each run keeps its own log/settings/exit code folder, and fatal Windows faults try to write a minidump with registers and active cheat values. I leave this off by default for ordinary play.
 
 Revision by TatsunaKyo. The original port, shadPS4, Dear ImGui and the existing community patches retain their own credits and licenses.

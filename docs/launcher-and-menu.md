@@ -48,9 +48,9 @@ The same category names apply to the launcher. Some startup/management controls 
 
 ![The Crowned Workshop in-game menu](assets/crowned-workshop-menu.png)
 
-## Live settings and saved preferences
+### LIVE editing and saved preferences
 
-I made the runtime controls editable during play. [Live editing](live-settings.md) lists the exact behavior and startup exceptions.
+I made the added runtime controls useful **LIVE, without closing and restarting the game**. DLSS model presets, supported FG/latency modes, unlocked frame caps, window/background behavior, runtime cheats and overlay choices can be adjusted here while playing. Enable **Image → Live resolution changes** before launching if you also want to compare upscalers, quality modes and output resolutions during the session. [The live-settings table](live-settings.md) lists the startup exceptions.
 
 The launcher and menu share `bbport.menu.ini`. Saving from the launcher preserves choices changed during play. The in-game menu saves when closed; settings that need a restart show that explicitly. DLSS presets, overlay choices and unlocked real-frame limits can change during the session. Startup patches retain their restart requirement.
 

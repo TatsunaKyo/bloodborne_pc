@@ -2,12 +2,12 @@
 
 I checked the audit against the repository and published assets on 12 October 2026, after finishing Revision 21. I am keeping this work separate from rendering and gameplay changes.
 
-| Finding | What I verified | Next step |
+| Finding | What I verified | Current result |
 |---|---|---|
 | Updater rejects the current release | Stable Revision 21 and Revision 19 have `-preview` tags; the old parser rejected both. | Corrected in Revision 22, with the real release metadata as a regression fixture. Existing tags stay unchanged. |
-| Release script is stale | `prepare_release.py` was tied to Revision 15; the publishing guide still introduced Revision 20. | Use the package identity, exact source/tree, matching embedded notes and actual checksum. |
-| Missing CI and report forms | No `.github` files were present; repository Issues were disabled. | Add regression/build/release workflows and forms; enable the repository settings separately. |
-| Current-problem page mixes statuses | Fixed flashing, inherited reports, old cheat reports and untested hardware were listed together. | Separate current reports, coverage, test methods and dated history. |
+| Release script is stale | `prepare_release.py` was tied to Revision 15; the publishing guide still introduced Revision 20. | Revision 22 derives metadata from the package identity, exact source/tree, matching notes and checksum. |
+| Missing CI and report forms | No `.github` files were present; repository Issues were disabled. | Regression/build/release workflows and report forms are included. Hosted regression CI passes; Issues still needs enabling. |
+| Current-problem page mixes statuses | Fixed flashing, inherited reports, old cheat reports and untested hardware were listed together. | Current reports, compatibility, test methods and dated history now have separate pages. |
 | Existing diagnostics | Session logs, settings, timings and crash capture already exist. | Extend them with a reviewed/redacted support archive; do not build a second profiler. |
 
 ## P0 — Revision 22
@@ -16,11 +16,15 @@ The updater accepts legacy stable tags while excluding drafts and actual prerele
 
 Release preparation derives the version, source and notes from the complete package. Validation checks the archive, exact executable/runtime hashes, AMD64 PE files, DLL import/export closure, sidecar checksum and source patch/tree. The new Windows workflow rebuilds native executables and the launcher; unchanged SDK redistributables are taken from a checksum-pinned stable baseline. This records provenance and fixed dependencies without claiming byte-identical compiler output.
 
-Portable CI executes the existing settings, renderer and actual GUI regressions. Windows CI executes CPU regression programs and checks the compiled launcher before assembling a candidate. Publication stays manual. The repository settings and first hosted workflow runs are separate checks; local source tests do not count as a completed hosted Windows CI run.
+Portable CI executes the existing settings, renderer and actual GUI regressions. The [hosted regression run for Revision 22](https://github.com/TatsunaKyo/bloodborne_pc/actions/runs/38229068006) passed. The Windows build workflow also includes CPU regression programs and compiled-launcher checks before assembling a candidate, but its full hosted build still needs a separate run. Publication stays manual.
+
+The bug, performance and feature forms are ready in `.github/ISSUE_TEMPLATE`. To make them available, enable **Settings → General → Features → Issues** in the repository. Actions is already running.
 
 ## P1 — Player documentation and reviewed evidence
 
 The main README keeps the artwork and feature introductions, with download/installation/compatibility navigation at the top, a live-editing guide and a visible roadmap. Current documents use the workshop name and seven matching categories; older notes remain dated records with a link back to the current guides.
+
+The opening follows my supplied layout: the existing banner, centered title and introduction, four badges, and direct download/installation links. My original introductory paragraphs remain below those links. **LIVE editing during play** belongs with the in-game menu, with links from the relevant features and a separate table for startup exceptions.
 
 I want genuine gameplay screenshots alongside the illustrations. The supplied navigation concept is a layout example, not gameplay evidence; I will use actual reviewed captures for that gallery.
 
@@ -36,4 +40,4 @@ Evaluate MkDocs Material with the existing guides after the release path is reli
 
 ## Gameplay priorities remain
 
-The existing [gameplay roadmap](tatsunakyo-next.md) stays active: recheck the reported cheat cases, add Save Manager, improve native input, support ultrawide/HUD placement and continue pacing/HUDless-FG work. Infrastructure improvements do not replace those tasks or justify unrelated rendering changes in this revision.
+The existing [gameplay roadmap](tatsunakyo-next.md) stays active: check the remaining Echoes and pacing reports, add Save Manager, improve native input, support ultrawide/HUD placement and continue HUDless-FG work. Each change gets its own regression coverage before it joins a release.

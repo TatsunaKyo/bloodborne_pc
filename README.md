@@ -1,18 +1,28 @@
 ![Bloodborne: The Crowned Workshop — TatsunaKyo](docs/assets/crowned-workshop-header.png)
 
-# Bloodborne: The Crowned Workshop
+<h1 align="center">Bloodborne: The Crowned Workshop</h1>
 
-**Latest published stable: revision 21.** [Windows releases](https://github.com/TatsunaKyo/bloodborne_pc/releases) · [Release notes](docs/releases/windows-v1.6-tatsunakyo.21.md) · [Development roadmap](docs/tatsunakyo-next.md)
+<p align="center">Experience Bloodborne natively on Windows, enhanced with modern rendering technologies, customizable gameplay and a redesigned launcher.</p>
 
-I maintain this revision of [Super Medo's native Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and shadPS4. I want more graphics choices, easier window controls and settings I can change while playing. The workshop, lantern and crowned TK emblem are my own project identity; the original game and port keep their creators' credit.
+<p align="center">
+  <a href="https://github.com/TatsunaKyo/bloodborne_pc/releases/latest"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 21 Stable" height="28"></a>
+  <a href="docs/compatibility.md"><img src="docs/assets/readme/windows.svg" alt="Windows 10 / 11" height="28"></a>
+  <a href="docs/compatibility.md"><img src="docs/assets/readme/vulkan.svg" alt="Vulkan 1.3" height="28"></a>
+  <a href="LICENSE"><img src="docs/assets/readme/license.svg" alt="GPL-2.0+" height="28"></a>
+</p>
 
-| Download | Get started |
-|---|---|
-| [Latest stable ZIP and SHA256](https://github.com/TatsunaKyo/bloodborne_pc/releases/latest) | [Installation and live settings](docs/launcher-and-menu.md) |
-| [Release notes](docs/releases/index.md) | [Hardware compatibility](docs/compatibility.md) |
-| [Current reports](docs/known-issues.md) | [All guides](docs/index.md) |
+<table width="100%">
+  <tr>
+    <td width="50%"><a href="https://github.com/TatsunaKyo/bloodborne_pc/releases/latest"><strong>↓ Download latest&nbsp;↗</strong></a><br>Windows package and checksum</td>
+    <td width="50%"><a href="docs/launcher-and-menu.md#installation"><strong>▤ Installation guide&nbsp;↗</strong></a><br>Requirements and setup</td>
+  </tr>
+</table>
 
-**Windows 10/11 · 64-bit · Vulkan 1.3 · GPL-2.0-or-later.** Specific upscalers, FG and latency modes have additional GPU/driver requirements.
+<p align="center"><a href="docs/compatibility.md">Compatibility</a> · <a href="docs/known-issues.md">Current reports</a> · <a href="#roadmap">Roadmap</a> · <a href="docs/index.md">All guides</a> · <a href="docs/releases/index.md">Release notes</a></p>
+
+My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. I want to make Bloodborne more comfortable to play on a modern Windows PC, with more graphics choices, better window controls and settings you can change during play. This project would NOT be possible without the original work and the people involved.
+
+The Crowned Workshop is my own place to work on the port. The workshop, lantern and crowned TK emblem are part of that identity; the credit for the game and the original port stays with their creators.
 
 > [!CAUTION]
 > NO game files are included. You NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump, including `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09.
@@ -26,19 +36,13 @@ I maintain this revision of [Super Medo's native Windows port](https://github.co
 
 **Play Bloodborne.exe** starts with your saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each package includes its SHA256 checksum and **Start-Verified-Launcher.cmd**. [Installation and settings](docs/launcher-and-menu.md)
 
-## Live editing during play
-
-I designed the added runtime controls to be useful **LIVE, without closing and restarting the game**. Press **Insert** or **L3+R3** to change DLSS model presets, supported FG/latency modes, unlocked frame caps, window/background behavior, runtime cheats or your overlay. Both interfaces keep the same preferences.
-
-For live upscaler quality/output changes, enable **Image → Live resolution changes** before launching. Startup game patches and a few renderer options still require a restart; [the live-settings table](docs/live-settings.md) makes those exceptions clear.
-
 ## What this fork adds
 
 ### High-fidelity upscaling support: DLSS, FSR and XeSS
 
 ![DLSS, FSR and XeSS: input scene, reconstruction and display output](docs/assets/features/upscaling.png)
 
-I wanted more control over image quality and more choices for people playing on different GPUs. The original port already had DLSS, FSR and TAA; I added **XeSS Super Resolution** and a separate **DLSS model-preset selector**, with the same settings available in the launcher and while playing. **DLSS model changes apply live on the next scene frame**; live quality/resolution changes use the policy described above. The following shows all the upscaling options provided:
+I wanted more control over image quality and more choices for people playing on different GPUs. The original port already had DLSS, FSR and TAA; I added **XeSS Super Resolution** and a separate **DLSS model-preset selector**, with the same settings available in the launcher and while playing. **DLSS model changes apply live on the next scene frame**; live quality/resolution changes use [the in-game menu’s Live resolution setting](#live-editing-during-play). The following shows all the upscaling options provided:
 
 | Upscaler | Available option |
 |---|---|
@@ -165,7 +169,7 @@ I added runtime choices alongside the original startup cheats, so you can adjust
 | Consumables / ammunition kept on use | Optional toggle; you still need to own the item. |
 | No Fall Damage | Optional toggle for normal falls; scripted deaths still apply. |
 
-They start off and share the **Cheats** category in both interfaces. Earlier reports involving sustained running stamina, Echoes awards and firing with several cheats enabled together stay in the [reports to recheck](docs/known-issues.md); I keep them distinct from confirmed current-build regressions. Startup patches retain their restart requirement.
+They start off and share the **Cheats** category in both interfaces. The [current reports](docs/known-issues.md) cover the remaining Echoes multiplier check. The guide explains what each cheat changes and how the runtime verifies its hooks. Startup patches retain their restart requirement.
 
 [Cheat behavior and current limitations](docs/cheats.md)
 
@@ -186,6 +190,12 @@ I redesigned the launcher around my workshop, lantern and crowned TK emblem, and
 I translated the port's settings menu into **English**, retained Russian, and replaced the long page with **seven tabs**: Image, Frames, Window, Overlay, Cheats, Effects and Advanced. Press **Insert** or **L3+R3** to open it. Close and restart controls stay within reach, with a layout that adapts to the available space.
 
 Those seven categories now match the launcher. If you find Reflex under Frames before launching, you find it under Frames during play too. Sharpening stays in Image, background behavior in Window, and model detail/game effects in Effects. Both interfaces use the same saved preferences, and settings that need a restart tell you so.
+
+#### LIVE editing during play
+
+I designed the added runtime controls to be useful **LIVE, without closing and restarting the game**. Press **Insert** or **L3+R3** to change DLSS model presets, supported FG/latency modes, unlocked frame caps, window/background behavior, runtime cheats or your overlay. Both interfaces keep the same preferences.
+
+For live upscaler quality/output changes, enable **Image → Live resolution changes** before launching. Startup game patches and a few renderer options still require a restart; [the live-settings table](docs/live-settings.md) makes those exceptions clear.
 
 [Shared categories, live settings and restart requirements](docs/launcher-and-menu.md#in-game-settings)
 
@@ -224,7 +234,7 @@ I am keeping the existing gameplay work active while making the fork easier to m
 
 ## Help and development
 
-For a bug report, include your GPU, driver, settings, reproduction steps and `user/last_run.log`. For crashes or performance issues, enable the optional diagnostics before reproducing the problem. [test methods](docs/testing.md) and [current reports](docs/known-issues.md) collects the open reports; [the roadmap](docs/tatsunakyo-next.md) covers planned features and priorities.
+For a bug report, include your GPU, driver, settings, reproduction steps and `user/last_run.log`. For crashes or performance issues, enable the optional diagnostics before reproducing the problem. [Current reports](docs/known-issues.md) lists the remaining checks; [testing](docs/testing.md) explains the recorded results and environments; [the roadmap](docs/tatsunakyo-next.md) covers planned features and priorities.
 
 For black screens, try **Advanced → Clear shader cache**. Rebuilding it can cause initial stutter. Report fork-specific issues here; the [upstream Discord](https://discord.gg/yTMG8c4Bqm) belongs to the original project.
 
