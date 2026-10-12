@@ -50,7 +50,7 @@ For DLSS, I exposed the following presets exactly as separate choices:
 
 Be warned that XeSS uses different upscaling ratios when compared to DLSS and FSR — you can read more at  [Upscalers, presets and XeSS resolution examples](docs/upscaling.md)
 
-### Frame Generation and Multi Frame Generation
+### HDR-ready Frame Generation and Multi Frame Generation
 
 ![Real game frames and extra display frames, with SDR and HDR10 support](docs/assets/features/frame-generation.png)
 
