@@ -157,7 +157,17 @@ They start off and share the **Cheats** category in both interfaces. I am still 
 
 [Cheat behavior and current limitations](docs/cheats.md)
 
-### A compact English in-game menu
+### The Crowned Workshop launcher
+
+![Play quick choices lead to seven organized settings pages with shared preferences](docs/assets/features/launcher.png)
+
+I redesigned the launcher around my workshop, lantern and crowned TK emblem, and organized the settings so that the visual identity also makes it easier to use and reflects all the changes made with the project. The sidebar separates the seven shared **Settings** pages from the launcher tools, and bordered sections separate related controls within a page.
+
+**Play** keeps the quick choices together, grouped into image, frames and window/overlay. The DLSS model selector appears only when DLSS is selected, XeSS has its own quality selector, and NVIDIA FG shows its multiplier on a separate row. Each complete setting has one home in the detailed pages; Play is a shortcut to those same preferences. **Game & files**, mods, online setup and logs remain launcher tools.
+
+[Launcher tour, category table and screenshots](docs/launcher-and-menu.md#the-launcher)
+
+### A compact and cohesive in-game menu
 
 ![Seven matching settings categories, available in English or Russian with Insert or L3+R3](docs/assets/features/in-game.png)
 
@@ -166,16 +176,6 @@ I translated the port's settings menu into **English**, retained Russian, and re
 Those seven categories now match the launcher. If you find Reflex under Frames before launching, you find it under Frames during play too. Sharpening stays in Image, background behavior in Window, and model detail/game effects in Effects. Both interfaces use the same saved preferences, and settings that need a restart tell you so.
 
 [Shared categories, live settings and restart requirements](docs/launcher-and-menu.md#in-game-settings)
-
-### The Crowned Workshop launcher
-
-![Play quick choices lead to seven organized settings pages with shared preferences](docs/assets/features/launcher.png)
-
-I redesigned the launcher around my workshop, lantern and crowned TK emblem, and organized the settings so the visual identity also makes it easier to use. The sidebar separates the seven shared **Settings** pages from the launcher tools, and bordered sections separate related controls within a page.
-
-**Play** keeps the quick choices together, grouped into image, frames and window/overlay. The DLSS model selector appears only when DLSS is selected, XeSS has its own quality selector, and NVIDIA FG shows its multiplier on a separate row. Each complete setting has one home in the detailed pages; Play is a shortcut to those same preferences. **Game & files**, mods, online setup and logs remain launcher tools.
-
-[Launcher tour, category table and screenshots](docs/launcher-and-menu.md#the-launcher)
 
 ### Optional developer diagnostics
 
