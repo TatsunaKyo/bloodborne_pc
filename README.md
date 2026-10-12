@@ -87,7 +87,7 @@ I added independent latency controls because choosing an upscaler or turning Fra
 
 ![Separate real and output FPS caps, exact number controls and background Pause/30/60 modes](docs/assets/features/fps-limits.png)
 
-I wanted to choose the frame rate I actually use, including **75 FPS**, without fighting a slider that jumps hundreds of frames at the slightest movement. Both interfaces let you **type an exact number** and make small adjustments by dragging. The launcher also supports arrow-key steps and finer dragging with Shift. The real-frame cap can change while playing with Unlocked timing, and your choice is kept when you return to the launcher.
+I wanted more granular control and to choose the frame rate without fighting a slider that jumps hundreds of frames at the slightest movement. Both interfaces let you **type an exact number** and make small adjustments by dragging. The launcher also supports arrow-key steps and finer dragging with Shift. The real-frame cap can change while playing with Unlocked timing, and your choice is kept when you return to the launcher.
 
 The normal cap controls **real game frames**. The optional **FG output cap** includes the generated frames and works alongside it. A 75 FPS real cap therefore does not prevent x2 FG from displaying up to 150 FPS:
 
