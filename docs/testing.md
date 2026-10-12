@@ -4,7 +4,7 @@ I test gameplay on my Windows 11 / RTX 5070 Ti PC and keep those results separat
 
 ## Portable regressions
 
-With Python, Tk/Pillow, a C++ compiler, Vulkan headers and the pinned ImGui submodule available, run `python3 tools/ci_regressions.py`. Add `--gui` under a display or `xvfb-run` for the actual launcher layout/popup tests.
+With Python, Tk/Pillow, a C++ compiler, zstd and the pinned ImGui submodule available, first run `python3 tools/setup_test_headers.py`, then `python3 tools/ci_regressions.py`. The setup command verifies and prepares the same pinned Vulkan/VMA declarations used by the recording harnesses. Add `--gui` under a display or `xvfb-run` for the actual launcher layout/popup tests.
 
 The suite executes settings and updater behavior, altered-package rejection, production renderer branches with recorded calls, real ImGui controls and optional Tk layouts. It needs no game dump. The CI workflow uses the same entry point; private-image cheat tests and hardware gameplay remain separate.
 
@@ -12,7 +12,7 @@ The suite executes settings and updater behavior, altered-package rejection, pro
 
 The manual **Windows build and package** workflow compiles native components and the launcher, executes the CPU regression programs and checks the compiled Windows launcher before assembling a candidate. It pins MSYS2 package checksums and the unchanged vendor runtime baseline. Package validation checks PE imports/exports, binary/runtime hashes, source commit/tree, source patch and SHA256 sidecar.
 
-A successful hosted build does not test a player's graphics driver. FSR/NVIDIA presentation, HDR, latency, focus transitions and affected scenes still need the named hardware results. The first hosted run is pending until the repository's Actions settings enable it; local tests are recorded with their actual environment.
+A successful hosted build does not test a player's graphics driver. FSR/NVIDIA presentation, HDR, latency, focus transitions and affected scenes still need the named hardware results. The first hosted Windows build is a separate manual run; portable CI starts automatically on source pushes. Local tests and hosted results are recorded with their actual environment.
 
 ## Reporting a comparison
 

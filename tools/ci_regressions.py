@@ -11,7 +11,13 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def run(command):
     print('Running: '+' '.join(map(str,command)),flush=True)
-    subprocess.run(command,cwd=ROOT,check=True)
+    label=next(Path(arg).stem for arg in command if Path(arg).name.startswith('test_'))
+    with (ROOT/'out/verification'/(label+'.log')).open('w') as log:
+        with subprocess.Popen(command,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True) as process:
+            for line in process.stdout:
+                log.write(line);log.flush();print(line,end='',flush=True)
+            result=process.wait()
+    if result:raise subprocess.CalledProcessError(result,command)
 
 
 def main():

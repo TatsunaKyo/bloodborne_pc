@@ -1,6 +1,6 @@
 # GitHub settings for this fork
 
-The source files can provide workflows and report forms, but the repository settings have to enable their use. I checked the repository during the Revision 22 infrastructure work: Issues were disabled and no workflows had been committed yet.
+The source files can provide workflows and report forms, but the repository settings have to enable their use. I checked the repository during the Revision 22 infrastructure work: Issues were disabled and no workflows had been committed yet. GitHub Actions has since started the regression workflow automatically; the Windows candidate job is still a separate manual run.
 
 1. Open **Settings → General → Features** and enable **Issues**. The Bug report, Performance regression and Feature request forms will then appear under New issue.
 2. Open **Actions**. If GitHub asks to enable workflows on the fork, choose **I understand my workflows, go ahead and enable them**.

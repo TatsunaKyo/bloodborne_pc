@@ -168,7 +168,9 @@ int main() {
 
 with tempfile.TemporaryDirectory(prefix='bb-queue-scope-') as directory:
     temp = Path(directory)
-    headers = ROOT.parent / 'windows-build/sysroot/clang64/include'
+    headers = ROOT / 'out/test-headers'
+    if not (headers/'vulkan/vulkan.hpp').is_file():
+        headers = ROOT.parent / 'windows-build/sysroot/clang64/include'
     for name in ('vulkan', 'vk_video'):
         shutil.copytree(headers / name, temp / name)
     for label, revision, progress in [('Revision19', '194e477e148bb99a0841f9f2232ee5565f1b009f', False), ('production', None, True)]:
