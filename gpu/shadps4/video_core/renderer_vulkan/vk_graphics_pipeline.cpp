@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
@@ -55,6 +56,9 @@ GraphicsPipeline::GraphicsPipeline(
         .pPushConstantRanges = &push_constants,
     };
     auto [layout_result, layout] = instance.GetDevice().createPipelineLayoutUnique(layout_info);
+    if (preloading && layout_result != vk::Result::eSuccess) {
+        throw CacheLoadError("Driver rejected cached pipeline layout or pipeline");
+    }
     ASSERT_MSG(layout_result == vk::Result::eSuccess,
                "Failed to create graphics pipeline layout: {}", vk::to_string(layout_result));
     pipeline_layout = std::move(layout);
@@ -199,7 +203,7 @@ GraphicsPipeline::GraphicsPipeline(
         }
         shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eTessellationControl,
-            .module = CompileSPV(sdata.tcs, instance.GetDevice()),
+            .module = CompileSPV(sdata.tcs, instance.GetDevice(), preloading),
             .pName = "main",
         });
     }
@@ -218,7 +222,7 @@ GraphicsPipeline::GraphicsPipeline(
         }
         shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eTessellationEvaluation,
-            .module = CompileSPV(sdata.tes, instance.GetDevice()),
+            .module = CompileSPV(sdata.tes, instance.GetDevice(), preloading),
             .pName = "main",
         });
     }
@@ -237,7 +241,7 @@ GraphicsPipeline::GraphicsPipeline(
         }
         shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eFragment,
-            .module = CompileSPV(sdata.fragment, instance.GetDevice()),
+            .module = CompileSPV(sdata.fragment, instance.GetDevice(), preloading),
             .pName = "main",
         });
     }
@@ -422,6 +426,9 @@ GraphicsPipeline::GraphicsPipeline(
 
     auto [pipeline_result, pipe] =
         device.createGraphicsPipelineUnique(pipeline_cache, pipeline_info);
+    if (preloading && pipeline_result != vk::Result::eSuccess) {
+        throw CacheLoadError("Driver rejected cached pipeline layout or pipeline");
+    }
     ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create graphics pipeline: {}",
                vk::to_string(pipeline_result));
     pipeline = std::move(pipe);
@@ -533,6 +540,9 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
     };
     auto [layout_result, layout] =
         instance.GetDevice().createDescriptorSetLayoutUnique(desc_layout_ci);
+    if (preloading && layout_result != vk::Result::eSuccess) {
+        throw CacheLoadError("Driver rejected cached pipeline layout or pipeline");
+    }
     ASSERT_MSG(layout_result == vk::Result::eSuccess,
                "Failed to create graphics descriptor set layout: {}", vk::to_string(layout_result));
     desc_layout = std::move(layout);

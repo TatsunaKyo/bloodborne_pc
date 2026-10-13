@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/serdes.h"
+#include "common/hash.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
@@ -114,6 +116,12 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
 
     spec.Deserialize(ar);
     info.Deserialize(ar);
+    if (!ar.IsEoS() || perm_idx >= 4096 ||
+        u32(info.hw_stage) > u32(Shader::HwStage::Compute) ||
+        u32(info.sw_stage) >= u32(Shader::SwStage::NumLogicalStages) ||
+        perm_hash_ar != HashCombine(info.pgm_hash, perm_idx)) {
+        throw Serialization::ReadError("Invalid shader metadata or permutation index");
+    }
 
     // Motion vertex shaders embed session-local buffer device addresses. They must be
     // recompiled for the current allocation, never loaded from a previous process.
@@ -151,6 +159,7 @@ bool PipelineCache::LoadComputePipeline(Serialization::Archive& ar) {
 
     ComputePipeline::SerializationSupport sdata{};
     sdata.Deserialize(ar);
+    if (!ar.IsEoS()) throw Serialization::ReadError("Unexpected trailing pipeline data");
 
     std::vector<u8> meta_blob;
     Storage::DataBase::Instance().Load(Storage::BlobType::ShaderMeta,
@@ -165,12 +174,11 @@ bool PipelineCache::LoadComputePipeline(Serialization::Archive& ar) {
         return false;
     }
 
-    const auto [it, is_new] = compute_pipelines.try_emplace(compute_key);
-    ASSERT(is_new);
-
-    it.value() =
-        std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile, *pipeline_cache,
-                                          compute_key, *sel.infos[0], sel.modules[0], sdata, true);
+    if (compute_pipelines.contains(compute_key)) return false;
+    auto pipeline = std::make_unique<ComputePipeline>(
+        instance, scheduler, desc_heap, profile, *pipeline_cache,
+        compute_key, *sel.infos[0], sel.modules[0], sdata, true);
+    compute_pipelines.try_emplace(compute_key, std::move(pipeline));
 
     sel.infos.fill(nullptr);
     sel.modules.fill(nullptr);
@@ -219,6 +227,7 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
 
     GraphicsPipeline::SerializationSupport sdata{};
     sdata.Deserialize(ar);
+    if (!ar.IsEoS()) throw Serialization::ReadError("Unexpected trailing pipeline data");
 
     for (int stage_idx = 0; stage_idx < MaxShaderStages; ++stage_idx) {
         const auto& hash = sel.graphics_key.stage_hashes[stage_idx];
@@ -240,12 +249,11 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
         }
     }
 
-    const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
-    ASSERT(is_new);
-
-    it.value() = std::make_unique<GraphicsPipeline>(
+    if (graphics_pipelines.contains(sel.graphics_key)) return false;
+    auto pipeline = std::make_unique<GraphicsPipeline>(
         instance, scheduler, desc_heap, profile, sel.graphics_key, *pipeline_cache, sel.infos,
         sel.runtime_infos, sel.fetch_shader, sel.modules, sdata, true);
+    graphics_pipelines.try_emplace(sel.graphics_key, std::move(pipeline));
 
     sel.infos.fill(nullptr);
     sel.modules.fill(nullptr);
@@ -276,29 +284,25 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
 
     vk::ShaderModule module{};
 
-    auto [it_pgm, new_program] = program_cache.try_emplace(program->info.pgm_hash);
-    if (new_program) {
-        module = CompileSPV(spv, instance.GetDevice());
-        it_pgm.value() = std::move(program);
+    auto it_pgm = program_cache.find(program->info.pgm_hash);
+    if (it_pgm == program_cache.end()) {
+        module = CompileSPV(spv, instance.GetDevice(), true);
+        it_pgm = program_cache.try_emplace(program->info.pgm_hash, std::move(program)).first;
     } else {
-        const auto& it = std::ranges::find(it_pgm.value()->modules, spec, &Program::Module::spec);
+        const auto it = std::ranges::find_if(it_pgm.value()->modules, [&](const auto& candidate) {
+            return candidate.module && candidate.spec == spec;
+        });
         if (it != it_pgm.value()->modules.end()) {
-            // A matching permutation is valid only at its original index. A different index means
-            // the store holds entries from more than one cache generation, so this pipeline is
-            // left to compile at runtime.
             const auto idx = std::distance(it_pgm.value()->modules.begin(), it);
-            if (perm_idx != idx) {
-                LOG_WARNING(Render_Vulkan,
-                            "Cached permutation {} of {}_{:x} conflicts with index {}, skipping "
-                            "preload",
-                            perm_idx, program->info.hw_stage, program->info.pgm_hash, idx);
-                return false;
-            }
+            if (perm_idx != size_t(idx)) return false;
             module = it->module;
         } else {
-            module = CompileSPV(spv, instance.GetDevice());
+            if (perm_idx < it_pgm.value()->modules.size() &&
+                it_pgm.value()->modules[perm_idx].module) return false;
+            module = CompileSPV(spv, instance.GetDevice(), true);
         }
     }
+    spec.info = &it_pgm.value()->info;
     it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
 
     sel.infos[stage] = &it_pgm.value()->info;
@@ -318,6 +322,7 @@ void PipelineCache::WarmUp() {
     std::vector<u8> profile_data{};
     Storage::DataBase::Instance().Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
     if (profile_data.empty()) {
+        Storage::DataBase::Instance().Clear();
         Storage::DataBase::Instance().FinishPreload();
 
         profile_data.resize(sizeof(profile));
@@ -354,29 +359,27 @@ void PipelineCache::WarmUp() {
     Storage::DataBase::Instance().ForEachBlob(
         Storage::BlobType::PipelineKey, [&](std::vector<u8>&& data) {
             ++num_total_pipelines;
-
-            Serialization::Archive ar{std::move(data)};
-            Serialization::Reader pldata{ar};
-
-            u32 version{};
-            pldata.Read(version);
-            if (version != Serialization::PipelineKeyVersion) {
-                return;
+            const auto reset_selection = [&] {
+                sel.infos.fill(nullptr);
+                sel.modules.fill(nullptr);
+                sel.fetch_shader.reset();
+            };
+            reset_selection();
+            try {
+                Serialization::Archive ar{std::move(data)};
+                Serialization::Reader pldata{ar};
+                u32 version{};
+                pldata.Read(version);
+                if (version == Serialization::PipelineKeyVersion) {
+                    u32 kind{};
+                    pldata.Read(kind);
+                    if (kind > 1) throw Serialization::ReadError("Unknown pipeline kind");
+                    if (kind ? LoadComputePipeline(ar) : LoadGraphicsPipeline(ar)) ++num_pipelines;
+                }
+            } catch (const std::exception& error) {
+                LOG_WARNING(Render, "Skipping cached pipeline: {}", error.what());
             }
-
-            u32 is_compute{};
-            pldata.Read(is_compute);
-
-            bool result{};
-            if (is_compute) {
-                result = LoadComputePipeline(ar);
-            } else {
-                result = LoadGraphicsPipeline(ar);
-            }
-
-            if (result) {
-                ++num_pipelines;
-            }
+            reset_selection();
         });
 
     LOG_INFO(Render, "Preloaded {} pipelines", num_pipelines);
@@ -449,6 +452,7 @@ bool PersistentSrtInfo::Deserialize(Serialization::Archive& ar) {
     srt.Read(this, sizeof(*this));
 
     if (walker_func_size) {
+        ar.Require(walker_func_size);
         walker_func = RegisterWalkerCode(ar.CurrPtr(), walker_func_size);
         ar.Advance(walker_func_size);
     }
@@ -486,11 +490,15 @@ bool StageSpecialization::Deserialize(Serialization::Archive& ar) {
 
     std::string bits{};
     spec.Read(bits);
+    if (bits.size() != MaxStageResources || bits.find_first_not_of("01") != std::string::npos)
+        throw Serialization::ReadError("Invalid specialization resource bits");
     bitset = std::bitset<MaxStageResources>(bits);
 
     u64 fetch_data_size{};
     spec.Read(fetch_data_size);
 
+    if (fetch_data_size && fetch_data_size != sizeof(Gcn::FetchShaderData))
+        throw Serialization::ReadError("Incompatible fetch shader record");
     if (fetch_data_size) {
         Gcn::FetchShaderData fetch_data;
         fetch_data.Deserialize(ar);

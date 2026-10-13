@@ -18,6 +18,7 @@ I keep the main README focused on what the fork adds. These pages explain the se
 | Window, frame limits and overlay | [Both caps, background modes and frametime graph](display-and-overlay.md) |
 | Cheats | [Choices and behavior](cheats.md) |
 | Image quality | [Temporal history and renderer changes](quality-and-performance.md) |
+| Shader cache | [Recovery, write completion and compatibility](shader-cache.md) |
 | Diagnostics | [Performance comparisons and useful evidence](performance.md) |
 | Support Report | [Inspect and export sanitized diagnostics](support-reports.md) |
 | Save Manager | [Backups, named snapshots and verified restore/rollback](save-manager.md) |

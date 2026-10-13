@@ -33,6 +33,26 @@ jobs:
           New-Item -ItemType Directory -Force out/verification | Out-Null
           cl /nologo /W4 /std:c17 /I src tests/test_save_access.c src/runtime_save_access.c /Fe:out/verification/save-access-test.exe
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Compile and run production shader cache regressions
+        shell: pwsh
+        run: |
+          git submodule update --init gpu/third_party/miniz
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          '#define MINIZ_EXPORT' | Set-Content out/verification/miniz_export.h
+          cl /nologo /O2 /EHsc /std:c++20 /I tests/cache_stubs /I gpu/shadps4 /I gpu/third_party/miniz /I out/verification tests/test_shader_cache.cpp gpu/shadps4/video_core/cache_storage.cpp gpu/shadps4/video_core/renderer_vulkan/vk_shader_util.cpp /Fe:out/verification/shader-cache-test.exe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_shader_cache.py --binary out/verification/shader-cache-test.exe 2>&1 | Tee-Object out/verification/shader-cache-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_cache_warmup.py --prepare out/verification
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cl /nologo /O2 /EHsc /std:c++20 /I tests/cache_stubs /I gpu/shadps4 /I out/verification tests/test_cache_warmup.cpp /Fe:out/verification/cache-warmup-test.exe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & ./out/verification/cache-warmup-test.exe 2>&1 | Tee-Object out/verification/cache-warmup-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Execute Windows privacy, archive and save recovery regressions
         shell: pwsh
         run: |

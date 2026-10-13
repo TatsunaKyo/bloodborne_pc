@@ -274,6 +274,11 @@ if (WIN32)
 endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.
+add_executable(shader-cache-test EXCLUDE_FROM_ALL ../tests/test_shader_cache.cpp
+    shadps4/video_core/cache_storage.cpp shadps4/video_core/renderer_vulkan/vk_shader_util.cpp)
+target_include_directories(shader-cache-test BEFORE PRIVATE ../tests/cache_stubs shadps4)
+target_compile_options(shader-cache-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_link_libraries(shader-cache-test PRIVATE miniz::miniz)
 add_executable(motion-history-test EXCLUDE_FROM_ALL ../tests/test_motion_history.cpp)
 add_executable(temporal-history-test EXCLUDE_FROM_ALL ../tests/test_temporal_history.cpp)
 target_include_directories(temporal-history-test PRIVATE ..)

@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <atomic>
@@ -872,7 +873,9 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         info.RefreshFlatBuf();
         auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
         runtime_fault_recover = nullptr;
-        const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
+        const auto it = std::ranges::find_if(program->modules, [&](const auto& candidate) {
+            return candidate.module && candidate.spec == spec;
+        });
         if (it == program->modules.end()) {
             worker.failed = true;
             return {};
@@ -925,9 +928,12 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
 
     // bbport: consecutive draws of a program almost always use the same permutation.
     auto it = program->last_used < program->modules.size() &&
+                      program->modules[program->last_used].module &&
                       program->modules[program->last_used].spec == spec
                   ? program->modules.begin() + program->last_used
-                  : std::ranges::find(program->modules, spec, &Program::Module::spec);
+                  : std::ranges::find_if(program->modules, [&](const auto& candidate) {
+            return candidate.module && candidate.spec == spec;
+        });
     if (it != program->modules.end()) {
         program->last_used = std::distance(program->modules.begin(), it);
     }
