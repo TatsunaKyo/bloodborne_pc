@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // TatsunaKyo revision. NVIDIA API declarations retain their original license.
 #include "bbport_nvidia.h"
 #include "bbport_settings.h"
@@ -6,6 +7,7 @@
 #include "bbport_latency.h"
 #include "bbport_frame_metrics.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#include "video_core/renderer_vulkan/vk_scheduler.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -354,7 +356,12 @@ bool Present(Vulkan::Frame* frame,const std::function<bool()>& present) {
             }
         } else {
             // Without an ownership fence, do not return these images for reuse.
-            const auto idle=device.waitIdle();
+            const auto idle=[&] {
+                // DeviceWaitIdle requires exclusion of client queue operations.
+                // Normal SDK telemetry no longer holds the presentation queue lock.
+                std::scoped_lock queue_lock{Vulkan::Scheduler::submit_mutex};
+                return device.waitIdle();
+            }();
             std::printf("NVIDIA FG GetState failed (%u), GPU drain=%d\n",unsigned(result),int(idle));
             ++input_epoch;latest_fence=nullptr;latest_value=0;
             Off();failed=true;
