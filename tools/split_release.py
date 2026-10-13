@@ -80,16 +80,10 @@ def split(package, destination, *, repo=None):
         'I keep the source records, regression programs and specialist captures in this optional archive. '
         'The ordinary game ZIP contains every existing upscaler, Frame Generation runtime, launcher dependency, guide and license.\n\n'
         'Extract this folder beside the game folder. Run a diagnostic from diagnostics, or pass the game folder as its first argument. '
-        'Keep the original scripts in diagnostics/originals for reference. Run-Regression-Tests.cmd uses the game folder runtime DLLs to run the programs under bin; '
-        'the Vulkan fixtures require a compatible GPU/driver. Source and verification records are under source. '
+        'Keep the original scripts in diagnostics/originals for reference. Tests are under bin; add the game folder bin directory to PATH before running them. '
+        'Some fixtures take arguments: their corresponding Python drivers are included under source/modified-files/tests. '
+        'The Vulkan fixtures require a compatible GPU/driver. Source and verification records are under source. '
         'The complete revision patch remains in the game ZIP for existing updater and source verification compatibility.\n').encode()
-    test_command = ('@echo off\ncd /d "%~dp0"\n'
-                    'set "PATH=%WORKSHOP_PORT%\\bin;%WORKSHOP_PORT%\\bin\\streamline;%WORKSHOP_PORT%\\bin\\xess;%PATH%"\n'
-                    'for %%T in ("%~dp0..\\bin\\*-test.exe") do (\n'
-                    '  echo Running %%~nxT\n  "%%~fT"\n  if errorlevel 1 exit /b 1\n)\n'
-                    'echo All regression programs passed.\npause\n')
-    development['diagnostics/Run-Regression-Tests.cmd'] = diagnostic_wrapper(
-        'Run-Regression-Tests.cmd', test_command.encode(), version, runtime_root)
     # Retain every original file byte-for-byte in at least one archive, except the
     # runtime identity, which records the new placement. Original scripts stay too.
     for name, data in original_files.items():
