@@ -11,14 +11,17 @@
   <a href="LICENSE"><img src="docs/assets/readme/license.svg" alt="GPL-2.0+" height="28"></a>
 </p>
 
-<table width="100%">
+<div align="center">
+<table align="center">
   <tr>
-    <td width="50%"><a href="https://github.com/TatsunaKyo/bloodborne_pc/releases/latest"><strong>↓ Download latest&nbsp;↗</strong></a><br>Windows package and checksum</td>
-    <td width="50%"><a href="docs/launcher-and-menu.md#installation"><strong>▤ Installation guide&nbsp;↗</strong></a><br>Requirements and setup</td>
+    <td align="center"><a href="https://github.com/TatsunaKyo/bloodborne_pc/releases/latest"><strong>↓ Download latest&nbsp;↗</strong></a><br>Windows package and checksum</td>
+    <td align="center"><a href="docs/launcher-and-menu.md#installation"><strong>▤ Installation guide&nbsp;↗</strong></a><br>Requirements and setup</td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><a href="docs/compatibility.md">Compatibility</a> · <a href="docs/known-issues.md">Current reports</a> · <a href="#roadmap">Roadmap</a> · <a href="docs/index.md">All guides</a> · <a href="docs/releases/index.md">Release notes</a></td>
   </tr>
 </table>
-
-<p align="center"><a href="docs/compatibility.md">Compatibility</a> · <a href="docs/known-issues.md">Current reports</a> · <a href="#roadmap">Roadmap</a> · <a href="docs/index.md">All guides</a> · <a href="docs/releases/index.md">Release notes</a></p>
+</div>
 
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The aim is to make Bloodborne more comfortable to play on a modern Windows PC, with more graphics choices, better window controls and settings you can change during play. This project would NOT be possible without the original work and the people involved.
 
