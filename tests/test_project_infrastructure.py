@@ -31,6 +31,20 @@ class Infrastructure(unittest.TestCase):
                 with self.subTest(file=str(file.relative_to(ROOT)),target=target):
                     self.assertTrue((file.parent/target).exists())
 
+    def test_editable_feature_images_resolve_local_resources(self):
+        import xml.etree.ElementTree as ET
+        directory=ROOT/'docs/assets/features'
+        for source in directory.glob('*.svg'):
+            for element in ET.parse(source).iter():
+                if not element.tag.endswith('image'):
+                    continue
+                target=element.get('href',element.get('{http://www.w3.org/1999/xlink}href',''))
+                if target.startswith('data:'):
+                    continue
+                with self.subTest(source=source.name,target=target):
+                    self.assertTrue(target)
+                    self.assertTrue((source.parent/target).is_file())
+
     def test_hardware_database_does_not_confuse_simulation_and_gameplay(self):
         data=json.loads((ROOT/'docs/hardware/compatibility.json').read_text())
         self.assertEqual(data['schema_version'],1)
