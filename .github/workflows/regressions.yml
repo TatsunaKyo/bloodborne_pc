@@ -44,7 +44,9 @@ jobs:
       - name: Compile and exercise the actual frozen Windows launcher
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --name Bloodborne --paths scripts --paths launcher --distpath out/frozen-infrastructure --workpath out/pyi-infrastructure --specpath out/pyi-infrastructure --hidden-import ctypes.wintypes --hidden-import dataclasses --hidden-import datetime --hidden-import ipaddress --hidden-import support_report --hidden-import support_report_ui --hidden-import save_access --hidden-import save_manager --hidden-import save_manager_ui launcher/bbport_launcher_win.py
+          python tools/prepare_tk_runtime.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m PyInstaller --noconfirm --clean --windowed --name Bloodborne --paths scripts --paths launcher --distpath out/frozen-infrastructure --workpath out/pyi-infrastructure --specpath out/pyi-infrastructure --add-data "out/tk-runtime/_tcl_data;_tcl_data" --add-data "out/tk-runtime/_tk_data;_tk_data" --hidden-import ctypes.wintypes --hidden-import dataclasses --hidden-import datetime --hidden-import ipaddress --hidden-import support_report --hidden-import support_report_ui --hidden-import save_access --hidden-import save_manager --hidden-import save_manager_ui launcher/bbport_launcher_win.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $exe = (Resolve-Path out/frozen-infrastructure/Bloodborne/Bloodborne.exe).Path
           $script = (Resolve-Path scripts/verify_infrastructure_runtime.py).Path

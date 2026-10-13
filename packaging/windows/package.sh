@@ -23,6 +23,7 @@ if [[ ! -x out/pyenv/Scripts/python.exe ]]; then
     "$python" -m venv out/pyenv
 fi
 out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check PyInstaller==6.19.0 Pillow==12.3.0
+out/pyenv/Scripts/python.exe tools/prepare_tk_runtime.py
 # The scripts run inside Bloodborne.exe (--script): the standard modules they import come along.
 hidden=()
 for module in argparse base64 collections hashlib json re shutil struct tempfile xml.etree.ElementTree \
@@ -32,6 +33,8 @@ done
 out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed \
     --name Bloodborne --icon "$(cygpath -w "$PWD/launcher/bloodborne.ico")" --distpath out/pyi-dist \
     --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" "${hidden[@]}" \
+    --add-data "$(cygpath -w "$PWD/out/tk-runtime/_tcl_data");_tcl_data" \
+    --add-data "$(cygpath -w "$PWD/out/tk-runtime/_tk_data");_tk_data" \
     "$(cygpath -w "$PWD/launcher/bbport_launcher_win.py")"
 
 if [[ ${1:-} == --launcher-only ]]; then
