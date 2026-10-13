@@ -48,7 +48,13 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $exe = (Resolve-Path out/frozen-infrastructure/Bloodborne/Bloodborne.exe).Path
           $script = (Resolve-Path scripts/verify_infrastructure_runtime.py).Path
-          $result = Start-Process -FilePath $exe -ArgumentList @('--script', $script) -PassThru -Wait -RedirectStandardOutput out/verification/frozen-runtime.log -RedirectStandardError out/verification/frozen-runtime-errors.log
+          $result = Start-Process -FilePath $exe -ArgumentList @('--script', $script) -PassThru -RedirectStandardOutput out/verification/frozen-runtime.log -RedirectStandardError out/verification/frozen-runtime-errors.log
+          if (-not $result.WaitForExit(90000)) {
+            $result.Kill()
+            Get-Content out/verification/frozen-runtime.log
+            Get-Content out/verification/frozen-runtime-errors.log
+            throw 'Frozen launcher self-test exceeded 90 seconds.'
+          }
           if ($result.ExitCode) { Get-Content out/verification/frozen-runtime-errors.log; exit $result.ExitCode }
           Get-Content out/verification/frozen-runtime.log
       - name: Retain Windows infrastructure verification

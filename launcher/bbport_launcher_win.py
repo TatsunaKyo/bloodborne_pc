@@ -91,6 +91,12 @@ def run_role(argv):
         runpy.run_path(path, run_name='__main__')
     except SystemExit as stop:
         return stop.code if isinstance(stop.code, int) else (0 if stop.code is None else 1)
+    except Exception:
+        # Command-line roles must return a failed exit code and readable stderr,
+        # rather than waiting indefinitely on a windowed bootloader error dialog.
+        import traceback
+        traceback.print_exc()
+        return 1
     return 0
 
 
