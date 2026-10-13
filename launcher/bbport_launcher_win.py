@@ -813,6 +813,13 @@ class Launcher:
               foreground=[('disabled', MUTED)])
         s.configure('Horizontal.TProgressbar', background=GOLD, troughcolor=CARD, bordercolor=LINE)
         s.configure('Vertical.TScrollbar', background=CARD, arrowcolor=GOLD, troughcolor=PANEL, bordercolor=PANEL)
+        s.configure('Workshop.Treeview', background=CARD, fieldbackground=CARD, foreground=TEXT,
+                    rowheight=self.px(24), bordercolor=LINE)
+        # Override clam's light row-state map as well as its normal background.
+        s.map('Workshop.Treeview', background=[('selected', BLOOD), ('!selected', CARD)],
+              foreground=[('selected', TEXT), ('!selected', TEXT)])
+        s.configure('Workshop.Treeview.Heading', background=PANEL, foreground=GOLD,
+                    font=('Segoe UI', 10, 'bold'))
 
     # ---- widget helpers ----------------------------------------------------------------------
     def var(self, key, store):

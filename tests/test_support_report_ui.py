@@ -95,6 +95,16 @@ with tempfile.TemporaryDirectory(prefix='workshop-support-ui-') as folder:
                         assert x + widget.winfo_width() <= bounds[0] + bounds[2], (scale, width, str(widget))
                         assert y + widget.winfo_height() <= bounds[1] + bounds[3], (scale, height, str(widget))
                     assert not launcher.CONFIG_FILE.exists(), 'Inspecting reports must not rewrite preferences.'
+                    style = ttk.Style(root)
+                    for states in (('!disabled', '!selected'), ('selected',)):
+                        colors = [style.lookup(dialog.files.cget('style'), key, states)
+                                  for key in ('background', 'foreground')]
+                        def luminance(color):
+                            channels = [v / 65535 for v in root.winfo_rgb(color)]
+                            linear = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in channels]
+                            return sum(a * b for a, b in zip(linear, (.2126, .7152, .0722)))
+                        light, dark = sorted(map(luminance, colors), reverse=True)
+                        assert (light + .05) / (dark + .05) >= 4.5, (states, colors)
                     records.append({'scale': scale, 'width': width, 'height': height,
                                     'inspect_export_and_privacy_options': 'passed'})
             finally:

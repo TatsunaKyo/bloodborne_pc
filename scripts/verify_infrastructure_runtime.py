@@ -10,6 +10,21 @@ from support_report import build_report, detect_system, export_report, verify_re
 
 
 def main():
+    import tkinter as tk
+    from tkinter import ttk
+    # Exercise Tcl/Tk's packaged scripts as well as the extension import. An
+    # incomplete fresh freeze can import _tkinter but fail on the first window.
+    window = tk.Tk()
+    try:
+        window.withdraw()
+        style = ttk.Style(window); style.theme_use('clam')
+        listing = ttk.Treeview(window, columns=('status',))
+        listing.insert('', 'end', iid='fixture', text='Runtime fixture', values=('Verified',))
+        listing.pack(); window.update()
+        assert listing.item('fixture', 'values') == ('Verified',)
+        print('PASS: packaged Tcl/Tk window and controls (' + str(window.tk.call('info', 'patchlevel')) + ').')
+    finally:
+        window.destroy()
     with tempfile.TemporaryDirectory(prefix='workshop-runtime-selftest-') as folder:
         root = Path(folder)
         user = root / 'fixture user'; user.mkdir()

@@ -50,7 +50,8 @@ class SaveManagerDialog:
         self.retention.bind('<FocusOut>', self.validate_retention); self.retention.bind('<Return>', self.validate_retention)
         ttk.Label(options, text='Manual and rollback snapshots are kept.', style='Muted.TLabel').grid(row=2, column=0, columnspan=3, sticky='w')
         listing = ttk.Frame(snapshots); listing.grid(row=0, column=0, sticky='nsew')
-        self.files = ttk.Treeview(listing, columns=('created', 'kind', 'status'), show='tree headings', selectmode='browse')
+        self.files = ttk.Treeview(listing, columns=('created', 'kind', 'status'), show='tree headings', selectmode='browse',
+                                  style='Workshop.Treeview')
         for key, text in (('#0', 'Snapshot'), ('created', 'Created (UTC)'), ('kind', 'Type'), ('status', 'Integrity')):
             self.files.heading(key, text=text)
         for key, size in (('#0', 235), ('created', 160), ('kind', 75), ('status', 90)):

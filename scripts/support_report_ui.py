@@ -38,7 +38,8 @@ class SupportReportDialog:
         pane = ttk.Panedwindow(body, orient='horizontal'); pane.grid(row=3, column=0, sticky='nsew')
         left, right = ttk.Frame(pane), ttk.Frame(pane)
         pane.add(left, weight=1); pane.add(right, weight=3)
-        self.files = ttk.Treeview(left, columns=('bytes',), show='tree headings', selectmode='browse')
+        self.files = ttk.Treeview(left, columns=('bytes',), show='tree headings', selectmode='browse',
+                                  style='Workshop.Treeview')
         self.files.heading('#0', text='Included files'); self.files.heading('bytes', text='Bytes')
         self.files.column('#0', width=launcher.px(230), minwidth=launcher.px(100))
         self.files.column('bytes', width=launcher.px(65), minwidth=launcher.px(50), stretch=False, anchor='e')
