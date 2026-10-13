@@ -4,6 +4,7 @@
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import time
@@ -13,8 +14,15 @@ from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
 source = ROOT / 'launcher/bbport_launcher_win.py'
-spec = importlib.util.spec_from_file_location('save_ui_launcher', source)
-launcher = importlib.util.module_from_spec(spec); spec.loader.exec_module(launcher)
+if len(sys.argv) > 1:
+    import marshal
+    import types
+    from PyInstaller.archive.readers import CArchiveReader
+    launcher = types.ModuleType('save_ui_launcher'); launcher.__file__ = str(source)
+    exec(marshal.loads(CArchiveReader(sys.argv[1]).extract('bbport_launcher_win')), launcher.__dict__)
+else:
+    spec = importlib.util.spec_from_file_location('save_ui_launcher', source)
+    launcher = importlib.util.module_from_spec(spec); spec.loader.exec_module(launcher)
 launcher.Launcher.detect_gpu = lambda self: None
 launcher.Launcher.check_update = lambda self: None
 records = []

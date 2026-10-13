@@ -471,9 +471,8 @@ class SaveManager:
             try:
                 self._extract(backup, transaction / 'new', manifest)
                 rollback = self._backup_locked(('Before restoring ' + manifest['label'])[:80], 'rollback', allow_empty=True)
-                (transaction / 'target-manifest.json').write_bytes(_json(manifest))
-                with (transaction / 'target-manifest.json').open('rb') as stream:
-                    os.fsync(stream.fileno())
+                with (transaction / 'target-manifest.json').open('wb') as stream:
+                    stream.write(_json(manifest)); stream.flush(); os.fsync(stream.fileno())
                 journal = {'schema_version': 1, 'id': identity, 'root_id': self.root_id,
                            'phase': 'prepared', 'original_exists': original_exists,
                            'rollback': rollback.name if rollback else None}
