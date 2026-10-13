@@ -870,6 +870,16 @@ command=shlex.split(args.compiler)+['-std=c++20','-O1','-pthread','-Igpu','-Igpu
 subprocess.run(command,cwd=root,check=True)
 env=dict(os.environ)
 if args.capture_dir:
-    env['BB_MENU_CAPTURE_DIR']=str(Path(args.capture_dir).resolve())
+    capture_dir=Path(args.capture_dir).resolve()
+    capture_dir.mkdir(parents=True,exist_ok=True)
+    env['BB_MENU_CAPTURE_DIR']=str(capture_dir)
 subprocess.run([str(scratch/'overlay-test'),str(scratch/'config.ini')],cwd=root,env=env,check=True)
+if args.capture_dir:
+    import json
+    for name in ('image','frames','window','overlay','cheats','effects','advanced',
+                 'frametime-en','frametime-ru','frametime-full-en','frametime-full-ru'):
+        data=json.loads((capture_dir/(name+'.json')).read_text())
+        assert len((capture_dir/(name+'.atlas')).read_bytes())==data['atlas'][0]*data['atlas'][1]*4
+        assert data['lists'] and data['window'][2]>0 and data['window'][3]>0
+    print('PASS: all seven menu and four frametime captures contain complete draw data and font atlases.')
 temporary.cleanup()
