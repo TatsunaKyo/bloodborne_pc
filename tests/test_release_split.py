@@ -109,5 +109,23 @@ class SplitRelease(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unsafe archive path'):
             validate_developer(developer, report, require_sidecar=True)
 
+    def test_only_undeclared_copies_of_known_libraries_leave_the_game_package(self):
+        temporary = 'bin/xess/.libxess.dll.Abc123'
+        declared = 'bin/xess/.libxess.dll.Keep12'
+        unknown = 'bin/xess/.other.dll.Abc123'
+        def add(identity, data):
+            data[temporary] = data['bin/xess/libxess.dll'][:100]
+            data[declared] = data['bin/xess/libxess.dll']
+            identity['runtime_files'][declared] = hashlib.sha256(data[declared]).hexdigest()
+            data[unknown] = b'unknown file kept for review'
+        original = self.fixture.package(modify=add)
+        result = split(original, self.folder)
+        with zipfile.ZipFile(original) as old, zipfile.ZipFile(result['runtime']) as regular, zipfile.ZipFile(result['developer']) as dev:
+            self.assertNotIn('Workshop/' + temporary, regular.namelist())
+            self.assertEqual(dev.read('Workshop-Developer/' + temporary), old.read('Workshop/' + temporary))
+            for name in (declared, unknown, 'bin/xess/libxess.dll'):
+                self.assertEqual(regular.read('Workshop/' + name), old.read('Workshop/' + name))
+        validate(Path(result['runtime']), require_sidecar=True)
+
 
 if __name__ == '__main__': unittest.main()

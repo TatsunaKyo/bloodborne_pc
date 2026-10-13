@@ -4,6 +4,7 @@
 import argparse
 import json
 from pathlib import Path, PurePosixPath
+import re
 import zipfile
 
 from release_integrity import checksum, package_name, safe_member, validate, validate_developer, require
@@ -14,10 +15,21 @@ DIAGNOSTICS = {'Start-Verified-Launcher.cmd', 'Diagnose-Geometry-Normal.cmd',
                'Diagnose-Geometry-Serial.cmd', 'Capture-Flashing-Assets.cmd'}
 
 
-def developer_file(name):
+def temporary_runtime_copy(name, identity):
+    """Only separate unregistered copies of a known runtime; keep every declared file."""
+    runtimes = identity.get('runtime_files') or {} if identity else {}
+    if not identity or name in runtimes or name in identity.get('executables', {}):
+        return False
+    path = PurePosixPath(name)
+    match = re.fullmatch(r'\.(.+\.(?:dll|pyd))\.[A-Za-z0-9]{6,12}', path.name, re.IGNORECASE)
+    return bool(match and str(path.parent / match[1]) in runtimes)
+
+
+def developer_file(name, identity=None):
     return ((name.startswith('source/') and name not in (LAUNCHER_SOURCE, SOURCE_PATCH))
             or name.startswith('.github/') or name in DIAGNOSTICS
-            or (name.startswith('bin/') and name.endswith('-test.exe')))
+            or (name.startswith('bin/') and name.endswith('-test.exe'))
+            or temporary_runtime_copy(name, identity))
 
 
 def write_zip(path, root, entries):
@@ -67,7 +79,7 @@ def split(package, destination, *, repo=None):
             if name in DIAGNOSTICS:
                 development['diagnostics/originals/' + name + '.txt'] = data
                 development['diagnostics/' + name] = diagnostic_wrapper(name, data, version, runtime_root)
-            elif developer_file(name): development[name] = data
+            elif developer_file(name, report['identity']): development[name] = data
             else: regular[name] = data
     identity = json.loads(regular['BUILD-IDENTITY.json'])
     development['DEVELOPER-IDENTITY.json'] = (json.dumps({
@@ -77,7 +89,7 @@ def split(package, destination, *, repo=None):
         'developer_executables': {k: v for k, v in identity['executables'].items() if developer_file(k)}}, indent=2) + '\n').encode()
     development['READ-ME-FIRST.txt'] = (
         'Bloodborne: The Crowned Workshop — TatsunaKyo developer tools\n\n'
-        'I keep the source records, regression programs and specialist captures in this optional archive. '
+        'I keep the source records, regression programs, specialist captures and unregistered temporary library copies in this optional archive. '
         'The ordinary game ZIP contains every existing upscaler, Frame Generation runtime, launcher dependency, guide and license.\n\n'
         'Extract this folder beside the game folder. Run a diagnostic from diagnostics, or pass the game folder as its first argument. '
         'Keep the original scripts in diagnostics/originals for reference. Tests are under bin; add the game folder bin directory to PATH before running them. '
@@ -89,7 +101,7 @@ def split(package, destination, *, repo=None):
     for name, data in original_files.items():
         if name == 'BUILD-IDENTITY.json': continue
         retained = (development['diagnostics/originals/' + name + '.txt'] if name in DIAGNOSTICS
-                    else development[name] if developer_file(name) else regular[name])
+                    else development[name] if developer_file(name, report['identity']) else regular[name])
         require(retained == data, 'A file changed or was lost during separation: ' + name)
     development['ORIGINAL-BUILD-IDENTITY.json'] = regular['BUILD-IDENTITY.json']
     identity['executables'] = {k: v for k, v in identity['executables'].items() if not developer_file(k)}
