@@ -1155,12 +1155,25 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
         FrameCapture::Draw(vs_info.pgm_hash, ps ? ps->pgm_hash : 0, num_indices, num_instances);
-        if (const auto& bc = regs.blend_control[0]; bc.enable && regs.color_buffers[0]) {
-            char note[128];
-            std::snprintf(note, sizeof(note), "\n  blend ps %08x idx %u: src %u dst %u func %u z %u%u",
-                          u32(ps ? ps->pgm_hash : 0), num_indices, u32(bc.color_src_factor),
+        if (regs.color_buffers[0]) {
+            // Preserve the guest's actual blend equation and write mask for every draw,
+            // including disabled blending. HUD alpha cannot be inferred from RGB deltas:
+            // font edges, additive highlights and stencil-only draws differ here.
+            const auto& bc = regs.blend_control[0];
+            char note[384];
+            std::snprintf(note, sizeof(note),
+                          "\n  blend ps %016llx idx %u instances %u: enabled %u bypass %u "
+                          "write_mask %#x rgb %u,%u,%u alpha %u,%u,%u separate_alpha %u "
+                          "constants %.9g,%.9g,%.9g,%.9g depth_test %u depth_write %u",
+                          static_cast<unsigned long long>(ps ? ps->pgm_hash : 0),
+                          num_indices, num_instances, u32(bc.enable),
+                          u32(regs.color_buffers[0].info.blend_bypass),
+                          regs.color_target_mask.GetMask(0), u32(bc.color_src_factor),
                           u32(bc.color_dst_factor), u32(bc.color_func),
-                          u32(regs.depth_control.depth_enable),
+                          u32(bc.alpha_src_factor), u32(bc.alpha_dst_factor), u32(bc.alpha_func),
+                          u32(bc.separate_alpha_blend), double(regs.blend_constants[0]),
+                          double(regs.blend_constants[1]), double(regs.blend_constants[2]),
+                          double(regs.blend_constants[3]), u32(regs.depth_control.depth_enable),
                           u32(regs.depth_control.depth_write_enable));
             FrameCapture::Note(note);
         }

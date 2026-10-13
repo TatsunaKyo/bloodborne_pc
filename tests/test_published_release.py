@@ -14,12 +14,14 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 from release_integrity import checksum
 from verify_published_release import verify, wait_for_assets, main
+from split_release import split
 import test_release_integrity as fixtures
 
 
 class PublishedRelease(unittest.TestCase):
     def setUp(self):
         fixture=fixtures.Releases();fixture.setUp();self.addCleanup(fixture.tmp.cleanup)
+        self.fixture=fixture
         self.package=fixture.package('1.6-tatsunakyo.21')
         self.sidecar=self.package.with_suffix('.zip.sha256')
         self.sidecar.write_text(checksum(self.package)+'  '+self.package.name+'\n')
@@ -105,6 +107,40 @@ class PublishedRelease(unittest.TestCase):
         result = json.loads(output.read_text())
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['error_type'], 'OSError')
+
+    def test_split_publication_checks_both_archives_and_sidecars(self):
+        result = split(self.package, self.fixture.root / 'split')
+        package, developer = Path(result['runtime']), Path(result['developer'])
+        sources = {p.name: p for p in (package, package.with_suffix('.zip.sha256'),
+                                      developer, developer.with_suffix('.zip.sha256'))}
+        release = copy.deepcopy(self.release); release['assets'] = []
+        for name, path in sources.items():
+            release['assets'].append({'name': name, 'state': 'uploaded', 'size': path.stat().st_size,
+                'digest': 'sha256:' + checksum(path),
+                'browser_download_url': 'https://github.com/TatsunaKyo/bloodborne_pc/releases/download/' +
+                    release['tag_name'] + '/' + name})
+        def fetch(url, path): shutil.copy2(sources[path.name], path)
+        report = verify(release, self.downloads, fetch=fetch)
+        self.assertEqual(report['developer_bundle']['sha256'], checksum(developer))
+        missing = copy.deepcopy(release); missing['assets'].pop()
+        with self.assertRaisesRegex(ValueError, 'Expected one uploaded asset'):
+            verify(missing, self.downloads, fetch=fetch)
+        developer.write_bytes(b'corrupted upload')
+        for record in release['assets']:
+            if record['name'] == developer.name:
+                record.update(size=developer.stat().st_size, digest='sha256:' + checksum(developer))
+        with self.assertRaisesRegex(ValueError, 'Developer bundle checksum mismatch'):
+            verify(release, self.downloads, fetch=fetch)
+
+    def test_companion_uploads_use_the_same_bounded_wait(self):
+        expected = ('optional-Developer.zip', 'optional-Developer.zip.sha256')
+        waiting = copy.deepcopy(self.release)
+        ready = copy.deepcopy(waiting)
+        ready['assets'] += [{'name': name, 'state': 'uploaded'} for name in expected]
+        times = [0]
+        result = wait_for_assets(waiting, lambda: ready, 10, expected_names=expected,
+                                 clock=lambda: times[0], pause=lambda seconds: times.__setitem__(0, times[0] + seconds))
+        self.assertEqual(result, ready); self.assertEqual(times[0], 5)
 
 
 if __name__=='__main__':unittest.main()

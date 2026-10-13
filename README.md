@@ -5,7 +5,7 @@
 <p align="center">Experience Bloodborne natively on Windows, enhanced with modern rendering technologies, customizable gameplay and a redesigned launcher.</p>
 
 <p align="center">
-  <a href="docs/releases/windows-v1.6-tatsunakyo.27.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 27" height="28"></a>
+  <a href="docs/releases/windows-v1.6-tatsunakyo.28.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 28" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/windows.svg" alt="Windows 10 / 11" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/vulkan.svg" alt="Vulkan 1.3" height="28"></a>
   <a href="LICENSE"><img src="docs/assets/readme/license.svg" alt="GPL-2.0+" height="28"></a>
@@ -37,7 +37,7 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 3. Choose your resolution and graphics settings, then press **PLAY**.
 4. Press **Insert** or **L3+R3** in-game to change the port's settings.
 
-**Play Bloodborne.exe** starts with your saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each package includes its SHA256 checksum and **Start-Verified-Launcher.cmd**. [Installation and settings](docs/launcher-and-menu.md)
+**Play Bloodborne.exe** starts with your saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each release includes its **SHA256 checksum**. The optional **Developer** archive keeps the verification scripts, source records and regression programs; you only need the ordinary game ZIP to play. [Installation and settings](docs/launcher-and-menu.md)
 
 ## What this fork adds
 

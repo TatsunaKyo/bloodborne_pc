@@ -4,9 +4,13 @@ I test gameplay on my Windows 11 / RTX 5070 Ti PC and keep those results separat
 
 ## Portable regressions
 
-With Python, Tk/Pillow, a C++ compiler, zstd and the pinned ImGui submodule available, first run `python3 tools/setup_test_headers.py`, then `python3 tools/ci_regressions.py`. The setup command verifies and prepares the same pinned Vulkan/VMA declarations used by the recording harnesses. Add `--gui` under a display or `xvfb-run` for the actual launcher layout/popup tests.
+With Python, Tk/Pillow, a C++ compiler, GLM headers, zstd and the pinned ImGui submodule available, first run `python3 tools/setup_test_headers.py`, then `python3 tools/ci_regressions.py`. The setup command verifies and prepares the same pinned Vulkan/VMA declarations used by the recording harnesses. Add `--gui` under a display or `xvfb-run` for the actual launcher layout/popup tests.
 
 The suite executes settings and updater behavior, altered-package rejection, production renderer branches with recorded calls, real ImGui controls and optional Tk layouts. It needs no game dump. The CI workflow uses the same entry point; private-image cheat tests and hardware gameplay remain separate.
+
+`tests/test_camera_motion_kernel.py` executes the production GLSL body with float32 GLM vectors and bounded image adapters. Its eight cases cover matched/new/untracked history, overwritten surfaces, invalid vectors and behind-camera points. This catches the arithmetic and history-selection cases without a GPU; `camera-motion-test.exe` remains the Vulkan counterpart.
+
+`tests/test_release_split.py` verifies that the original complete candidate is preserved, all its files survive the separation, runtime validation still passes and an interrupted export leaves no partial outputs. Release preparation and the published-release tests also check Developer provenance, sidecars, missing/corrupted companions and delayed uploads.
 
 `tests/test_launcher_startup.py` runs the real main function with frozen startup behavior, in English and Russian, including the `--play` fallback when no game files are configured. Pass the compiled `Bloodborne.exe` to test its actual entry-point bytecode. On Windows, the same test also starts the executable as a separate process through its normal entry point, checks the window and closes it with the normal Windows close message. This catches startup failures that a constructor-only layout test or a `--script` runtime test can miss. All settings and file operations use disposable folders.
 

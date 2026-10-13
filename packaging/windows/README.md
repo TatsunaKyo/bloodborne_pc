@@ -1,6 +1,6 @@
 # Building The Crowned Workshop on Windows
 
-Players can use the complete revision ZIP without installing Python or a compiler. Start with [the player guide](README-Windows.txt) and [current documentation](../../docs/index.md). This page is for building the port.
+Players can use the ordinary game ZIP without installing Python or a compiler. The optional Developer ZIP keeps source records, regression programs and specialist scripts. Start with [the player guide](README-Windows.txt) and [current documentation](../../docs/index.md). This page is for building the port.
 
 ## Verified release candidates
 
@@ -25,7 +25,7 @@ bash packaging/windows/package.sh --launcher-only
 "$WINPYTHON" tools/assemble_windows.py --baseline out/dependencies/runtime-baseline.zip --dll-dir "$(cygpath -w /clang64/bin)" --channel stable
 ```
 
-The baseline contributes unchanged SDK redistributables and their licenses; the workflow replaces the native executables, launcher and project files with the new build. The candidate records its source commit/tree, executable/runtime hashes and dependencies. The validator checks DLL imports, the source patch, package contents and SHA-256 before preparing the publication page. Use `--channel preview` for an actual prerelease. See [Releasing](../../docs/releasing.md) for the tag policy and publication steps.
+The baseline contributes unchanged SDK redistributables and their licenses; the workflow replaces the native executables, launcher and project files with the new build. The candidate records its source commit/tree, executable/runtime hashes and dependencies. The validator checks DLL imports, the source patch, package contents and SHA-256 before preparing the publication page. Assembly preserves the unsplit candidate under `dist/complete`, then exports the game and Developer ZIPs with matching sidecars. Release preparation verifies both archives against the same source. Use `--channel preview` for an actual prerelease. See [Releasing](../../docs/releasing.md) for the tag policy and publication steps.
 
 ## Development builds
 

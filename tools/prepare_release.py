@@ -8,7 +8,7 @@ import posixpath
 from pathlib import Path
 import re
 from urllib.parse import urlencode, urlsplit, quote
-from release_integrity import validate, canonical_tag, TAG_RE, require
+from release_integrity import validate, validate_developer, canonical_tag, TAG_RE, require
 
 
 def prepare(package: Path, *, channel=None, existing_tag=None, repo=None):
@@ -40,13 +40,20 @@ def prepare(package: Path, *, channel=None, existing_tag=None, repo=None):
         return match[1]+url+match[3]
     notes=re.sub(r'(\]\()([^\s)]+)(\))',guide_link,notes)
     body = notes+f"\n\nPackage: `{package.name}`\n\nSHA256: `{report['sha256']}`\n\nSource: [{commit[:7]}](https://github.com/TatsunaKyo/bloodborne_pc/commit/{commit}).\n"
+    developer = None
+    if report['identity'].get('developer_bundle'):
+        companion = package.parent / report['identity']['developer_bundle']['filename']
+        developer = validate_developer(companion, report, require_sidecar=True)
+        body += (f"\nOptional Developer package: `{developer['filename']}`\n\n"
+                 f"Developer SHA256: `{developer['sha256']}`\n\n"
+                 "Upload both ZIPs and both matching `.zip.sha256` files before publishing. Players only need the ordinary game package.\n")
     url = 'https://github.com/TatsunaKyo/bloodborne_pc/releases/new?' + urlencode({
         'tag':tag, 'target':commit, 'title':title, 'body':body, 'prerelease':'true' if channel == 'preview' else 'false'})
     return {'title':title, 'body':body, 'url':url, 'release_page':url,
             'source_commit':commit, 'source_tree':report['source_tree'], 'version':version,
             'package':package.name, 'bytes':report['bytes'], 'zip_sha256':report['sha256'],
             'sha256':report['sha256'], 'release_tag':tag, 'channel':channel, 'prerelease':channel == 'preview',
-            'published':False, 'source_verified':report['source_verified']}
+            'published':False, 'source_verified':report['source_verified'], 'developer_bundle':developer}
 
 
 def main():

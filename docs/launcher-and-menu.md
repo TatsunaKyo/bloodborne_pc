@@ -4,7 +4,7 @@
 
 Extract the full Windows package into a new folder and open **Bloodborne.exe**. Select your decrypted Bloodborne CUSA03173 1.09 folder under Game & files, then choose the resolution and graphics settings on Play. No game files are included.
 
-Saves and shader caches normally live in `user/` beside the launcher. You can select an existing saves folder; keep it and your mods/preferences when updating. **Play Bloodborne.exe** launches with saved settings. The included **Start-Verified-Launcher.cmd** checks the launcher's packaged hash before starting it.
+Saves and shader caches normally live in `user/` beside the launcher. You can select an existing saves folder; keep it and your mods/preferences when updating. **Play Bloodborne.exe** launches with saved settings. The optional Developer archive keeps **Start-Verified-Launcher.cmd** and the specialist capture scripts under `diagnostics/`; extract it beside the game folder or pass your installation folder as a script's first argument.
 
 ## The launcher
 

@@ -9,7 +9,7 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
-from release_integrity import TAG_RE, require, package_name, validate, checksum
+from release_integrity import TAG_RE, require, package_name, validate, validate_developer, checksum
 
 
 def release_version(release):
@@ -21,7 +21,7 @@ def release_version(release):
     return match[1]+'-tatsunakyo.'+match[2]
 
 
-def verify(release, directory, repo=None, fetch=None):
+def verify(release, directory, repo=None, fetch=None, *, refresh=None, wait_seconds=0):
     version=release_version(release); name=package_name(version); assets=release.get('assets',[])
     require(isinstance(assets,list), 'Malformed release assets')
     def asset(label):
@@ -49,17 +49,25 @@ def verify(release, directory, repo=None, fetch=None):
         import subprocess
         tagged=subprocess.check_output(['git','rev-parse',release['tag_name']+'^{commit}'],cwd=repo,text=True).strip()
         require(tagged==report['source_commit'],'Public tag and package source commit disagree')
+    companion = report['identity'].get('developer_bundle')
+    if companion is not None:
+        expected = (companion['filename'], companion['filename'] + '.sha256')
+        if refresh is not None:
+            release = wait_for_assets(release, refresh, wait_seconds, expected_names=expected)
+            assets = release['assets']
+        developer = download(asset(expected[0])); download(asset(expected[1]))
+        report['developer_bundle'] = validate_developer(developer, report, require_sidecar=True)
     report.pop('notes')
     report.update(release_tag=release['tag_name'],prerelease=bool(release.get('prerelease')),published=True,
                   legacy_stable_preview_tag=release['tag_name'].endswith('-preview') and not release.get('prerelease'))
     return report
 
 
-def wait_for_assets(release, refresh, seconds, *, clock=time.monotonic, pause=time.sleep):
+def wait_for_assets(release, refresh, seconds, *, clock=time.monotonic, pause=time.sleep, expected_names=None):
     """Allow a bounded publication/upload race; malformed or duplicate assets still fail."""
     require(0 <= seconds <= 300, 'Asset wait must be between 0 and 300 seconds')
     version = release_version(release)
-    expected = (package_name(version), package_name(version) + '.sha256')
+    expected = expected_names or (package_name(version), package_name(version) + '.sha256')
     deadline = clock() + seconds
     while True:
         assets = release.get('assets', [])
@@ -105,9 +113,11 @@ def main():
         with urllib.request.urlopen(urllib.request.Request(api,headers=headers),timeout=30) as response:
             return json.load(response)
     try:
+        deadline = time.monotonic() + args.wait_for_assets
         release = wait_for_assets(refresh(), refresh, args.wait_for_assets)
         with tempfile.TemporaryDirectory(prefix='workshop-release-') as tmp:
-            report=verify(release,tmp,args.repo)
+            report=verify(release,tmp,args.repo,refresh=refresh,
+                          wait_seconds=max(0, deadline - time.monotonic()))
     except Exception as error:
         save_check_result(args.output, {'status': 'failed', 'requested_tag': args.tag or 'latest',
                                        'error_type': type(error).__name__, 'error': str(error)})

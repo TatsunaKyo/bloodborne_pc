@@ -3,7 +3,7 @@ Maintained by TatsunaKyo, based on Super Medo’s native Windows port and bbport
 
 Start here
 
-Extract the full release ZIP into a new folder, open Bloodborne.exe, and select your decrypted CUSA03173 1.09 game folder in Game & files. No game files are included. Keep your existing saves, settings and mods. You can choose the saves folder; the normal default is user\ beside the launcher. Start-Verified-Launcher.cmd checks the packaged launcher hash.
+Extract the ordinary game ZIP into a new folder, open Bloodborne.exe, and select your decrypted CUSA03173 1.09 game folder in Game & files. No game files are included. Keep your existing saves, settings and mods. You can choose the saves folder; the normal default is user\ beside the launcher. The SHA256 file verifies your download. The optional Developer ZIP keeps regression programs, source records and specialist capture scripts; extract it beside the game folder when needed.
 
 Windows 10 1903+ / Windows 11, 64-bit, Vulkan 1.3 and a current graphics driver are required. Individual upscalers/FG/latency features have their own hardware requirements. See docs\compatibility.md and the provider guides; unverified hardware is not automatically incompatible.
 

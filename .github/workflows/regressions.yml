@@ -136,7 +136,7 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ python3-yaml python3-tk python3-pil python3-pil.imagetk xvfb fonts-dejavu-core zstd
+          sudo apt-get install -y g++ libglm-dev python3-yaml python3-tk python3-pil python3-pil.imagetk xvfb fonts-dejavu-core zstd
       - name: Prepare checksum-pinned Vulkan and VMA test headers
         run: python3 tools/setup_test_headers.py
       - name: Run actual Python, renderer and UI regressions

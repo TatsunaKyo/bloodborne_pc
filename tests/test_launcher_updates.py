@@ -102,6 +102,16 @@ class ForkUpdates(unittest.TestCase):
         self.assertIsNone(self.latest(self.release(assets=[
             {'name': 'source.zip', 'browser_download_url': 'https://example.invalid/source.zip'}]))[1])
 
+    def test_developer_archive_never_replaces_the_game_download(self):
+        release = self.release()
+        developer = {'name': f'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-{future_revision}-Developer.zip',
+                     'browser_download_url': 'https://example.invalid/developer.zip', 'state': 'uploaded'}
+        for first in (True, False):
+            candidate = dict(release)
+            candidate['assets'] = ([developer] + release['assets'] if first else release['assets'] + [developer])
+            self.assertEqual(self.latest(candidate)[1], 'https://example.invalid/windows.zip')
+        self.assertIsNone(self.latest(self.release(assets=[developer]))[1])
+
     def test_other_release_channels_are_rejected(self):
         for tag in ('windows-v1.7', 'v1.6', 'linux-v1.6-tatsunakyo.2',
                     'windows-v1.6-tatsunakyo.2-beta', 'windows-v1.6-tatsunakyo.x'):

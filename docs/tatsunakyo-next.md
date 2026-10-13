@@ -78,6 +78,8 @@ Revision 24 starts with [shader-cache recovery](shader-cache.md). I bounded reco
 
 The game HUD currently reaches FG. I want owned HUDless color plus the matching UI contribution, with correct HDR encoding and resource lifetimes. [AwesomeObserver's native implementation](https://github.com/AwesomeObserver/bloodborne_pc/tree/405f9fe6a13aaa9e5265dfd7d72c99188706d101) provides a useful starting point, but its HDR behavior and fixed multiplier differ from this fork. Particles/transparency and disocclusion checks follow separately; I do not want constant history resets that remove the benefit of temporal accumulation.
 
+Revision 28 starts the disocclusion work by marking newly visible tracked pixels that lack previous positions, while preserving depth rejection and valid history. The capture also records complete blend/alpha equations and write masks for the real HUD layer. Transparent/particle motion and HUD recomposition still need their own scene and HDR comparisons before I enable them.
+
 ## P1 — input and ultrawide
 
 SDL3 controller axes/buttons/vibration/touch and a fixed keyboard fallback already exist in `runtime_pad.c`. Full remapping, configurable sensitivity and native gameplay mouse camera control do not. I will start with a persistent action map, release/reconnect behavior and relative mouse capture that cleanly releases on Alt-Tab and menu entry. [Upstream PR 108](https://github.com/deadinside28/bloodborne_pc/pull/108) is a reference for stick-emulated mouse look; direct camera integration remains a distinct task. Controller-specific glyphs need appropriate assets and device detection.

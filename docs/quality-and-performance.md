@@ -29,9 +29,13 @@ A point behind the previous camera has no valid reprojection. I reject that case
 
 ## Remaining quality work
 
-Next, I want to check motion coverage for particles, transparent surfaces, weapons and newly visible geometry against the color/depth buffers. The existing opaque/skinned-mesh path must keep exact draw identity and full-precision depth rejection. Reducing that precision just to save bandwidth can introduce incorrect distant motion.
+I started with newly visible tracked geometry in Revision 28. Pixels without usable previous positions now carry a distinct history state. Where their written depth matches the final surface, I send reconstruction an off-screen history coordinate; where another surface covered them, I retain its camera fallback. Valid object history keeps its original vectors. The production shader body passes eight CPU cases, and the Vulkan fixture has matching cases for the gameplay comparison.
+
+Particles, transparent surfaces and weapon-specific coverage still need comparison against the color/depth buffers. I keep exact draw identity and full-precision depth rejection in the opaque/skinned path. Reducing that precision just to save bandwidth can introduce incorrect distant motion.
 
 I also want to improve text during FG by separating the HUD from the scene, with real HUDless color and matching UI-alpha buffers. Further DLSS improvements may require moving scaled reconstruction earlier in post-processing: native AA uses HDR scene color, while scaled presets currently reconstruct the tonemapped scene. I need to coordinate that with post-processing and SDR/HDR handling.
+
+The existing capture now records actual RGB/alpha blend factors, write masks and constants for each draw. The previous capture shows both ordinary alpha blending and additive UI highlights. A thresholded RGB difference cannot reproduce their opacity, so I need those draw-level records to build the matching UI layer without changing the visible HUD.
 
 The current mip bias already restores fine texture detail. More negative bias or stronger sharpening can increase shimmer, so those are tuning choices to compare on a moving scene. The optional profiler helps quantify future changes; it is not a prerequisite for removing redundant work that is identifiable in the code.
 

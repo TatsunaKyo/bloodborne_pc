@@ -12,8 +12,9 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import test_release_integrity as fixtures
-from release_integrity import validate, checksum
+from release_integrity import validate, validate_developer, checksum
 from split_release import split, DIAGNOSTICS
+from prepare_release import prepare
 
 
 class SplitRelease(unittest.TestCase):
@@ -54,6 +55,9 @@ class SplitRelease(unittest.TestCase):
                 self.assertNotIn('"%~dp0Bloodborne.exe"', body)
             self.assertIsNone(regular.testzip()); self.assertIsNone(dev.testzip())
         self.assertEqual(checksum(original), original_sha)
+        result = prepare(runtime)
+        self.assertIn(developer.name, result['body'])
+        self.assertEqual(result['developer_bundle']['sha256'], checksum(developer))
 
     def test_existing_outputs_are_not_overwritten(self):
         original = self.complete(); self.folder.mkdir()
@@ -63,10 +67,47 @@ class SplitRelease(unittest.TestCase):
 
     def test_interrupted_export_leaves_the_complete_input_and_no_partial_archives(self):
         original = self.complete(); before = checksum(original)
-        with patch('split_release.write_zip', side_effect=OSError('fixture interrupted write')):
+        from split_release import write_zip
+        writes = [0]
+        def interrupted(path, root, entries):
+            writes[0] += 1
+            if writes[0] == 1: return write_zip(path, root, entries)
+            path.write_bytes(b'partial ZIP')
+            raise OSError('fixture interrupted write')
+        with patch('split_release.write_zip', side_effect=interrupted):
             with self.assertRaises(OSError): split(original, self.folder)
         self.assertEqual(checksum(original), before)
         self.assertFalse(list(self.folder.glob('*.zip*')))
+
+    def test_missing_or_corrupted_companion_cannot_prepare_a_release(self):
+        result = split(self.complete(), self.folder)
+        runtime, developer = Path(result['runtime']), Path(result['developer'])
+        data = developer.read_bytes(); developer.unlink()
+        with self.assertRaisesRegex(ValueError, 'missing or renamed'): prepare(runtime)
+        developer.write_bytes(data[:-10])
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'): prepare(runtime)
+
+    def test_companion_identity_and_paths_are_checked_independently_of_its_hash(self):
+        result = split(self.complete(), self.folder)
+        runtime, developer = Path(result['runtime']), Path(result['developer'])
+        report = validate(runtime)
+        with zipfile.ZipFile(developer) as archive:
+            entries = {name: archive.read(name) for name in archive.namelist()}
+        def rewrite(changed):
+            with zipfile.ZipFile(developer, 'w') as archive:
+                for name, data in changed.items(): archive.writestr(name, data)
+            sha = checksum(developer)
+            developer.with_suffix('.zip.sha256').write_text(sha + '  ' + developer.name + '\n')
+            report['identity']['developer_bundle']['sha256'] = sha
+        broken = dict(entries)
+        key = 'Workshop-Developer/DEVELOPER-IDENTITY.json'
+        identity = json.loads(broken[key]); identity['source_commit'] = 'f' * 40
+        broken[key] = json.dumps(identity).encode(); rewrite(broken)
+        with self.assertRaisesRegex(ValueError, 'build identity disagrees'):
+            validate_developer(developer, report, require_sidecar=True)
+        broken = dict(entries); broken['Workshop-Developer/../outside.txt'] = b'bad'; rewrite(broken)
+        with self.assertRaisesRegex(ValueError, 'Unsafe archive path'):
+            validate_developer(developer, report, require_sidecar=True)
 
 
 if __name__ == '__main__': unittest.main()

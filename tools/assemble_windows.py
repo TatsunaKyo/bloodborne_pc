@@ -18,6 +18,7 @@ import zipfile
 from release_integrity import checksum, package_name, canonical_tag, validate, require
 from pe_integrity import PE, system
 from prepare_release import prepare
+from split_release import split
 
 ROOT=Path(__file__).resolve().parents[1]
 TESTS=('frame-limits-test','frame-pacing-test','background-pause-test','temporal-history-test',
@@ -41,6 +42,9 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
     require((ROOT/'out/verification/native-windows-tests.log').is_file(), 'Run the native Windows tests before packaging')
     destination.mkdir(parents=True,exist_ok=True)
     target=destination/package_name(version);require(not target.exists(),'Package already exists; preserve the previous candidate')
+    complete_dir=destination/'complete';complete_dir.mkdir(exist_ok=True)
+    complete=complete_dir/target.name
+    require(not complete.exists(),'Complete candidate already exists; preserve the previous build')
     with tempfile.TemporaryDirectory(prefix='workshop-package-') as directory:
         temp=Path(directory);stage=temp/f'Bloodborne-Windows-TatsunaKyo-Revision-{revision}'
         with zipfile.ZipFile(baseline) as z:
@@ -111,10 +115,12 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         # The portable current player guide is kept instead of a previous revision summary.
         (stage/'README-IT.txt').write_text('Bloodborne: The Crowned Workshop\nVersione '+version+'\nApri README-Windows.txt per installazione, impostazioni live e documentazione aggiornata.\n')
         for p in stage.rglob('__pycache__'):shutil.rmtree(p,ignore_errors=True)
-        with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+        with zipfile.ZipFile(complete,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
             for p in sorted(stage.rglob('*')):
                 if p.is_file():z.write(p,str(Path(stage.name)/p.relative_to(stage)))
-    target.with_suffix('.zip.sha256').write_text(checksum(target)+'  '+target.name+'\n')
+    complete.with_suffix('.zip.sha256').write_text(checksum(complete)+'  '+complete.name+'\n')
+    separation=split(complete,destination,repo=ROOT)
+    (destination/'package-layout.json').write_text(json.dumps(separation,indent=2)+'\n')
     report=validate(target,repo=ROOT,require_sidecar=True)
     report.pop('notes');(destination/'package-verification.json').write_text(json.dumps(report,indent=2)+'\n')
     release=prepare(target,channel=channel,repo=ROOT)

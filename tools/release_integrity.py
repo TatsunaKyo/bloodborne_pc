@@ -81,6 +81,75 @@ def source_version(data):
     raise ValueError('Launcher source has no VERSION')
 
 
+def verify_sidecar(package, sha, required=False):
+    sidecar = package.with_suffix('.zip.sha256')
+    if sidecar.exists() or required:
+        require(sidecar.is_file(), 'Checksum sidecar is missing')
+        match = re.fullmatch(r'([0-9a-fA-F]{64})[ \t]+\*?([^\r\n]+)\s*', sidecar.read_text(encoding='utf-8').strip())
+        require(match and match[1].lower() == sha and match[2] == package.name, 'Checksum sidecar mismatch')
+
+
+def developer_metadata(identity):
+    companion = identity.get('developer_bundle')
+    if companion is None:
+        return None
+    require(isinstance(companion, dict), 'Invalid developer bundle metadata')
+    name = package_name(identity['version']).removesuffix('.zip') + '-Developer.zip'
+    require(companion.get('filename') == name, 'Developer bundle filename and version disagree')
+    require(isinstance(companion.get('sha256'), str) and re.fullmatch('[0-9a-f]{64}', companion['sha256']),
+            'Invalid developer bundle checksum')
+    require(companion.get('source_commit') == identity['source_commit'] and companion.get('optional_for_play') is True,
+            'Developer bundle source or runtime requirement disagrees')
+    return companion
+
+
+def validate_developer(package, runtime, *, require_sidecar=False):
+    """Verify the optional archive against the already verified game package."""
+    package = Path(package)
+    companion = developer_metadata(runtime['identity'])
+    require(companion is not None, 'Runtime package has no developer companion')
+    require(package.name == companion['filename'] and package.is_file(), 'Developer bundle is missing or renamed')
+    sha = checksum(package)
+    require(sha == companion['sha256'], 'Developer bundle checksum mismatch')
+    verify_sidecar(package, sha, require_sidecar)
+    with zipfile.ZipFile(package) as archive:
+        infos = archive.infolist()
+        require(infos and len(infos) <= 100000 and sum(i.file_size for i in infos) <= 8 * 1024**3,
+                'Empty or excessive developer archive')
+        paths = [safe_member(i.filename) for i in infos]
+        require(all(i.file_size <= 1024**3 and not i.flag_bits & 1 and not stat.S_ISLNK(i.external_attr >> 16)
+                    for i in infos), 'Unsupported developer archive member')
+        require(len({i.filename.casefold() for i in infos}) == len(infos), 'Duplicate Windows archive paths')
+        root = runtime['root'] + '-Developer'
+        require(all(p.parts[0] == root for p in paths), 'Developer archive root disagrees')
+        require(all(p.name.lower() not in ('eboot.bin', 'param.sfo', 'image.bin') for p in paths),
+                'Game files must not be distributed')
+        require(archive.testzip() is None, 'Corrupt developer ZIP member')
+        def read(name):
+            require(root + '/' + name in archive.namelist(), 'Developer archive is missing ' + name)
+            return archive.read(root + '/' + name)
+        identity = json.loads(read('DEVELOPER-IDENTITY.json'))
+        original = json.loads(read('ORIGINAL-BUILD-IDENTITY.json'))
+        require(isinstance(identity, dict) and isinstance(original, dict), 'Invalid developer build identity')
+        for key in ('version', 'source_commit', 'source_tree'):
+            require(identity.get(key) == runtime['identity'][key] == original.get(key),
+                    'Developer build identity disagrees: ' + key)
+        regular = identity.get('runtime_executables')
+        programs = identity.get('developer_executables')
+        require(regular == runtime['identity']['executables'] and isinstance(programs, dict),
+                'Developer executable provenance disagrees')
+        require(not (set(regular) & set(programs)) and original.get('executables') == regular | programs,
+                'Original executable provenance was not preserved')
+        for name, expected in programs.items():
+            safe_member(name)
+            require(name.startswith('bin/') and name.endswith('-test.exe'), 'Unexpected developer executable')
+            data = read(name)
+            require(hashlib.sha256(data).hexdigest() == expected, 'Developer executable checksum mismatch: ' + name)
+            verify_pe(data, name)
+    return {'filename': package.name, 'sha256': sha, 'bytes': package.stat().st_size,
+            'source_commit': runtime['source_commit'], 'executables_checked': len(programs)}
+
+
 def validate(package, *, expected_version=None, repo=None, require_sidecar=False):
     package = Path(package)
     require(package.is_file(), 'Package does not exist')
@@ -112,6 +181,7 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
             require(isinstance(value, str) and re.fullmatch('[0-9a-f]{40}', value), 'Invalid '+label)
         hint = TAG_RE.fullmatch(identity.get('release_tag', ''))
         require(hint and hint[1]+'-tatsunakyo.'+hint[2] == version, 'Build release tag and version disagree')
+        developer_metadata(identity)
         hashes = identity.get('executables')
         require(isinstance(hashes, dict) and set(CORE).issubset(hashes), 'Missing executable provenance')
         for name, expected in hashes.items():
@@ -180,11 +250,7 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
             except (AssertionError, IndexError, struct.error, UnicodeError) as failure:
                 raise ValueError('Invalid Windows dependency table') from failure
     sha = checksum(package)
-    sidecar = package.with_suffix('.zip.sha256')
-    if sidecar.exists() or require_sidecar:
-        require(sidecar.is_file(), 'Checksum sidecar is missing')
-        match = re.fullmatch(r'([0-9a-fA-F]{64})[ \t]+\*?([^\r\n]+)\s*', sidecar.read_text(encoding='utf-8').strip())
-        require(match and match[1].lower() == sha and match[2] == package.name, 'Checksum sidecar mismatch')
+    verify_sidecar(package, sha, require_sidecar)
     return {'version':version, 'revision':revision, 'identity':identity, 'root':root,
             'source_commit':commit, 'source_tree':tree, 'sha256':sha, 'bytes':package.stat().st_size,
             'executables_checked':len(hashes), 'source_verified':repo is not None, 'notes':notes, **closure}
