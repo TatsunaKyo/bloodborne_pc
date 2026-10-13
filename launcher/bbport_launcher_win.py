@@ -31,6 +31,7 @@ import zipfile
 FROZEN = getattr(sys, 'frozen', False)
 PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORT_DIR / 'scripts'))
+sys.path.insert(0, str(PORT_DIR / 'tools'))
 if FROZEN:
     # The packaged CPython 3.14 Pillow modules live beside the bundled runtime.
     sys.path.insert(0, str(PORT_DIR / '_internal'))
@@ -43,13 +44,12 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.25'
+VERSION = '1.6-tatsunakyo.26'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
 RELEASES_API = 'https://api.github.com/repos/TatsunaKyo/bloodborne_pc/releases/latest'
 RELEASES_PAGE = 'https://github.com/TatsunaKyo/bloodborne_pc/releases/latest'
-UPDATE_DIR = Path(tempfile.gettempdir()) / 'bbport-update'
 # Never copied over an installation by an update (the package does not hold them either).
 USER_FILES = ('user', 'out', 'mods', 'bbport.ini', 'bbport.menu.ini', 'mods.json', 'patches.json', 'last_run.log')
 
@@ -2193,9 +2193,10 @@ class Launcher:
 
         def work():
             try:
-                shutil.rmtree(UPDATE_DIR, ignore_errors=True)
-                UPDATE_DIR.mkdir(parents=True, exist_ok=True)
-                archive = UPDATE_DIR / 'update.zip'
+                # Each launcher owns its staging folder; a second launcher must
+                # not erase another update in progress.
+                update_dir = Path(tempfile.mkdtemp(prefix='crowned-workshop-update-'))
+                archive = update_dir / update_package_name(version)
                 request = urllib.request.Request(url, headers={'User-Agent': 'bbport-launcher'})
                 with urllib.request.urlopen(request, timeout=60) as response, open(archive, 'wb') as out:
                     total, done, shown = int(response.headers.get('Content-Length') or 0), 0, -1
@@ -2206,17 +2207,22 @@ class Launcher:
                         if percent != shown:
                             shown = percent
                             self.ui_calls.put(lambda p=percent: progress(p))
+                checksum_request = urllib.request.Request(url + '.sha256', headers={'User-Agent': 'bbport-launcher'})
+                with urllib.request.urlopen(checksum_request, timeout=30) as response:
+                    sidecar = response.read(4097).decode('utf-8')
+                self.ui_calls.put(lambda: self.update_label.configure(text=_('Verifying update…', 'Проверка обновления…')))
+                root = verify_update_archive(archive, version, sidecar)
                 with zipfile.ZipFile(archive) as package:
-                    package.extractall(UPDATE_DIR / 'new')
+                    package.extractall(update_dir / 'new')
                 archive.unlink()
-                new = next((p.parent for p in (UPDATE_DIR / 'new').rglob('Bloodborne.exe')), None)
-                if not new:
-                    raise OSError('Bloodborne.exe is missing from the download')
+                new = update_dir / 'new' / root
                 # The new launcher copies itself over this installation once this one has closed.
                 subprocess.Popen([str(new / 'Bloodborne.exe'), '--install-update', str(PORT_DIR), str(os.getpid())],
                                  cwd=str(new), stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
                 self.ui_calls.put(self.root.destroy)
-            except (OSError, zipfile.BadZipFile) as failure:
+            except (OSError, ValueError, zipfile.BadZipFile) as failure:
+                if 'update_dir' in locals():
+                    shutil.rmtree(update_dir, ignore_errors=True)
                 def failed(error=failure):
                     self.update_button.configure(state='normal')
                     self.update_label.configure(text=_('Version {} is available.', 'Доступна версия {}.').format(version))
@@ -2349,6 +2355,26 @@ def version_tuple(text):
     return tuple(int(number) for number in re.findall(r'\d+', text or ''))
 
 
+def update_package_name(version):
+    from release_integrity import package_name
+    return package_name(version)
+
+
+def verify_update_archive(archive, version, sidecar):
+    """Check the downloaded checksum and release identity before running its code."""
+    from release_integrity import checksum, validate
+    archive = Path(archive)
+    if not isinstance(sidecar, str) or len(sidecar) > 4096:
+        raise ValueError('Invalid update checksum file.')
+    match = re.fullmatch(r'([0-9a-fA-F]{64})[ \t]+\*?([^\r\n]+)\s*', sidecar.strip())
+    if not match or match[2] != archive.name or match[1].lower() != checksum(archive):
+        raise ValueError('The downloaded update does not match its SHA-256 checksum.')
+    try:
+        return validate(archive, expected_version=version)['root']
+    except (TypeError, KeyError, SyntaxError) as failure:
+        raise ValueError('The update contains malformed release metadata.') from failure
+
+
 def latest_release():
     """(version, Windows package URL, page URL) of this fork's latest revision."""
     request = urllib.request.Request(RELEASES_API, headers={'Accept': 'application/vnd.github+json',
@@ -2378,16 +2404,35 @@ def latest_release():
     return version, url, release.get('html_url') or RELEASES_PAGE
 
 
+def wait_for_previous_launcher(wait_pid):
+    kernel = ctypes.windll.kernel32
+    kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    kernel.WaitForSingleObject.restype = ctypes.c_uint32
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel.CloseHandle.restype = ctypes.c_int
+    handle = kernel.OpenProcess(0x00100000, False, int(wait_pid))
+    if not handle:
+        # An exited PID is no longer a process. Access denied or another lookup
+        # failure is not evidence that the old launcher has closed.
+        return kernel.GetLastError() == 87  # ERROR_INVALID_PARAMETER
+    try:
+        return kernel.WaitForSingleObject(handle, 60000) == 0  # WAIT_OBJECT_0
+    finally:
+        kernel.CloseHandle(handle)
+
+
 def install_update(target, wait_pid):
     """--install-update TARGET PID, run by the downloaded version from its temporary folder:
     waits for the old launcher to close, copies this version over TARGET (never the saves,
     settings or mods) and starts it."""
     target = Path(target)
-    kernel = ctypes.windll.kernel32
-    handle = kernel.OpenProcess(0x00100000, False, int(wait_pid))  # SYNCHRONIZE
-    if handle:
-        kernel.WaitForSingleObject(handle, 60000)
-        kernel.CloseHandle(handle)
+    if not wait_for_previous_launcher(wait_pid):
+        ctypes.windll.user32.MessageBoxW(None, _(
+            'The previous launcher did not close. No update files were copied. Close it and retry the update.',
+            'Предыдущий лаунчер не закрылся. Файлы не копировались. Закройте его и повторите обновление.'), 'Bloodborne', 0x10)
+        return 1
     ignore = shutil.ignore_patterns(*USER_FILES)
     for attempt in range(30):
         try:

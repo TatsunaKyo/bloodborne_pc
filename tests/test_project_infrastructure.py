@@ -25,7 +25,8 @@ class Infrastructure(unittest.TestCase):
         current={'README.md','CONTRIBUTING.md','SECURITY.md','index.md','live-settings.md',
                  'known-issues.md','compatibility.md','repository-setup.md','infrastructure-plan.md',
                  'testing.md','releasing.md','launcher-and-menu.md','upscaling.md','frame-generation.md',
-                 'latency.md','display-and-overlay.md','performance.md','quality-and-performance.md','cheats.md'}
+                 'latency.md','display-and-overlay.md','performance.md','quality-and-performance.md','cheats.md',
+                 'code-review-2026-10-13.md','support-reports.md','save-manager.md','shader-cache.md'}
         for file in files:
             text=file.read_text()
             is_current = file.parent == ROOT and file.name in current or file.parent == ROOT/'docs' and file.name in current or file.name == 'index.md'

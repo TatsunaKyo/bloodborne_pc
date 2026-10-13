@@ -2,6 +2,7 @@
 // Overlay preferences must survive the original launcher rewriting bbport.ini.
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -28,6 +29,15 @@ int main() {
     Env("BB_DLSS_PRESET", nullptr);
     Env("BB_RENDER_RES", nullptr);
     auto& cheat = Get();
+    for (const char* invalid : {"nan", "inf", "-inf", "1e1000"}) {
+        std::ofstream(config) << "sharpness=" << invalid << "\nreactive_scale=" << invalid
+                              << "\nreactive_threshold=" << invalid << "\nreactive_max=" << invalid << '\n';
+        Load();
+        assert(std::isfinite(cheat.sharpness.load()) && std::isfinite(cheat.reactive_scale.load()) &&
+               std::isfinite(cheat.reactive_threshold.load()) && std::isfinite(cheat.reactive_max.load()));
+    }
+    std::ofstream(config).close();
+    Load();
     assert(cheat.cheat_damage==0 && cheat.cheat_movement==0 && !cheat.cheat_infinite_stamina);
     assert(!cheat.cheat_no_fall_damage && !cheat.show_frame_generation && !cheat.show_latency);
     bbgpu_cheat_support(BB_CHEAT_ALL);

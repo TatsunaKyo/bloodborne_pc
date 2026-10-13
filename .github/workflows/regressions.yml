@@ -77,6 +77,23 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tests/test_save_manager.py 2>&1 | Tee-Object out/verification/save-windows.log
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_update_archive.py 2>&1 | Tee-Object out/verification/update-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Execute production swapchain recovery regression
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          python tests/test_swapchain_recovery.py --prepare out/verification/swapchain-recovery
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          foreach ($name in @('revision25','current')) {
+            cl /nologo /O2 /EHsc /std:c++20 "out/verification/swapchain-recovery/$name.cpp" "/Fe:out/verification/swapchain-recovery/$name.exe"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            & "./out/verification/swapchain-recovery/$name.exe" 2>&1 | Tee-Object "out/verification/swapchain-recovery-$name.log"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
       - name: Compile and exercise the actual frozen Windows launcher
         shell: pwsh
         run: |
@@ -84,7 +101,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $tclData = (Resolve-Path out/tk-runtime/_tcl_data).Path
           $tkData = (Resolve-Path out/tk-runtime/_tk_data).Path
-          python -m PyInstaller --noconfirm --clean --windowed --name Bloodborne --paths scripts --paths launcher --distpath out/frozen-infrastructure --workpath out/pyi-infrastructure --specpath out/pyi-infrastructure --add-data "${tclData};_tcl_data" --add-data "${tkData};_tk_data" --hidden-import ctypes.wintypes --hidden-import dataclasses --hidden-import datetime --hidden-import ipaddress --hidden-import support_report --hidden-import support_report_ui --hidden-import save_access --hidden-import save_manager --hidden-import save_manager_ui launcher/bbport_launcher_win.py
+          python -m PyInstaller --noconfirm --clean --windowed --name Bloodborne --paths scripts --paths launcher --paths tools --distpath out/frozen-infrastructure --workpath out/pyi-infrastructure --specpath out/pyi-infrastructure --add-data "${tclData};_tcl_data" --add-data "${tkData};_tk_data" --hidden-import ctypes.wintypes --hidden-import dataclasses --hidden-import datetime --hidden-import ipaddress --hidden-import support_report --hidden-import support_report_ui --hidden-import save_access --hidden-import save_manager --hidden-import save_manager_ui launcher/bbport_launcher_win.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $exe = (Resolve-Path out/frozen-infrastructure/Bloodborne/Bloodborne.exe).Path
           $script = (Resolve-Path scripts/verify_infrastructure_runtime.py).Path

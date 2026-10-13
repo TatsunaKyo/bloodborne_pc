@@ -58,6 +58,10 @@ def safe_member(name):
     require(not path.is_absolute() and not PureWindowsPath(name).drive
             and all(part not in ('.', '..') and ':' not in part for part in name.rstrip('/').split('/')),
             'Unsafe archive path: '+name)
+    for part in path.parts:
+        require(not part.endswith(('.', ' ')) and not any(ord(c) < 32 or c in '<>"|?*' for c in part)
+                and not re.fullmatch(r'(?i)(CON|CONIN\$|CONOUT\$|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?', part),
+                'Unsafe Windows archive path: '+name)
     return path
 
 
@@ -83,6 +87,9 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
     with zipfile.ZipFile(package) as archive:
         infos = archive.infolist()
         require(infos and len(infos) <= 100000, 'Empty or excessive archive')
+        require(sum(i.file_size for i in infos) <= 8 * 1024**3
+                and all(i.file_size <= 1024**3 and not i.flag_bits & 1 for i in infos),
+                'Excessive or encrypted release archive')
         paths = [safe_member(i.filename) for i in infos]
         require(len({i.filename.casefold() for i in infos}) == len(infos), 'Duplicate Windows archive paths')
         require(all(not stat.S_ISLNK(i.external_attr >> 16) for i in infos), 'Archive symlinks are not supported')

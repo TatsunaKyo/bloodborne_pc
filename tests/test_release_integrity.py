@@ -104,6 +104,13 @@ class Releases(unittest.TestCase):
         with zipfile.ZipFile(p, 'a') as z: z.writestr(info, 'outside')
         with self.assertRaises(ValueError): integrity.validate(p)
 
+    def test_windows_aliases_and_devices_rejected(self):
+        for name in ('Workshop/README.md.', 'Workshop/README.md ', 'Workshop/NUL.txt',
+                     'Workshop/dir/COM1', 'Workshop/LPT¹.log', 'Workshop/AUX',
+                     'Workshop/dir\x01/file', 'Workshop/CON/source'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                integrity.validate(self.package(extra=[(name, b'x')]))
+
     def test_sidecar_filename_and_hash(self):
         p = self.package(); sha = integrity.checksum(p); sidecar = p.with_suffix('.zip.sha256')
         with self.assertRaises(ValueError): integrity.validate(p, require_sidecar=True)

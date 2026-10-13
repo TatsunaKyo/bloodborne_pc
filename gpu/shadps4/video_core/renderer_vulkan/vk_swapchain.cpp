@@ -11,6 +11,7 @@
 #include "sdl_window.h"
 #include "bbport_settings.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -117,13 +118,9 @@ void Swapchain::SetHDR(bool hdr) {
         return;
     }
 
-    auto result = instance.GetDevice().waitIdle();
-    if (result != vk::Result::eSuccess) {
-        LOG_WARNING(ImGui, "Failed to wait for Vulkan device idle on mode change: {}",
-                    vk::to_string(result));
-    }
-
     needs_hdr = hdr;
+    // Create/Destroy performs the synchronized drain once, after NVIDIA has
+    // retired its input ownership. Do not drain a second time before that gate.
     Recreate(width, height);
     ImGui::Core::OnSurfaceFormatChange(needs_hdr ? SURFACE_FORMAT_HDR.format
                                                  : surface_format.format);
@@ -327,7 +324,12 @@ void Swapchain::SetSurfaceProperties() {
 void Swapchain::Destroy() {
     BbNvidia::BeforeSwapchainChange();
     vk::Device device = instance.GetDevice();
-    const auto wait_result = device.waitIdle();
+    const auto wait_result = [&] {
+        // vkDeviceWaitIdle needs exclusion of every client queue operation.
+        // Keep SDK retirement outside this lock, matching Present's lock order.
+        std::scoped_lock queue_lock{Scheduler::submit_mutex};
+        return device.waitIdle();
+    }();
     if (wait_result != vk::Result::eSuccess) {
         LOG_WARNING(Render_Vulkan, "Failed to wait for device to become idle: {}",
                     vk::to_string(wait_result));
@@ -355,6 +357,9 @@ void Swapchain::Destroy() {
 
 void Swapchain::RefreshSemaphores() {
     const vk::Device device = instance.GetDevice();
+    // A recreated swapchain may expose fewer images. Its new semaphore arrays
+    // must not inherit an acquisition slot from the previous image count.
+    frame_index = image_index = 0;
     image_acquired.resize(image_count);
     present_ready.resize(image_count);
 

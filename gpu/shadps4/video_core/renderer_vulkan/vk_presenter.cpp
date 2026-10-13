@@ -766,11 +766,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             BbAmd::BeforePresent(frame->amd_token, final && is_game_frame && !is_reusing_frame);
             return swapchain.Present();
         });
-        {
-            std::scoped_lock submit_lock{Scheduler::submit_mutex};
-            if (!presented && window.GetWidth() != 0 && window.GetHeight() != 0) {
-                swapchain.Recreate(window.GetWidth(), window.GetHeight());
-            }
+        if (!presented && window.GetWidth() != 0 && window.GetHeight() != 0) {
+            // Recreation retires NVIDIA input ownership before taking the queue
+            // lock for its GPU drain. Never reverse that lock order here.
+            swapchain.Recreate(window.GetWidth(), window.GetHeight());
         }
         BbOverlay::RecordPresent(final && is_game_frame && !is_reusing_frame,presented);
     };

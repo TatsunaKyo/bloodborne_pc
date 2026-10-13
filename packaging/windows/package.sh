@@ -32,7 +32,7 @@ for module in argparse base64 collections hashlib json re shutil struct tempfile
 done
 out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed \
     --name Bloodborne --icon "$(cygpath -w "$PWD/launcher/bloodborne.ico")" --distpath out/pyi-dist \
-    --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" "${hidden[@]}" \
+    --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" --paths "$(cygpath -w "$PWD/tools")" "${hidden[@]}" \
     --add-data "$(cygpath -w "$PWD/out/tk-runtime/_tcl_data");_tcl_data" \
     --add-data "$(cygpath -w "$PWD/out/tk-runtime/_tk_data");_tk_data" \
     "$(cygpath -w "$PWD/launcher/bbport_launcher_win.py")"

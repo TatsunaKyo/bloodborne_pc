@@ -27,3 +27,9 @@ I mark an issue resolved when the relevant result supports it. Old reports, inhe
 `tests/test_support_report.py` checks bounded collection, missing/malformed logs, credentials and custom paths, optional hardware submissions, ZIP integrity and interrupted exports. `tests/test_save_manager.py` checks complete save/metadata/memory snapshots, retention, rollback, corrupt/unsafe archives, locked writers and processes killed at three restore stages. The native lease fixture exercises the same C guard linked into the game, together with the Python manager.
 
 The two actual Tk dialog tests exercise inspection/export, named snapshots, restoration, source-folder scope and compact/high-DPI layouts. Windows infrastructure CI also executes the real Windows file-sharing cases and the frozen launcher self-test. These checks use disposable fixtures; the maintainer gameplay configuration and evidence remain in [Compatibility](compatibility.md).
+
+## Integration and recovery checks
+
+Portable CI now also runs the twelve existing CPU/provider fixtures through `tests/test_cpu_integrations.py`: real/FG caps, timer phase, background gates, output counts/Reflex reports, raw frametimes, camera/object history, settings, FSR support, XeSS quality/SDK contracts and AMD input/present contracts. It adds the swapchain recovery fixture, which executes the production failure/drain blocks against competing queue work. Windows CI compiles that fixture with MSVC as well.
+
+`tests/test_update_archive.py` exercises the actual updater worker: a rejected checksum does not extract or execute a candidate, while a complete verified package reaches the expected launcher path. Altered binaries, wrong metadata/version, missing runtimes, malformed checksums, Windows aliases and truncated ZIPs are rejected. The frozen Windows runtime also imports the same release/dependency validators. [Code review](code-review-2026-10-13.md) records the findings and remaining hardware comparisons.

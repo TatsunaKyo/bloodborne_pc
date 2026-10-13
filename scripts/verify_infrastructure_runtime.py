@@ -7,9 +7,20 @@ import tempfile
 
 from save_manager import SaveManager, verify_backup
 from support_report import build_report, detect_system, export_report, verify_report
+from release_integrity import package_name, safe_member
+from pe_integrity import PE
 
 
 def main():
+    assert package_name('1.6-tatsunakyo.26') == 'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-26.zip'
+    assert PE is not None
+    try:
+        safe_member('Workshop/NUL.txt')
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('Unsafe Windows update path accepted')
+    print('PASS: packaged release/dependency validator imports and unsafe update path rejection.')
     import tkinter as tk
     from tkinter import ttk
     # Exercise Tcl/Tk's packaged scripts as well as the extension import. An

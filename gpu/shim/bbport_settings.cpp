@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -54,7 +55,7 @@ std::string MenuPath() {
 }
 
 float Clamp(float v, float lo, float hi) {
-    return std::clamp(v, lo, hi);
+    return std::isfinite(v) ? std::clamp(v, lo, hi) : lo;
 }
 
 void Set(Values& v, const std::string& key, const std::string& value) {
