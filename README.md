@@ -72,7 +72,7 @@ For DLSS, I exposed the following presets exactly as separate choices:
 
 ### HDR-ready Frame Generation and Multi Frame Generation
 
-![Real game frames and extra display frames, with SDR and HDR10 support](docs/assets/features/frame-generation.png)
+![Illustrative FG toggle: 60 real FPS, 120 output FPS and an unchanged real-frame graph](docs/assets/features/frame-generation.gif)
 
 Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**; I wanted HDR users to have the same FG choices. You can activate and adjust FG **live from the in-game menu**, as well as before launch in the launcher. I kept the normal FPS limit tied to real game frames, with or without FG, and added an optional second limit for the complete FG output. This lets you control the game rate and the generated display rate separately. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
 

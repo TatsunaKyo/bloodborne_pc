@@ -849,6 +849,32 @@ int main(int argc,char** argv) {
     CheckMenuLayout();
     assert(restart_calls==0);
     if (const char* path=std::getenv("BB_MENU_CAPTURE_DIR")) {
+        // Illustrative 60-real/120-output states, captured from production controls.
+        // These are sample UI values, never a gameplay measurement.
+        real_frame_history.Reset();
+        auto sample=BbFrameMetrics::RealFrameHistory::Clock::time_point{};
+        real_frame_history.Present(sample);
+        for(int i=0;i<240;++i) {
+            sample+=std::chrono::microseconds(16667);
+            real_frame_history.Present(sample);
+        }
+        frame_ms_avg=16.6667f;
+        s.show_fps=s.show_frametime_graph=s.show_frame_generation=true;
+        s.show_latency=s.show_resolution=s.show_dlss_preset=false;
+        s.real_fps_limit=60;s.limit_generated_fps=true;s.generated_fps_limit=120;
+        for(bool enabled : {false,true}) {
+            s.frame_generation=enabled ? BbSettings::FrameGenerationNvidia : BbSettings::FrameGenerationOff;
+            s.frame_generation_active=enabled ? 2 : 0;
+            s.reflex=enabled ? 1 : 0;
+            s.nvidia_real_fps=enabled ? 60.0f : -1.0f;
+            s.nvidia_output_fps=enabled ? 120.0f : -1.0f;
+            SetOpen(true);ChooseTab("frames");
+            CaptureMenu(std::filesystem::path(path),enabled ? "fg-demo-menu-on" : "fg-demo-menu-off");
+            SetOpen(false);OsdFrame();OsdFrame();
+            CaptureMenu(std::filesystem::path(path),enabled ? "frametime-demo-on" : "frametime-demo-off");
+        }
+    }
+    if (const char* path=std::getenv("BB_MENU_CAPTURE_DIR")) {
         std::ofstream out(std::filesystem::path(path)/"settings-categories.json");
         out<<"{"; bool first=true;
         for(const auto& [key,tab] : setting_categories) {

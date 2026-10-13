@@ -54,3 +54,9 @@ In Revision 20 I moved the shared Vulkan queue lock away from command-recording 
 I reproduced the contention by holding five different preparation/retirement phases in the production submission methods. Revision 19 blocks presentation in each one; the new scope allows it to proceed. Recorded Vulkan calls still serialize, and the recorder/copy completions remain before the command-buffer submission. This removes a source of unnecessary delay; the gameplay comparison will tell me how much it helps my scene. The reconstruction-time depth copy and NVIDIA input-completion fences stay in place.
 
 I also added the optional [frametime graph](display-and-overlay.md#reading-the-graph) so ordinary real-frame spikes can be seen without enabling the developer profiler. Its raw presentation intervals complement the FG output count and Reflex latency report.
+
+## Presentation queue scope
+
+In Revision 25 I narrowed another use of the shared Vulkan queue lock. NVIDIA's presentation wrapper collects FG state and latency after QueuePresent; that work used to keep the renderer from submitting its next command buffer on the same queue. The lock now covers the actual presentation call. SDK state collection remains on the presentation thread, under its existing NVIDIA lifecycle lock. Input-completion fences, owned scene depth, motion history and swapchain recovery are retained.
+
+The production-block regression holds the SDK work before/after the queue call. Revision 24 prevents render-queue progress in both cases; the new scope permits it. Holding QueuePresent still blocks another queue operation. I removed this source of contention to improve frame delivery; the same-scene gameplay comparison will show how much it helps on my Windows 11 / RTX 5070 Ti setup and other configurations.

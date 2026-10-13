@@ -1,5 +1,6 @@
 #include "bbport_nvidia.h"
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/debug.h"
@@ -758,12 +759,15 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
         // Present to swapchain.
         bool presented;
+        // Serialize the queue call itself. SDK state/latency queries after it must
+        // not stop the renderer from submitting the next frame on the same queue.
+        presented=BbNvidia::Present(frame,[&] {
+            std::scoped_lock submit_lock{Scheduler::submit_mutex};
+            BbAmd::BeforePresent(frame->amd_token, final && is_game_frame && !is_reusing_frame);
+            return swapchain.Present();
+        });
         {
             std::scoped_lock submit_lock{Scheduler::submit_mutex};
-            presented=BbNvidia::Present(frame,[&] {
-                BbAmd::BeforePresent(frame->amd_token, final && is_game_frame && !is_reusing_frame);
-                return swapchain.Present();
-            });
             if (!presented && window.GetWidth() != 0 && window.GetHeight() != 0) {
                 swapchain.Recreate(window.GetWidth(), window.GetHeight());
             }
