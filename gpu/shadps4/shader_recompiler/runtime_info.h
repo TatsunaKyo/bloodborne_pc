@@ -91,6 +91,7 @@ struct MotionVectors {
     static inline u64 positions_address = 0;
     static constexpr u32 FlagStore = 1;
     static constexpr u32 FlagLoad = 2;
+    static constexpr u32 FlagBoundedWorld = 4;
 };
 
 struct HwLocalRuntimeInfo {

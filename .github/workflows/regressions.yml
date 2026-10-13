@@ -111,6 +111,23 @@ jobs:
               if ($LASTEXITCODE -ne 7) { throw 'Revision 28 did not reproduce the focus regression.' }
             } elseif ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
+      - name: Execute production transfer and compute wait regression
+        shell: pwsh
+        run: |
+          python tools/setup_test_headers.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          python tests/test_submit_wait_stages.py --prepare out/verification/submit-waits
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          foreach ($name in @('revision29','current')) {
+            cl /nologo /O1 /EHsc /std:c++20 /I out/test-headers "out/verification/submit-waits/$name.cpp" "/Fe:out/verification/submit-waits/$name.exe"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            & "./out/verification/submit-waits/$name.exe" 2>&1 | Tee-Object "out/verification/submit-waits-$name.log"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
       - name: Compile and exercise the actual frozen Windows launcher
         shell: pwsh
         run: |

@@ -1,5 +1,7 @@
 # Bloodborne: The Crowned Workshop — Revision 29
 
+The flashing report persisted after this rollback. [Revision 30](windows-v1.6-tatsunakyo.30.md) corrects a frame-ready wait and adds a targeted world-motion continuity safeguard. The focus correction below remains included.
+
 I rolled back the motion-history change from Revision 28 after flashing geometry returned during gameplay at the Tomb of Oedon. The camera-motion shader and the vertex/fragment motion emitter now use the same code as Revision 27. I also changed the shader-cache version, so shaders compiled by Revision 28 are discarded automatically. The existing depth checks, FG input ownership and frame-pacing work stay in place.
 
 I fixed background limiting when the game starts out of focus. The window thread now checks the actual foreground window after processing events, including when an activation event is missing or arrives late. Returning to the game restores the configured limits in one polling cycle: for example, 65 real FPS and 130 total FPS with x2 FG. Pause, 30 FPS and 60 FPS background modes use the same corrected focus state.

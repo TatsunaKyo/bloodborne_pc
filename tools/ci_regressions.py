@@ -40,6 +40,7 @@ def main():
     run([sys.executable,'tests/test_swapchain_recovery.py'])
     run([sys.executable,'tests/test_cpu_integrations.py'])
     run([sys.executable,'tests/test_window_focus.py'])
+    run([sys.executable,'tests/test_submit_wait_stages.py'])
     run([sys.executable,'tests/test_camera_motion_kernel.py'])
     for file in ('test_const_ram_order.py','test_draw_copy_order.py','test_vertex_descriptor_order.py',
                  'test_dma_copy_order.py','test_fg_depth_snapshot.py','test_queue_lock_scope.py','test_geometry_capture.py'):

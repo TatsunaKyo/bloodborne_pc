@@ -8,7 +8,7 @@ Revision 26 stops before opening the launcher with `NameError: UPDATE_DIR is not
 
 ## Latest gameplay evidence
 
-Flashing geometry returned in Revision 28 at the Tomb of Oedon, where Father Gascoigne is fought. I rolled back that revision's new motion-history marker and off-screen reprojection in [Revision 29](releases/windows-v1.6-tatsunakyo.29.md). The motion shader and emitter now match Revision 27, and the cache version forces recompilation. The earlier FG input-ownership and depth fixes stay in place. I still need to compare the visual result in the affected area on my Windows 11 / RTX 5070 Ti PC.
+Flashing geometry persists in Revision 29 at the Tomb of Oedon, and turning NVIDIA FG off removes most of it. I corrected an incomplete frame-ready semaphore wait in [Revision 30](releases/windows-v1.6-tatsunakyo.30.md). I also added a continuity check for verified world batches after finding extreme tree vectors in the existing GPU capture. Actor/weapon motion and the earlier ownership fixes remain in place. The affected-scene gameplay comparison is still pending; I am not marking this report resolved.
 
 I also reproduced the startup focus failure at the window event-pump boundary: starting in the background can leave the 30 FPS policy active after returning to the game. Revision 29 reconciles the actual foreground window instead of relying on event order. The production-code regression covers a single return to 65 real / 130 total FPS, the pause gate and FG/Reflex policy.
 

@@ -249,6 +249,12 @@ struct Draw {
     bool operator==(const Draw& rhs) const = default;
 };
 
+// These model batches have a verified, unchanged world-transform identity.
+// Keep animation on actors/weapons independent of this vegetation-only check.
+inline bool CameraBounded(const Draw& draw) {
+    return draw.shader == ModelBatchShader && draw.model_batch != 0;
+}
+
 // CPU bookkeeping shared with the regression test. Draw identity includes topology and
 // offsets: a reused index buffer or another submesh must never read uninitialised history.
 class History {

@@ -133,6 +133,8 @@ int main() {
     run("sky ignores translation",1,1000,0,0,0,0);
     run("static camera cancels jitter",distant,0,0,0,0,0,true);
     run("matching object vector",distant,0,0,distant,1,2);
+    run("world history keeps wind",distant,0,0,distant,1,.2f,false,.2f,1.f,0.f,2.f);
+    run("world history rejects unrelated displacement",distant,0,0,distant,1,0,false,2.f,1.f,0.f,2.f);
     run("stale distant object vector",distant,0,0,0.9999f,1,0);
     run("missing geometry history retains camera fallback",distant,0,0,distant,1,0,
         false,2.f,1.f,0.f,0.f);

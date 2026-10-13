@@ -144,7 +144,9 @@ static void EmitVertexMotion(EmitContext& ctx) {
     ctx.OpBranch(load_merge);
     ctx.AddLabel(load_merge);
     Id previous = ctx.OpPhi(ctx.F32[4], position, store_merge, loaded, load_label);
-    const Id valid = ctx.OpSelect(ctx.F32[1], do_load, ctx.Constant(ctx.F32[1], 1.0f),
+    const Id confidence = ctx.OpSelect(ctx.F32[1], flag(MotionVectors::FlagBoundedWorld),
+                                       ctx.Constant(ctx.F32[1], 2.0f), ctx.Constant(ctx.F32[1], 1.0f));
+    const Id valid = ctx.OpSelect(ctx.F32[1], do_load, confidence,
                                   ctx.Constant(ctx.F32[1], 0.0f));
     previous = ctx.OpCompositeInsert(ctx.F32[4], valid, previous, 2u);
     ctx.OpStore(ctx.motion_out_cur, position);

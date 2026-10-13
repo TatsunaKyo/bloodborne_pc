@@ -148,6 +148,7 @@ u32 ObjectMotion::PrepareDraw(const DrawInfo& draw) {
     if (!flags) {
         return 0;
     }
+    if (Motion::CameraBounded(draw)) flags |= Shader::MotionVectors::FlagBoundedWorld;
     const u32 slot = u32(frame % FrameSlots);
     const u32 index = 1 + slot * ParamsPerFrame + params_used++;
     u32* param = params_mapped + index * 8;

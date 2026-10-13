@@ -23,6 +23,11 @@ int main() {
     Draw draw{.shader = 1, .geometry = 2, .indices = 3, .topology = 4,
               .index_count = 5, .instances = 2, .first_instance = 100,
               .vertices = range};
+    assert(!CameraBounded(draw));
+    auto world = draw; world.shader=ModelBatchShader;world.model_batch=7;
+    assert(CameraBounded(world));
+    world.model_batch=0;assert(!CameraBounded(world));
+    world.shader=1;world.model_batch=7;assert(!CameraBounded(world));
     History history(32);
     history.NextFrame();
     const auto first = history.Prepare(draw);
