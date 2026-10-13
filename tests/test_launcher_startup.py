@@ -49,12 +49,18 @@ def exercise_main(module, folder, expect_error=False):
         def create_window(*args, **kwargs):
             window = real_tk(*args, **kwargs)
             windows.append(window)
+            map_deadline = time.monotonic() + 30
 
             def inspect_and_close():
                 try:
                     assert len(apps) == 1, 'The real Launcher constructor did not finish.'
                     app = apps[0]
-                    assert window.winfo_ismapped()
+                    # Mapping is asynchronous. A slower first build can finish
+                    # after the timer expires but before its first map event.
+                    if not window.winfo_ismapped():
+                        assert time.monotonic() < map_deadline, 'The launcher window did not map within 30 seconds.'
+                        window.after(20, inspect_and_close)
+                        return
                     assert window.title() == 'Bloodborne: The Crowned Workshop — TatsunaKyo'
                     assert app.current_page == 'play'
                     assert app.brand_version.cget('text') == 'v' + module.VERSION
