@@ -13,7 +13,7 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 from release_integrity import checksum
-from verify_published_release import verify
+from verify_published_release import verify, wait_for_assets, main
 import test_release_integrity as fixtures
 
 
@@ -66,6 +66,45 @@ class PublishedRelease(unittest.TestCase):
              patch('subprocess.check_output',return_value='2'*40+'\n'):
             with self.assertRaisesRegex(ValueError,'source commit disagree'):
                 verify(self.release,self.downloads,repo=ROOT,fetch=self.fetch)
+
+    def test_publication_race_waits_for_both_assets_without_a_real_delay(self):
+        waiting = copy.deepcopy(self.release); waiting['assets'] = []
+        halfway = copy.deepcopy(self.release); halfway['assets'].pop()
+        times = [0]
+        def pause(seconds): times[0] += seconds
+        sequence = iter((halfway, self.release))
+        result = wait_for_assets(waiting, lambda: next(sequence), 15,
+                                 clock=lambda: times[0], pause=pause)
+        self.assertEqual(result, self.release)
+        self.assertEqual(times[0], 10)
+
+    def test_missing_assets_fail_at_deadline_and_duplicates_do_not_wait(self):
+        missing = copy.deepcopy(self.release); missing['assets'] = []
+        times = [0]
+        def pause(seconds): times[0] += seconds
+        with self.assertRaisesRegex(ValueError, 'Upload the ZIP and matching SHA-256'):
+            wait_for_assets(missing, lambda: missing, 7, clock=lambda: times[0], pause=pause)
+        self.assertEqual(times[0], 7)
+        duplicate = copy.deepcopy(self.release); duplicate['assets'].append(duplicate['assets'][0])
+        with self.assertRaisesRegex(ValueError, 'Duplicate release asset'):
+            wait_for_assets(duplicate, lambda: self.release, 10)
+
+    def test_wait_rejects_release_switch_and_excessive_wait(self):
+        missing = copy.deepcopy(self.release); missing['assets'] = []
+        other = copy.deepcopy(self.release); other['tag_name'] = 'windows-v1.6-tatsunakyo.22'
+        with self.assertRaisesRegex(ValueError, 'Release changed'):
+            wait_for_assets(missing, lambda: other, 10, clock=lambda: 0, pause=lambda seconds: None)
+        with self.assertRaises(ValueError): wait_for_assets(self.release, lambda: self.release, 301)
+
+    def test_failed_cli_retains_a_structured_record_for_ci(self):
+        output = self.downloads / 'failure.json'
+        with patch('sys.argv', ['verify_published_release', '--output', str(output)]), \
+             patch('verify_published_release.urllib.request.urlopen', side_effect=OSError('fixture network unavailable')):
+            with self.assertRaises(SystemExit) as stop: main()
+        self.assertEqual(stop.exception.code, 1)
+        result = json.loads(output.read_text())
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['error_type'], 'OSError')
 
 
 if __name__=='__main__':unittest.main()

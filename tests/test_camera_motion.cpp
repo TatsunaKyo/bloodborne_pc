@@ -71,12 +71,13 @@ int main() {
     };
     const auto run=[&](const char* label,float depth,float translation,float rotation,
                        float object_depth,u32 mode,float expected,bool jitter=false,
-                       float object_x=2.f,float previous_z=1.f,float expected_y=0.f) {
+                       float object_x=2.f,float previous_z=1.f,float expected_y=0.f,
+                       float history_state=1.f) {
         auto* pixels=static_cast<float*>(ai.pMappedData);
         for (u32 p=0;p<N;++p) {
             pixels[p*4]=depth;
             pixels[N*4+p*4]=object_x; pixels[N*4+p*4+1]=0.f;
-            pixels[N*4+p*4+2]=1.f; pixels[N*4+p*4+3]=object_depth;
+            pixels[N*4+p*4+2]=history_state; pixels[N*4+p*4+3]=object_depth;
         }
         const auto cmd=scheduler.CommandBuffer();
         std::array<vk::ImageMemoryBarrier2,3> transitions{};
@@ -133,6 +134,12 @@ int main() {
     run("static camera cancels jitter",distant,0,0,0,0,0,true);
     run("matching object vector",distant,0,0,distant,1,2);
     run("stale distant object vector",distant,0,0,0.9999f,1,0);
+    run("newly visible tracked geometry",distant,0,0,distant,1,-5.625f,
+        false,2.f,1.f,-4.375f,-1.f);
+    run("new geometry covered by another surface",distant,0,0,0.9999f,1,0,
+        false,2.f,1.f,0.f,-1.f);
+    run("untracked geometry retains camera fallback",distant,0,0,distant,1,0,
+        false,2.f,1.f,0.f,0.f);
     run("point behind previous camera",0.5f,1000,0,0,0,-5.625f,false,2.f,-1.f,-4.375f);
     run("object vector exceeds FP16",distant,0,0,distant,1,0,false,100000.f);
     run("nonfinite object vector",distant,0,0,distant,1,0,false,std::numeric_limits<float>::quiet_NaN());

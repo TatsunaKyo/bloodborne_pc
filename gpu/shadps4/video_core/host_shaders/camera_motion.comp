@@ -13,7 +13,8 @@ layout(binding = 2, std430) readonly buffer PrevFrame { uint prev_frame[]; };
 layout(binding = 3, std430) writeonly buffer NextFrame { uint next_frame[]; };
 #else
 layout(binding = 1, rg16f) uniform writeonly image2D motion_img; // pixels, previous - current
-// Object motion from the G-buffer: rg pixels, b = valid, a = written depth.
+// Object motion: rg pixels; b=1 matched history, -1 tracked without usable
+// history, 0 untracked; a=written depth. Depth remains full precision.
 layout(binding = 2) uniform texture2D object_tex;
 #endif
 
@@ -94,7 +95,13 @@ void main() {
         // Both depths are full precision. Do not accept an old foreground vector merely
         // because perspective depth compresses distant surfaces into a small interval.
         float depth_threshold = max(2e-7, (proj.z - depth) * 0.01);
-        if (object_motion.b > 0.99 && abs(object_motion.a - depth) < depth_threshold &&
+        const bool same_surface = abs(object_motion.a - depth) < depth_threshold;
+        if (same_surface && object_motion.b < -0.99) {
+            // Do not reproject a newly visible draw into an unrelated old surface.
+            // The depth check also prevents an overwritten motion attachment from
+            // invalidating an ordinary foreground draw that covered it later.
+            result = (vec2(-0.125) - scene_uv) * size;
+        } else if (object_motion.b > 0.99 && same_surface &&
             !any(isnan(object_motion.rg)) &&
             !any(isinf(object_motion.rg)) && all(lessThanEqual(abs(object_motion.rg),vec2(65504.0)))) {
             result = object_motion.rg;

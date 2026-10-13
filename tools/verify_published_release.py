@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 from release_integrity import TAG_RE, require, package_name, validate, checksum
@@ -54,21 +55,64 @@ def verify(release, directory, repo=None, fetch=None):
     return report
 
 
+def wait_for_assets(release, refresh, seconds, *, clock=time.monotonic, pause=time.sleep):
+    """Allow a bounded publication/upload race; malformed or duplicate assets still fail."""
+    require(0 <= seconds <= 300, 'Asset wait must be between 0 and 300 seconds')
+    version = release_version(release)
+    expected = (package_name(version), package_name(version) + '.sha256')
+    deadline = clock() + seconds
+    while True:
+        assets = release.get('assets', [])
+        require(isinstance(assets, list), 'Malformed release assets')
+        missing = []
+        for name in expected:
+            matching = [a for a in assets if isinstance(a, dict) and a.get('name') == name]
+            require(len(matching) <= 1, 'Duplicate release asset: ' + name)
+            if not matching or matching[0].get('state', 'uploaded') != 'uploaded': missing.append(name)
+        if not missing: return release
+        remaining = deadline - clock()
+        require(remaining > 0, 'Release assets are missing or still uploading: ' + ', '.join(missing) +
+                '. Upload the ZIP and matching SHA-256 file before publishing, then rerun this check.')
+        print('Waiting for release assets: ' + ', '.join(missing), flush=True)
+        pause(min(5, remaining))
+        refreshed = refresh()
+        require(release_version(refreshed) == version and refreshed.get('tag_name') == release.get('tag_name'),
+                'Release changed while waiting for its assets')
+        release = refreshed
+
+
+def save_check_result(output, report):
+    result = json.dumps(report, indent=2) + '\n'
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(result)
+    print(result)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--tag',default='')
     parser.add_argument('--repo',type=Path)
     parser.add_argument('--output',type=Path)
+    parser.add_argument('--wait-for-assets', type=int, default=0,
+                        help='Wait at most this many seconds for a newly published ZIP and sidecar (maximum 300)')
     args=parser.parse_args()
     api='https://api.github.com/repos/TatsunaKyo/bloodborne_pc/releases/'
     api+='tags/'+urllib.parse.quote(args.tag,safe='') if args.tag else 'latest'
     headers={'Accept':'application/vnd.github+json','User-Agent':'crowned-workshop-release-check'}
     if os.environ.get('GH_TOKEN'):headers['Authorization']='Bearer '+os.environ['GH_TOKEN']
-    with urllib.request.urlopen(urllib.request.Request(api,headers=headers),timeout=30) as response:release=json.load(response)
-    with tempfile.TemporaryDirectory(prefix='workshop-release-') as tmp:report=verify(release,tmp,args.repo)
-    result=json.dumps(report,indent=2)+'\n'
-    if args.output:args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(result)
-    print(result)
+    def refresh():
+        with urllib.request.urlopen(urllib.request.Request(api,headers=headers),timeout=30) as response:
+            return json.load(response)
+    try:
+        release = wait_for_assets(refresh(), refresh, args.wait_for_assets)
+        with tempfile.TemporaryDirectory(prefix='workshop-release-') as tmp:
+            report=verify(release,tmp,args.repo)
+    except Exception as error:
+        save_check_result(args.output, {'status': 'failed', 'requested_tag': args.tag or 'latest',
+                                       'error_type': type(error).__name__, 'error': str(error)})
+        raise SystemExit(1)
+    save_check_result(args.output, report)
 
 
 if __name__=='__main__':main()

@@ -23,7 +23,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: python3 tools/verify_published_release.py --tag "$RELEASE_TAG" --repo . --output out/verification/published-release.json
+        run: python3 tools/verify_published_release.py --tag "$RELEASE_TAG" --repo . --wait-for-assets 120 --output out/verification/published-release.json
       - name: Retain the release check
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
