@@ -53,7 +53,7 @@ def main():
     run([sys.executable,'tests/test_overlay_controls.py','--compiler','g++',
          '--capture-dir',f'out/verification/menu{revision}'])
     if args.gui:
-        for file in ('test_launcher_geometry.py','test_launcher_xess.py','test_support_report_ui.py','test_save_manager_ui.py'):
+        for file in ('test_launcher_startup.py','test_launcher_geometry.py','test_launcher_xess.py','test_support_report_ui.py','test_save_manager_ui.py'):
             run([sys.executable,'tests/'+file])
 
 

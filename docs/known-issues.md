@@ -2,6 +2,10 @@
 
 I keep confirmed problems, old reports and hardware coverage separate. A missing test on a different GPU does not mean that the feature is broken there. Likewise, a report from an older revision is useful, but it needs a current-build comparison before I call it a current regression.
 
+## Launcher startup in Revision 26
+
+Revision 26 stops before opening the launcher with `NameError: UPDATE_DIR is not defined`. I reproduced it using the delivered executable and removed the obsolete updater cleanup reference in [Revision 27](releases/windows-v1.6-tatsunakyo.27.md). Use Revision 27 instead. The startup checks now exercise the real main function and the Windows executable's normal entry point, as well as the existing interface and runtime tests.
+
 ## Latest gameplay evidence
 
 The latest affected-scene report says the Hunter's Dream flashing is resolved after Revision 19 on my Windows 11 / RTX 5070 Ti setup with NVIDIA FG. Those fixes remain in the current build. I am still collecting pacing comparisons; the optional real-frame graph is there to help make them easier to assess.

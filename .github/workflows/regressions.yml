@@ -104,6 +104,8 @@ jobs:
           python -m PyInstaller --noconfirm --clean --windowed --name Bloodborne --paths scripts --paths launcher --paths tools --distpath out/frozen-infrastructure --workpath out/pyi-infrastructure --specpath out/pyi-infrastructure --add-data "${tclData};_tcl_data" --add-data "${tkData};_tk_data" --hidden-import ctypes.wintypes --hidden-import dataclasses --hidden-import datetime --hidden-import ipaddress --hidden-import support_report --hidden-import support_report_ui --hidden-import save_access --hidden-import save_manager --hidden-import save_manager_ui launcher/bbport_launcher_win.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $exe = (Resolve-Path out/frozen-infrastructure/Bloodborne/Bloodborne.exe).Path
+          python tests/test_launcher_startup.py $exe 2>&1 | Tee-Object out/verification/frozen-startup.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $script = (Resolve-Path scripts/verify_infrastructure_runtime.py).Path
           $result = Start-Process -FilePath $exe -ArgumentList @('--script', $script) -PassThru -RedirectStandardOutput out/verification/frozen-runtime.log -RedirectStandardError out/verification/frozen-runtime-errors.log
           if (-not $result.WaitForExit(90000)) {

@@ -12,7 +12,7 @@ from pe_integrity import PE
 
 
 def main():
-    assert package_name('1.6-tatsunakyo.26') == 'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-26.zip'
+    assert package_name('1.6-tatsunakyo.27') == 'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-27.zip'
     assert PE is not None
     try:
         safe_member('Workshop/NUL.txt')

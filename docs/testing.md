@@ -8,6 +8,8 @@ With Python, Tk/Pillow, a C++ compiler, zstd and the pinned ImGui submodule avai
 
 The suite executes settings and updater behavior, altered-package rejection, production renderer branches with recorded calls, real ImGui controls and optional Tk layouts. It needs no game dump. The CI workflow uses the same entry point; private-image cheat tests and hardware gameplay remain separate.
 
+`tests/test_launcher_startup.py` runs the real main function with frozen startup behavior, in English and Russian, including the `--play` fallback when no game files are configured. Pass the compiled `Bloodborne.exe` to test its actual entry-point bytecode. On Windows, the same test also starts the executable as a separate process through its normal entry point, checks the window and closes it with the normal Windows close message. This catches startup failures that a constructor-only layout test or a `--script` runtime test can miss. All settings and file operations use disposable folders.
+
 ## Windows checks
 
 The manual **Windows build and package** workflow compiles native components and the launcher, executes the CPU regression programs and checks the compiled Windows launcher before assembling a candidate. It pins MSYS2 package checksums and the unchanged vendor runtime baseline. Package validation checks PE imports/exports, binary/runtime hashes, source commit/tree, source patch and SHA256 sidecar.
