@@ -64,6 +64,38 @@ def cards(items, y=132, h=258, font=32):
     return c
 
 
+def save_manager_figure():
+    c = text(34, 152, 'Closed-game backups, snapshots and restore', 31, color=GOLD)
+    c += cards([('Back up', ['Before launch', 'Named snapshot']),
+                ('Verify', ['Save files +', 'metadata']),
+                ('Restore', ['Rollback first', 'Game closed'])], y=179, h=213, font=29)
+    for x in (330, 652):
+        c += arrow(x, 291, 19)
+    icons = (
+        '<path d="M4 18h14l6 7h25v27H4zM27 3v16m-7-7 7 7 7-7"/>',
+        '<rect x="8" y="4" width="36" height="48" rx="3"/><path d="m15 18 4 4 7-8M29 20h8m-22 15 4 4 7-8M29 37h8"/>',
+        '<path d="M13 17a20 20 0 1 1-4 24M13 5v12H1m17 17 7 7 12-15"/>',
+    )
+    for x, icon in zip((251, 573, 895), icons):
+        c += f'<g transform="translate({x} 196)" fill="none" stroke="{GOLD}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">{icon}</g>'
+    c += text(34, 431, 'Find Save Manager in Game & files', 32, color=GOLD)
+    c += text(34, 473, '10 auto backups · Manual + rollback copies kept', 29, color=MUTED)
+    return write('save-manager', 'PROTECT YOUR PROGRESS',
+                 'Back up before launch or create a named snapshot. Save files and metadata are verified before a closed-game restore, with a rollback copy made first. Ten automatic backups are kept by default; manual and rollback snapshots are retained.', c)
+
+
+def export_save_manager():
+    DEST.mkdir(exist_ok=True); LABELS.clear()
+    result = save_manager_figure()
+    verification = ROOT / 'out/verification'; verification.mkdir(parents=True, exist_ok=True)
+    with Image.open(result) as image:
+        image.resize((360, 180), Image.Resampling.LANCZOS).save(verification / 'save-manager-infographic-mobile.png')
+    (verification / 'save-manager-infographic.json').write_text(json.dumps(
+        {'dimensions': [W, H], 'editable_svg': True, 'mobile_preview_width': 360,
+         'labels': LABELS}, indent=2) + '\n')
+    print(f'PASS: Save Manager SVG/PNG; {len(LABELS)} measured labels and 360-pixel mobile proof.')
+
+
 def export():
     DEST.mkdir(exist_ok=True); LABELS.clear(); files=[]
     def add(k, t, d, c): files.append(write(k, t, d, c))
@@ -111,6 +143,8 @@ def export():
     c+=text(34, 427, 'Together with the original startup cheats', 32, color=GOLD)+text(34, 473, 'Off by default · Open reports are tracked in the guide', 29, color=MUTED)
     add('cheats', 'CHOOSE HOW YOU PLAY', 'Runtime multipliers and stamina, consumable and fall-damage options sit alongside original startup patches. The guide records unresolved reports.', c)
 
+    files.append(save_manager_figure())
+
     c=text(34, 161, 'Insert on keyboard  /  L3+R3 on controller', 32, color=GOLD)
     for row, names in enumerate((('Image', 'Frames', 'Window'), ('Overlay', 'Cheats', 'Effects'))):
         for i, name in enumerate(names): c+=pill(34+i*317, 207+row*75, 270, name)
@@ -130,12 +164,12 @@ def export():
     add('diagnostics', 'MAKE A BUG REPORT USEFUL', 'Opt-in session diagnostics retain logs, settings, timings and crash dumps when available.', c)
 
     v=ROOT/'out/verification';v.mkdir(parents=True, exist_ok=True)
-    proof=Image.new('RGB', (720, 6*190), BG)
+    proof=Image.new('RGB', (720, ((len(files)+1)//2)*190), BG)
     for i, p in enumerate(files):
         with Image.open(p) as im:
             proof.paste(im.convert('RGB').resize((360, 180), Image.Resampling.LANCZOS), ((i%2)*360, (i//2)*190))
-    proof.save(v/'readme-infographics-mobile-revision21.png')
-    (v/'feature-infographics-revision21.json').write_text(json.dumps({'count':len(files), 'dimensions':[W,H], 'editable_svg':True, 'mobile_preview_width':360, 'illustrative_examples':True, 'labels':LABELS}, indent=2)+'\n')
+    proof.save(v/'readme-infographics-mobile.png')
+    (v/'feature-infographics.json').write_text(json.dumps({'count':len(files), 'dimensions':[W,H], 'editable_svg':True, 'mobile_preview_width':360, 'illustrative_examples':True, 'labels':LABELS}, indent=2)+'\n')
     print(f'PASS: {len(files)} explanatory SVG/PNG figures; {len(LABELS)} measured labels; mobile proof exported.')
 
 

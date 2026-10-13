@@ -175,6 +175,8 @@ They start off and share the **Cheats** category in both interfaces. The [curren
 
 ### Save Manager
 
+![Save Manager: automatic backups or named snapshots, verified save files and metadata, and closed-game restoration with rollback](docs/assets/features/save-manager.png)
+
 I added **Save Manager** to protect progress before a new session or an experimental change. Open it from **Game & files** to create named snapshots or restore a verified backup with a rollback copy of your current saves. It preserves the original save files, metadata and save memory, including custom saves locations.
 
 Automatic backups run before launching and start on, with ten snapshots kept by default. You can adjust that limit from one to one hundred; manual and rollback copies are kept. Save operations require a closed game, and an interrupted restore is recovered before the next launch.
