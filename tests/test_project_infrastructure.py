@@ -11,6 +11,12 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class Infrastructure(unittest.TestCase):
+    def test_readme_revision_matches_the_launcher(self):
+        import sys
+        sys.path.insert(0, str(ROOT / 'tools'))
+        from update_readme_revision import update
+        self.assertFalse(update(check=True))
+
     def test_documentation_links_resolve(self):
         files=[ROOT/'README.md', ROOT/'CONTRIBUTING.md', ROOT/'SECURITY.md', *list((ROOT/'docs').rglob('*.md')),
                ROOT/'packaging/windows/README.md']
