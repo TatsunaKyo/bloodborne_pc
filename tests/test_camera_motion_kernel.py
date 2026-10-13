@@ -52,20 +52,18 @@ int main() {
             const auto result=motion_img.pixels[y*W+x];
             assert(std::isfinite(result.x)&&std::isfinite(result.y));
             if(x==4&&y==3)assert(length(vec2(result)-expected)<.002f);
-            if(state < -.99f && std::abs(depth-stored_depth) < glm::max(2e-7f,(1.f-depth)*.01f))
-                assert(result.x< -float(x)-.5f&&result.y< -float(y)-.5f);
         }
         ++cases;std::printf("Production motion GLSL: %s PASS\n",label);
     };
     const float distant=.999995f;
     run("matching history retained",distant,distant,1,vec2(2,0),vec2(2,0));
-    run("new geometry rejects unrelated history",distant,distant,-1,vec2(2,0),vec2(-5.625f,-4.375f));
-    run("covered new geometry retains foreground",distant,.9999f,-1,vec2(2,0),vec2(0));
-    run("untracked surface keeps camera fallback",distant,distant,0,vec2(2,0),vec2(0));
+    run("missing history retains camera fallback",distant,distant,0,vec2(2,0),vec2(0));
+    run("covered geometry retains foreground",distant,.9999f,0,vec2(2,0),vec2(0));
+    run("obsolete negative marker cannot create offscreen motion",distant,distant,-1,vec2(2,0),vec2(0));
     run("stale distant vector remains rejected",distant,.9999f,1,vec2(2,0),vec2(0));
     run("nonfinite object vector stays finite",distant,distant,1,vec2(std::numeric_limits<float>::quiet_NaN(),0),vec2(0));
     run("FP16 overflow vector stays finite",distant,distant,1,vec2(100000,0),vec2(0));
-    run("behind-camera tracked point rejects history",.5f,.5f,-1,vec2(0),vec2(-5.625f,-4.375f),-1);
+    run("behind-camera point rejects history",.5f,.5f,0,vec2(0),vec2(-5.625f,-4.375f),-1);
     // Rasterizer extent guards must not write beyond the last partial workgroup.
     gl_GlobalInvocationID=uvec3(W,H,0);kernel();
     std::printf("PASS: %d production GLSL cases, 63 pixels each; partial-workgroup guard. CPU float32 execution, not a GPU gameplay run.\n",cases);

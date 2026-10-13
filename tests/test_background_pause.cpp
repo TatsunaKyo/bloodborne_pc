@@ -37,6 +37,9 @@ int main() {
         BbBackground::Update(true);
         std::this_thread::sleep_for(5ms); // let already-started frame work reach the gate
         const int frozen = frames.load(), events = window_events.load();
+        // A busy test runner may not schedule the event thread within 10 ms.
+        // Require an actual event-pump tick, with the existing bounded timeout.
+        Until([&] { return window_events > events; });
         const auto before = BbBackground::PausedNanoseconds();
         std::this_thread::sleep_for(10ms);
         assert(frames == frozen);

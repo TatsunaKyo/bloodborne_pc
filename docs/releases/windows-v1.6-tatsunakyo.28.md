@@ -1,5 +1,7 @@
 # Bloodborne: The Crowned Workshop — Revision 28
 
+The motion-history change in this revision caused flashing geometry during gameplay and is rolled back in [Revision 29](windows-v1.6-tatsunakyo.29.md). Use Revision 29 for the corrected build; the notes below describe what Revision 28 originally changed.
+
 I separated the download into the ordinary game package and an optional Developer archive. The game package keeps the launcher, native components, every existing graphics runtime, documentation and licenses. The Developer archive keeps the source records, regression programs and specialist capture scripts. Every file from the complete candidate is retained in one of the two archives; the complete source patch also stays in the game package for compatibility with installed updaters.
 
 I corrected a temporal-history case for newly visible tracked geometry. A draw with no usable previous positions now marks its pixels explicitly, so reconstruction and FG can reject unrelated history instead of falling back to camera motion. The full-precision depth comparison still rejects vectors covered by a different surface. The shader cache version changes with this correction, so old compiled shaders cannot silently retain the previous behavior.

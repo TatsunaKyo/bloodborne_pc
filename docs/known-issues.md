@@ -4,13 +4,15 @@ I keep confirmed problems, old reports and hardware coverage separate. A missing
 
 ## Launcher startup in Revision 26
 
-Revision 26 stops before opening the launcher with `NameError: UPDATE_DIR is not defined`. I reproduced it using the delivered executable and removed the obsolete updater cleanup reference in [Revision 27](releases/windows-v1.6-tatsunakyo.27.md). Use Revision 27 instead. The startup checks now exercise the real main function and the Windows executable's normal entry point, as well as the existing interface and runtime tests.
+Revision 26 stops before opening the launcher with `NameError: UPDATE_DIR is not defined`. I reproduced it using the delivered executable and removed the obsolete updater cleanup reference in [Revision 27](releases/windows-v1.6-tatsunakyo.27.md). Use the latest build instead. The startup checks now exercise the real main function and the Windows executable's normal entry point, as well as the existing interface and runtime tests.
 
 ## Latest gameplay evidence
 
-The latest affected-scene report says the Hunter's Dream flashing is resolved after Revision 19 on my Windows 11 / RTX 5070 Ti setup with NVIDIA FG. Those fixes remain in the current build. I am still collecting pacing comparisons; the optional real-frame graph is there to help make them easier to assess.
+Flashing geometry returned in Revision 28 at the Tomb of Oedon, where Father Gascoigne is fought. I rolled back that revision's new motion-history marker and off-screen reprojection in [Revision 29](releases/windows-v1.6-tatsunakyo.29.md). The motion shader and emitter now match Revision 27, and the cache version forces recompilation. The earlier FG input-ownership and depth fixes stay in place. I still need to compare the visual result in the affected area on my Windows 11 / RTX 5070 Ti PC.
 
-There is no newer confirmed reproduction attached to the older reports below. I have kept the reports so they can be checked again, without presenting the entire list as confirmed bugs in the current build.
+I also reproduced the startup focus failure at the window event-pump boundary: starting in the background can leave the 30 FPS policy active after returning to the game. Revision 29 reconciles the actual foreground window instead of relying on event order. The production-code regression covers a single return to 65 real / 130 total FPS, the pause gate and FG/Reflex policy.
+
+The earlier Hunter's Dream report confirmed that the Revision 19 fixes worked before this regression. I am still collecting pacing comparisons; the optional real-frame graph helps assess them. The other older reports below remain available for comparison.
 
 | Earlier report to recheck | What to compare |
 |---|---|

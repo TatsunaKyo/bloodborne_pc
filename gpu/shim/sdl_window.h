@@ -42,6 +42,7 @@ private:
     std::atomic<int> window_mode{0};
     int launcher_window_mode{};
     void ApplyWindowMode();
+    void RefreshFocusState();
     std::mutex text_mutex;
     bool text_requested{}, text_active{};
     int text_state{};

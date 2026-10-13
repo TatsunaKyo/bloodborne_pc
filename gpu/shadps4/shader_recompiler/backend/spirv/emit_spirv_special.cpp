@@ -144,12 +144,8 @@ static void EmitVertexMotion(EmitContext& ctx) {
     ctx.OpBranch(load_merge);
     ctx.AddLabel(load_merge);
     Id previous = ctx.OpPhi(ctx.F32[4], position, store_merge, loaded, load_label);
-    // A tracked draw with no matching previous positions is newly visible or
-    // changed identity. Keep it distinct from an untracked draw: camera-only
-    // reprojection would borrow another surface's history for this geometry.
     const Id valid = ctx.OpSelect(ctx.F32[1], do_load, ctx.Constant(ctx.F32[1], 1.0f),
-        ctx.OpSelect(ctx.F32[1], do_store, ctx.Constant(ctx.F32[1], -1.0f),
-                     ctx.Constant(ctx.F32[1], 0.0f)));
+                                  ctx.Constant(ctx.F32[1], 0.0f));
     previous = ctx.OpCompositeInsert(ctx.F32[4], valid, previous, 2u);
     ctx.OpStore(ctx.motion_out_cur, position);
     ctx.OpStore(ctx.motion_out_prev, previous);
@@ -178,10 +174,8 @@ static void EmitFragmentMotion(EmitContext& ctx) {
     const Id front = ctx.OpLogicalAnd(ctx.U1[1],
         ctx.OpFOrdGreaterThan(ctx.U1[1], ctx.OpCompositeExtract(f32_type, previous, 3u), epsilon),
         ctx.OpFOrdGreaterThan(ctx.U1[1], ctx.OpCompositeExtract(f32_type, current, 3u), epsilon));
-    const Id history = ctx.OpCompositeExtract(f32_type, previous, 2u);
-    const Id tracked = ctx.OpFOrdNotEqual(ctx.U1[1], history, zero);
-    const Id valid = ctx.OpSelect(f32_type, front, history,
-        ctx.OpSelect(f32_type, tracked, ctx.Constant(f32_type, -1.0f), zero));
+    const Id valid = ctx.OpSelect(f32_type, front,
+                                  ctx.OpCompositeExtract(f32_type, previous, 2u), zero);
     // Uninstrumented draws can overwrite the final scene depth after this pixel was
     // written. Preserve depth so the compose pass can reject an occluded vector.
     const Id depth = ctx.OpCompositeExtract(f32_type,

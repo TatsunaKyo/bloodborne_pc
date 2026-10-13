@@ -134,8 +134,8 @@ int main() {
     run("static camera cancels jitter",distant,0,0,0,0,0,true);
     run("matching object vector",distant,0,0,distant,1,2);
     run("stale distant object vector",distant,0,0,0.9999f,1,0);
-    run("newly visible tracked geometry",distant,0,0,distant,1,-5.625f,
-        false,2.f,1.f,-4.375f,-1.f);
+    run("missing geometry history retains camera fallback",distant,0,0,distant,1,0,
+        false,2.f,1.f,0.f,0.f);
     run("new geometry covered by another surface",distant,0,0,0.9999f,1,0,
         false,2.f,1.f,0.f,-1.f);
     run("untracked geometry retains camera fallback",distant,0,0,distant,1,0,

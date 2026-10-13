@@ -72,7 +72,7 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     SDL_GetWindowSizeInPixels(window, &w, &h);
     width = w;
     height = h;
-    BbSettings::Get().window_focused = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    RefreshFocusState();
     LOG_INFO(Frontend, "Window {}x{} on {}", w, h, driver);
 }
 
@@ -124,6 +124,27 @@ void WindowSDL::UpdateTextTitle() {
     BbOverlay::SetTextEntry(text_active, text_prompt, text);
 }
 
+void WindowSDL::RefreshFocusState() {
+    const auto flags = SDL_GetWindowFlags(window);
+    bool focused = (flags & SDL_WINDOW_INPUT_FOCUS) != 0 &&
+                   (flags & SDL_WINDOW_MINIMIZED) == 0;
+#ifdef _WIN32
+    if (window_info.type == WindowSystemType::Windows && window_info.render_surface) {
+        // SDL focus events queued during startup or fullscreen changes can be
+        // stale. Query the actual foreground HWND after draining them.
+        const auto hwnd = static_cast<HWND>(window_info.render_surface);
+        focused = GetForegroundWindow() == hwnd && IsWindowVisible(hwnd) && !IsIconic(hwnd);
+    }
+#endif
+    auto& settings = BbSettings::Get();
+    if (settings.window_focused.exchange(focused) == focused) return;
+    SDL_Event event{};
+    event.type = focused ? SDL_EVENT_WINDOW_FOCUS_GAINED : SDL_EVENT_WINDOW_FOCUS_LOST;
+    event.window.windowID = SDL_GetWindowID(window);
+    BbOverlay::HandleEvent(event);
+    if (!focused) BbOverlay::SavePendingSettings();
+}
+
 bool WindowSDL::PollEvents() {
     ApplyWindowMode();
     {
@@ -140,6 +161,8 @@ bool WindowSDL::PollEvents() {
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        if (event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST &&
+            event.window.windowID != SDL_GetWindowID(window)) continue;
         if (event.type == SDL_EVENT_KEY_DOWN) {
             // File triggers only. Vulkan commands stay on the renderer's command thread.
             static BbCapture::GeometryKey capture;
@@ -176,13 +199,6 @@ bool WindowSDL::PollEvents() {
             continue;
         }
         switch (event.type) {
-        case SDL_EVENT_WINDOW_FOCUS_LOST:
-            BbSettings::Get().window_focused = false;
-            BbOverlay::SavePendingSettings();
-            break;
-        case SDL_EVENT_WINDOW_FOCUS_GAINED:
-            BbSettings::Get().window_focused = true;
-            break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_RESIZED: {
             int w = 0, h = 0;
@@ -199,6 +215,9 @@ bool WindowSDL::PollEvents() {
             break;
         }
     }
+    // Reconcile once per event-pump iteration, including when no focus event
+    // arrived. The event thread keeps running while the game/render workers pause.
+    RefreshFocusState();
     const auto& settings = BbSettings::Get();
     if (!settings.window_focused && settings.background_mode!=BbSettings::BackgroundRun)
         BbNvidia::BeforeSwapchainChange();
