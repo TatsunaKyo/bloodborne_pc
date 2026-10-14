@@ -251,7 +251,8 @@ void FinishRender(Vulkan::Frame* frame,int index,int64_t argument) {
     if (it!=flips.end()) {frame->nvidia_token=it->token;Mark(sl::PCLMarker::eRenderSubmitEnd,it->token);flips.erase(it);}
 }
 void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image image,vk::ImageView view,
-                   vk::Format format,uint32_t buffers,bool game_frame) {
+                   vk::Format format,uint32_t buffers,bool game_frame,Vulkan::Scheduler& scheduler,
+                   uint32_t output_width,uint32_t output_height) {
     if (!initialized) return;std::scoped_lock lock{mutex};
     auto& s=BbSettings::Get();auto* token=static_cast<sl::FrameToken*>(frame->nvidia_token);
     const auto snapshot=frame->frame_generation;
@@ -280,6 +281,10 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
     if (fg_on && (configured_generated!=generated || configured_width!=snapshot->width ||
         configured_height!=snapshot->height || configured_format!=uint32_t(format))) Off();
     sl::DLSSGOptions options;options.mode=sl::DLSSGMode::eOn;options.numFramesToGenerate=generated;
+    // NVIDIA's comparison mode shows interpolated frames without changing inputs.
+    const char* generated_only=std::getenv("BB_FG_GENERATED_ONLY");
+    if (generated_only && generated_only[0]=='1')
+        options.flags|=sl::DLSSGFlags::eShowOnlyInterpolatedFrame;
     options.numBackBuffers=buffers;options.mvecDepthWidth=source.render_width;options.mvecDepthHeight=source.render_height;
     options.colorWidth=snapshot->width;options.colorHeight=snapshot->height;options.colorBufferFormat=uint32_t(format);
     options.mvecBufferFormat=VK_FORMAT_R16G16_SFLOAT;options.depthBufferFormat=VK_FORMAT_R32_SFLOAT;
@@ -318,6 +323,16 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
         fg_on=options_result==sl::Result::eOk;
         Off();failed=true;s.frame_generation_problem="NVIDIA FG input/options failed. Real frames are kept; see last_run.log.";
     } else {
+        BbCapture::FrameGenerationCamera diagnostic_camera;
+        std::memcpy(diagnostic_camera.view_to_clip.data(),&c.cameraViewToClip,64);
+        std::memcpy(diagnostic_camera.clip_to_view.data(),&c.clipToCameraView,64);
+        std::memcpy(diagnostic_camera.clip_to_previous.data(),&c.clipToPrevClip,64);
+        std::memcpy(diagnostic_camera.previous_to_clip.data(),&c.prevClipToClip,64);
+        diagnostic_camera.motion_scale={c.mvecScale.x,c.mvecScale.y};
+        diagnostic_camera.reset=c.reset==sl::eTrue;
+        Vulkan::FrameGeneration::CaptureDiagnostic(scheduler,device,snapshot->depth.allocator,
+            command,*snapshot,image,format,output_width,output_height,uint32_t(*token),generated,
+            diagnostic_camera);
         if (!fg_on) frame_metrics.Reset();
         fg_on=true;s.frame_generation_problem=nullptr;
         s.frame_generation_cap_multiplier=int(generated+1);
@@ -403,7 +418,8 @@ void QueueFlip(int,int64_t) {}
 void CancelFlip(int,int64_t) {}
 void NextSimulation() {}
 void FinishRender(Vulkan::Frame*,int,int64_t) {}
-void BeforePresent(Vulkan::Frame*,vk::CommandBuffer,vk::Image,vk::ImageView,vk::Format,uint32_t,bool) {}
+void BeforePresent(Vulkan::Frame*,vk::CommandBuffer,vk::Image,vk::ImageView,vk::Format,uint32_t,bool,
+                   Vulkan::Scheduler&,uint32_t,uint32_t) {}
 bool Present(Vulkan::Frame*,const std::function<bool()>& present) {return present();}
 void WaitForInputs(Vulkan::Frame*) {}
 void BeforeSwapchainChange() {}

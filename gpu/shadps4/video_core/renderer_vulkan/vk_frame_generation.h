@@ -5,6 +5,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include "video_core/renderer_vulkan/fg_capture.h"
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 
@@ -13,6 +14,7 @@ VK_DEFINE_HANDLE(VmaAllocator)
 
 struct FfxVkFsr3_3_1_6FrameGenerationContext;
 namespace Vulkan {
+class Scheduler;
 
 struct FrameGenerationDepthCopy;
 
@@ -69,6 +71,12 @@ public:
     void Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSource& source,
                  vk::ImageView color_view, u32 width, u32 height, vk::Format format,
                  std::shared_ptr<Snapshot>& snapshot);
+    // Opt-in readback of the exact resources and constants tagged for NVIDIA.
+    static void CaptureDiagnostic(Scheduler& scheduler, vk::Device device, VmaAllocator allocator,
+                                  vk::CommandBuffer command, const Snapshot& snapshot,
+                                  vk::Image backbuffer, vk::Format format, u32 output_width, u32 output_height,
+                                  uint32_t submission_frame, uint32_t generated,
+                                  const BbCapture::FrameGenerationCamera& camera);
     // Freeze the scene depth at reconstruction time. The game's later UI passes
     // can reuse its depth buffer before the final presentation snapshot is made.
     static bool FreezeDepth(vk::Device device, VmaAllocator allocator, vk::CommandBuffer command,

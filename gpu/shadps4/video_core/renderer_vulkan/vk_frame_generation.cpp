@@ -2,11 +2,19 @@
 #include "video_core/renderer_vulkan/vk_frame_generation.h"
 #include <algorithm>
 #include <cstdio>
+#include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 #include "bbport_background.h"
 #include "bbport_settings.h"
 #include "ffx_vk_fsr3_3_1_5_bridge.h"
 #include "video_core/host_shaders/frame_generation_copy_comp.h"
 #include <vk_mem_alloc.h>
+#include "video_core/renderer_vulkan/vk_scheduler.h"
 
 namespace Vulkan {
 namespace {
@@ -266,6 +274,130 @@ void FrameGeneration::Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSou
         .srcStageMask=vk::PipelineStageFlagBits2::eComputeShader,.srcAccessMask=vk::AccessFlagBits2::eShaderWrite,
         .dstStageMask=vk::PipelineStageFlagBits2::eAllCommands,.dstAccessMask=vk::AccessFlagBits2::eMemoryRead};
     cmdbuf.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&complete});
+}
+
+void FrameGeneration::CaptureDiagnostic(Scheduler& scheduler, vk::Device device,
+    VmaAllocator allocator, vk::CommandBuffer command, const Snapshot& snapshot,
+    vk::Image backbuffer, vk::Format format, u32 output_width, u32 output_height,
+    uint32_t submission_frame, uint32_t generated, const BbCapture::FrameGenerationCamera& camera) {
+    const char* trigger = std::getenv("BB_FG_CAPTURE_TRIGGER");
+    const char* directory = std::getenv("BB_FG_CAPTURE_DIR");
+    if (!trigger || !directory || !*directory) return;
+    static BbCapture::FrameGenerationRequest request;
+    const auto& source = snapshot.source;
+    const auto capture = request.Poll(trigger, source.render_width, source.render_height,
+                                     output_width, output_height);
+    if (!capture) return;
+    (void)device;
+    const auto folder = std::filesystem::u8path(directory);
+    const std::string prefix = "fg" + std::to_string(capture->index);
+    const std::array images{vk::Image(snapshot.depth), vk::Image(snapshot.motion), backbuffer};
+    const std::array layouts{vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+                            vk::ImageLayout::ePresentSrcKHR};
+    const std::array widths{source.render_width, source.render_width, output_width};
+    const std::array heights{source.render_height, source.render_height, output_height};
+    const std::array names{"depth", "motion", "real_color"};
+    struct Readback { VkBuffer buffer{}; VmaAllocation allocation{}; VmaAllocationInfo info{}; };
+    std::array<Readback,3> readbacks{};
+    // Allocate the whole set before recording any GPU command. A failed set
+    // changes no image layout and cannot leave a partially recorded capture.
+    for (u32 i=0; i<3; ++i) {
+        const VkBufferCreateInfo buffer{.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size=uint64_t(widths[i])*heights[i]*4, .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+        const VmaAllocationCreateInfo allocation{
+            .flags=VMA_ALLOCATION_CREATE_MAPPED_BIT|VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+            .usage=VMA_MEMORY_USAGE_AUTO_PREFER_HOST};
+        if (vmaCreateBuffer(allocator,&buffer,&allocation,&readbacks[i].buffer,
+                            &readbacks[i].allocation,&readbacks[i].info)!=VK_SUCCESS) {
+            for (const auto& readback:readbacks)
+                if (readback.buffer) vmaDestroyBuffer(allocator,readback.buffer,readback.allocation);
+            std::puts("NVIDIA FG capture: incomplete set (host allocation failed).");
+            return;
+        }
+    }
+    std::array<vk::ImageMemoryBarrier2,3> barriers{};
+    for (u32 i=0; i<3; ++i) barriers[i]={
+        .srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask=vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask=vk::AccessFlagBits2::eTransferRead,
+        .oldLayout=layouts[i],.newLayout=vk::ImageLayout::eTransferSrcOptimal,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=images[i],.subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}};
+    command.pipelineBarrier2({.imageMemoryBarrierCount=3,.pImageMemoryBarriers=barriers.data()});
+    for (u32 i=0; i<3; ++i) {
+        command.copyImageToBuffer(images[i],vk::ImageLayout::eTransferSrcOptimal,readbacks[i].buffer,
+            vk::BufferImageCopy{.imageSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},
+                               .imageExtent={widths[i],heights[i],1}});
+        const auto file=folder/(prefix+"_"+names[i]+"_"+std::to_string(widths[i])+"x"+
+                                std::to_string(heights[i])+".raw");
+        const auto readback=readbacks[i];
+        const uint64_t bytes=uint64_t(widths[i])*heights[i]*4;
+        scheduler.DeferPriorityOperation([allocator,readback,bytes,file] {
+            auto temporary=file;temporary+=".partial";
+            const bool readable=vmaInvalidateAllocation(allocator,readback.allocation,0,VK_WHOLE_SIZE)==VK_SUCCESS;
+            bool written=false;
+            if (readable) {
+                std::ofstream stream(temporary,std::ios::binary);
+                stream.write(static_cast<const char*>(readback.info.pMappedData),std::streamsize(bytes));
+                stream.close(); written=bool(stream);
+            }
+            std::error_code error;
+            if (written) std::filesystem::rename(temporary,file,error);
+            if (!written || error) {
+                std::filesystem::remove(temporary,error);
+                std::puts("NVIDIA FG capture: readback file failed; set remains incomplete.");
+            }
+            vmaDestroyBuffer(allocator,readback.buffer,readback.allocation);
+        });
+    }
+    for (u32 i=0; i<3; ++i) {
+        barriers[i].srcStageMask=vk::PipelineStageFlagBits2::eTransfer;
+        barriers[i].srcAccessMask=vk::AccessFlagBits2::eTransferRead;
+        barriers[i].dstStageMask=vk::PipelineStageFlagBits2::eAllCommands;
+        barriers[i].dstAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite;
+        barriers[i].oldLayout=vk::ImageLayout::eTransferSrcOptimal;
+        barriers[i].newLayout=layouts[i];
+    }
+    const vk::MemoryBarrier2 host_ready{
+        .srcStageMask=vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask=vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask=vk::PipelineStageFlagBits2::eHost,
+        .dstAccessMask=vk::AccessFlagBits2::eHostRead};
+    command.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&host_ready,
+        .imageMemoryBarrierCount=3,.pImageMemoryBarriers=barriers.data()});
+    std::ostringstream json;json.imbue(std::locale::classic());json<<std::setprecision(9);
+    const auto array=[&](const char* name,const auto& values) {
+        json<<",\n\""<<name<<"\":[";
+        for (size_t i=0; i<values.size(); ++i) {
+            if (i) json<<',';
+            if (std::isfinite(values[i])) json<<values[i];else json<<"null";
+        }
+        json<<']';
+    };
+    json<<"{\"schema\":1,\"stage\":\"nvidia_tagged_inputs\",\"capture_frame\":"<<capture->index
+        <<",\"requested_frames\":"<<capture->count<<",\"submission_frame\":"<<submission_frame
+        <<",\"generated_frames\":"<<generated<<",\"raw_bytes\":"<<capture->bytes
+        <<",\"render_width\":"<<source.render_width<<",\"render_height\":"<<source.render_height
+        <<",\"output_width\":"<<output_width<<",\"output_height\":"<<output_height
+        <<",\"tagged_color_width\":"<<snapshot.width<<",\"tagged_color_height\":"<<snapshot.height
+        <<",\"color_vulkan_format\":"<<uint32_t(format)
+        <<",\"depth_format\":\"r32f\",\"motion_format\":\"rg16f\",\"matrix_layout\":\"row_major\""
+        <<",\"reset\":"<<(camera.reset?"true":"false")
+        <<",\"depth_inverted\":false,\"camera_motion_included\":true,\"far_plane\":3000"
+        <<",\"near_plane\":"<<source.near_plane<<",\"vertical_fov\":"<<source.vertical_fov;
+    array("motion_scale",camera.motion_scale);array("jitter",source.jitter);
+    array("view",source.view);array("inverse_view",source.inverse_view);
+    array("previous_view",source.previous_view);array("previous_inverse_view",source.previous_inverse_view);
+    array("projection",source.projection);array("previous_projection",source.previous_projection);
+    array("view_to_clip",camera.view_to_clip);array("clip_to_view",camera.clip_to_view);
+    array("clip_to_previous",camera.clip_to_previous);array("previous_to_clip",camera.previous_to_clip);
+    json<<"}\n";
+    scheduler.DeferPriorityOperation([file=folder/(prefix+".json"),text=json.str()] {
+        std::ofstream output(file,std::ios::binary);output<<text;
+    });
+    std::printf("NVIDIA FG capture: set %u/%u, submission %u, tagged inputs + real backbuffer (%llu bytes).\n",
+        capture->index+1,capture->count,submission_frame,(unsigned long long)capture->bytes);
 }
 
 void FrameGeneration::RetireCompleted() {

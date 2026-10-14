@@ -8,7 +8,7 @@ Revision 26 stops before opening the launcher with `NameError: UPDATE_DIR is not
 
 ## Latest gameplay evidence
 
-Flashing geometry persists through Revision 30 at the Tomb of Oedon, and turning NVIDIA FG off removes most of it. [Revision 31](releases/windows-v1.6-tatsunakyo.31.md) addresses a reproduced overwrite of retained scene inputs: depth and motion are now owned together and selected with their completed display buffer. Actor/weapon motion and the earlier synchronization/fence fixes remain included. The affected-scene gameplay comparison is still pending; I am not marking this report resolved.
+Flashing and duplicated assets persist in Revision 31 with NVIDIA DLSS FG enabled on my Windows 11 / RTX 5070 Ti PC, including the Tomb of Oedon and Hunter's Dream. Turning FG off removes most of the problem. The input ownership and synchronization corrections remain included, but they have not resolved this gameplay report. I need a current capture of the actual NVIDIA inputs before changing the renderer again; the old capture is from Revision 18. [Revision 32](releases/windows-v1.6-tatsunakyo.32.md) adds that focused diagnostic and a temporary generated-only display comparison. It is a diagnostic build, and the report remains open.
 
 I also reproduced the startup focus failure at the window event-pump boundary: starting in the background can leave the 30 FPS policy active after returning to the game. Revision 29 reconciles the actual foreground window instead of relying on event order. The production-code regression covers a single return to 65 real / 130 total FPS, the pause gate and FG/Reflex policy.
 

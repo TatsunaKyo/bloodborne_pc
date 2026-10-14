@@ -143,6 +143,18 @@ jobs:
             & "./out/verification/fg-frame-inputs/$name.exe" 2>&1 | Tee-Object "out/verification/fg-frame-inputs-$name.log"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
+      - name: Execute production NVIDIA diagnostic readback and private export regressions
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:CXX = 'cl'
+          python tests/test_fg_diagnostic.py 2>&1 | Tee-Object out/verification/test_fg_diagnostic.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_launcher_fg_diagnostic_ui.py 2>&1 | Tee-Object out/verification/test_launcher_fg_diagnostic_ui.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Compile and exercise the actual frozen Windows launcher
         shell: pwsh
         run: |

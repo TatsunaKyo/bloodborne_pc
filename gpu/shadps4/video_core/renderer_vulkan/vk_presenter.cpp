@@ -748,7 +748,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
         BbNvidia::BeforePresent(frame,cmdbuf,swapchain.Image(),swapchain.ImageView(),
                                  swapchain.GetSurfaceFormat().format,swapchain.GetImageCount(),
-                                 is_game_frame && !is_reusing_frame);
+                                 is_game_frame && !is_reusing_frame,present_scheduler,
+                                 swapchain.GetWidth(),swapchain.GetHeight());
         // Flush vulkan commands.
 
         SubmitInfo info{};

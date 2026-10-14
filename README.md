@@ -5,7 +5,7 @@
 <p align="center">Experience Bloodborne natively on Windows, enhanced with modern rendering technologies, customizable gameplay and a redesigned launcher.</p>
 
 <p align="center">
-  <a href="docs/releases/windows-v1.6-tatsunakyo.31.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 31" height="28"></a>
+  <a href="docs/releases/windows-v1.6-tatsunakyo.32.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 32" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/windows.svg" alt="Windows 10 / 11" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/vulkan.svg" alt="Vulkan 1.3" height="28"></a>
   <a href="LICENSE"><img src="docs/assets/readme/license.svg" alt="GPL-2.0+" height="28"></a>

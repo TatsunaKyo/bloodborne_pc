@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.31'
+VERSION = '1.6-tatsunakyo.32'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -536,6 +536,8 @@ def game_environment(s):
         # One comparison run, after saved/extra environment settings. Do not persist
         # these overrides: the normal launch must retain the user's renderer choices.
         env.update(BB_DRAW_PIPE='0', BB_PREP_WORKERS='0', BB_VK_RECORD_THREAD='0', BB_COPY_THREADS='0')
+    if s.get('_nvidia_diagnostic'):
+        env['BB_FG_GENERATED_ONLY'] = '1' if s['_nvidia_diagnostic'] == 'generated-only' else '0'
     return env
 
 
@@ -543,6 +545,13 @@ def geometry_diagnostic_settings(settings, args):
     for mode in ('normal', 'serial', 'capture'):
         if f'--geometry-diagnostic={mode}' in args:
             return {**settings, 'developer_profile': True, '_geometry_diagnostic': mode}
+    return settings
+
+
+def nvidia_diagnostic_settings(settings, args):
+    for mode in ('inputs', 'generated-only'):
+        if f'--nvidia-diagnostic={mode}' in args:
+            return {**settings, 'developer_profile': True, '_nvidia_diagnostic': mode}
     return settings
 
 
@@ -571,6 +580,8 @@ class DiagnosticSession:
                          'status': 'running'}
         if settings.get('_geometry_diagnostic'):
             self.metadata['geometry_diagnostic'] = settings['_geometry_diagnostic']
+        if settings.get('_nvidia_diagnostic'):
+            self.metadata['nvidia_diagnostic'] = settings['_nvidia_diagnostic']
         self.write_metadata()
         self.log = open(self.directory / 'session.log', 'w', encoding='utf-8', buffering=1)
 
@@ -578,6 +589,18 @@ class DiagnosticSession:
         if self.directory:
             env.update(BB_FRAME_STATS='1', BB_GPU_PROFILE='1',
                        BB_DIAGNOSTICS_DIR=str(self.directory.resolve()))
+            if self.metadata.get('nvidia_diagnostic'):
+                captures = self.directory / 'fg-inputs'
+                captures.mkdir()
+                env.update(BB_FG_CAPTURE_TRIGGER=str((self.directory / 'fg-capture.trigger').resolve()),
+                           BB_FG_CAPTURE_DIR=str(captures.resolve()))
+                self.metadata['frame_capture'] = {'key': 'F8', 'requested_frames': 4,
+                    'position': 'nvidia_tagged_inputs', 'maximum_raw_bytes': 256 * 1024 * 1024,
+                    'normal_renderer_preserved': True}
+                self.record('NVIDIA FG diagnostic: ' + self.metadata['nvidia_diagnostic'] + '\n'
+                    'Keep NVIDIA FG enabled. Press F8 while the assets flash, then close the game. '
+                    'The capture includes tagged depth/motion/constants and the real backbuffer; '
+                    'it does not capture NVIDIA\'s internal generated image. Readbacks can affect timing.\n')
             if self.metadata.get('geometry_diagnostic') == 'capture':
                 captures = self.directory / 'frames'
                 captures.mkdir()
@@ -594,7 +617,7 @@ class DiagnosticSession:
             keys = ('BB_DRAW_PIPE', 'BB_PREP_WORKERS', 'BB_VK_RECORD_THREAD', 'BB_COPY_THREADS',
                     'BB_FRAME_STATS', 'BB_GPU_PROFILE', 'BB_PIPE_VERIFY', 'BB_GEOMETRY_CAPTURE',
                     'BB_DUMP_FRAMES', 'BB_DUMP_POLL_FRAMES', 'BB_PIPELINE_CACHE',
-                    'BB_OBJECT_MOTION', 'BB_UPSCALER', 'BB_READBACKS')
+                    'BB_OBJECT_MOTION', 'BB_UPSCALER', 'BB_READBACKS', 'BB_FG_GENERATED_ONLY')
             self.metadata['renderer_environment'] = {key: env[key] for key in keys if key in env}
             self.write_metadata()
             if self.metadata.get('geometry_diagnostic'):
@@ -622,6 +645,19 @@ class DiagnosticSession:
             self.log.close()
             if self.metadata.get('geometry_diagnostic') == 'capture':
                 self.archive_capture()
+            if self.metadata.get('nvidia_diagnostic'):
+                self.archive_fg_capture()
+
+    def archive_fg_capture(self):
+        from fg_diagnostic import export_capture
+        result = export_capture(self.directory, PORT_DIR, self.metadata)
+        self.metadata['frame_capture'].update(result)
+        self.write_metadata()
+        if result['status'] in ('captured', 'incomplete') and result.get('archive'):
+            print('NVIDIA FG diagnostic saved: ' + str(self.directory / result['archive']), flush=True)
+            print('Inspect this archive before sharing. It contains private gameplay images; nothing is uploaded.', flush=True)
+        else:
+            print('NVIDIA FG diagnostic: ' + result['status'] + '. The individual capture files are retained.', flush=True)
 
     def archive_capture(self):
         """Bundle the private session's frames after the game has stopped."""
@@ -1739,6 +1775,20 @@ class Launcher:
                   style='Muted.TLabel', wraplength=int(590*self.dpi)).grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(0,8))
         self.check(f, 'frame_stats', 'app', _('Frame statistics in the log (every 5 s)', 'Статистика кадров в журнале (раз в 5 с)'))
         self.check(f, 'gpu_profile', 'app', _('GPU time per pass in the log', 'Профиль GPU в журнале'))
+        comparisons = ttk.Frame(f)
+        comparisons.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(8, 4))
+        self.nvidia_capture_button = ttk.Button(comparisons,
+            text=_('Capture NVIDIA FG inputs', 'Записать входные данные NVIDIA FG'),
+            command=lambda: self.play('inputs'))
+        self.nvidia_capture_button.pack(side='left')
+        self.nvidia_compare_button = ttk.Button(comparisons,
+            text=_('Show generated frames only', 'Только сгенерированные кадры'),
+            command=lambda: self.play('generated-only'))
+        self.nvidia_compare_button.pack(side='left', padx=(8, 0))
+        ttk.Label(f, text=_('One diagnostic run. Keep NVIDIA FG enabled; press F8 when assets flash, then close the game. Renderer settings stay in use. Capture can affect timing.',
+                            'Один диагностический запуск. Оставьте NVIDIA FG включённой; нажмите F8 при мерцании объектов и закройте игру. Настройки рендера сохраняются. Запись может влиять на время кадров.'),
+                  style='Muted.TLabel', wraplength=int(590*self.dpi)).grid(
+                      row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(0, 4))
         self.check(f, 'vk_validation', 'app', _('Vulkan validation layers (needs the Vulkan SDK; much slower)',
                                                 'Слои валидации Vulkan (нужен Vulkan SDK; сильно замедляет)'))
         self.ttk.Button(f, text=_('Generate Support Report…', 'Создать отчёт для поддержки…'),
@@ -2014,7 +2064,7 @@ class Launcher:
                 {'enabled': sorted(enabled), 'disabled': sorted(disabled)}, indent=2), encoding='utf-8')
 
     # ---- game process ------------------------------------------------------------------------
-    def play(self):
+    def play(self, nvidia_diagnostic=None):
         if self.process or getattr(self, 'save_busy', False):
             return
         online, npid = self.var('online', 'app'), self.var('online_npid', 'app')
@@ -2039,6 +2089,8 @@ class Launcher:
             return
         self.set_log('')
         settings = dict(self.app)
+        if nvidia_diagnostic in ('inputs', 'generated-only'):
+            settings = nvidia_diagnostic_settings(settings, ['--nvidia-diagnostic=' + nvidia_diagnostic])
         diagnostic = None
         try:
             diagnostic = DiagnosticSession(settings)
@@ -2456,13 +2508,18 @@ def main():
     if args and args[0] in ('--run', '--script'):
         sys.exit(run_role(args))
     settings = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
+    normal_settings = settings
     settings = geometry_diagnostic_settings(settings, args)
+    settings = nvidia_diagnostic_settings(settings, args)
     LANG = settings.get('ui_language') or windows_language()
     if args[:1] == ['--install-update'] and len(args) == 3:
         sys.exit(install_update(args[1], args[2]))
     # Without a usable game folder there is nothing to play yet: open the launcher instead.
     if '--play' in args and (Path(settings['game_dir'] or '.') / 'eboot.bin').is_file():
         sys.exit(play_without_window(settings))
+    # Comparison switches apply to that launch; never serialize them through the UI.
+    settings = {key: value for key, value in normal_settings.items()
+                if key not in ('_geometry_diagnostic', '_nvidia_diagnostic')}
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)  # sharp text on scaled displays
     except (AttributeError, OSError):

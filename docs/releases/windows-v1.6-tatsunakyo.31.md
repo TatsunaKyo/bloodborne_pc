@@ -1,3 +1,5 @@
+The gameplay comparison still shows duplicated and flashing assets with NVIDIA FG enabled. The input overwrite fixed here was reproduced, but it did not resolve the full report. Revision 32 adds a capture at the actual NVIDIA handoff to continue the investigation.
+
 # Bloodborne: The Crowned Workshop — Revision 31
 
 Revision 30 still flashes with NVIDIA FG. I followed the inputs before they reach Streamline and reproduced a different problem: retaining an image kept its handle alive, but the next scene could still overwrite its contents. In the control test, frame A keeps depth at 0.5 and recording frame B changes A's retained depth to 0.7. The old regression allowed that reuse, so it missed this case.
