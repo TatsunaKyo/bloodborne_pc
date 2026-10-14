@@ -103,6 +103,10 @@ void Caps() {
     fail_options=true;BbNvidia::NextSimulation();fail_options=false;
 #if PACED
     assert(!BbNvidia::PacesFrames(60) && !BbNvidia::simulation_sleeping && !BbNvidia::simulation_pending);
+    assert(!BbNvidia::simulation_token && !BbNvidia::rendering);
+    BbNvidia::NextSimulation();assert(BbNvidia::PacesFrames(60));
+    fail_allocation=true;BbNvidia::NextSimulation();fail_allocation=false;
+    assert(!BbNvidia::simulation_token && !BbNvidia::rendering && !BbNvidia::PacesFrames(60));
     BbNvidia::NextSimulation();assert(BbNvidia::PacesFrames(60));
     fail_sleep=true;BbNvidia::NextSimulation();fail_sleep=false;
     assert(!BbNvidia::PacesFrames(60) && requested_interval==0);

@@ -313,7 +313,9 @@ void NextSimulation() {
         const unsigned multiplier=driver_pacing ? configured_generated+1 : 0;
         const uint64_t output_limit=uint64_t(real_limit)*multiplier;
         options.frameLimitUs=output_limit ? uint32_t((1'000'000+output_limit-1)/output_limit) : 0;
-        if (!ApplyReflexOptions(options)) {pacing_policy=0;ready();return;}
+        if (!ApplyReflexOptions(options)) {
+            pacing_policy=0;simulation_token.reset();rendering=false;ready();return;
+        }
         requested_policy=output_limit ? (uint64_t(real_limit)<<32)|multiplier : 0;
         sleep_options=options;
         if (!Wanted()) {simulation_token.reset();rendering=false;BbSettings::Get().pc_latency_ms=-1.0f;ready();return;}
@@ -321,7 +323,7 @@ void NextSimulation() {
         if (!next) {
             pacing_policy=0;
             options.frameLimitUs=0;ApplyReflexOptions(options);
-            if (!Wanted()) {simulation_token.reset();rendering=false;}
+            simulation_token.reset();rendering=false;
             ready();
             return;
         }
