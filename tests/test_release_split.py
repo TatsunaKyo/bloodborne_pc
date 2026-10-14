@@ -3,8 +3,11 @@
 """Verify both archives retain their contents, dependencies and update compatibility."""
 import hashlib
 import json
+import os
 from pathlib import Path
+import struct
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -13,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import test_release_integrity as fixtures
 from release_integrity import validate, validate_developer, checksum
-from split_release import split, DIAGNOSTICS
+from split_release import split, write_zip, DIAGNOSTICS
 from prepare_release import prepare
 
 
@@ -69,9 +72,9 @@ class SplitRelease(unittest.TestCase):
         original = self.complete(); before = checksum(original)
         from split_release import write_zip
         writes = [0]
-        def interrupted(path, root, entries):
+        def interrupted(path, root, entries, **kwargs):
             writes[0] += 1
-            if writes[0] == 1: return write_zip(path, root, entries)
+            if writes[0] == 1: return write_zip(path, root, entries, **kwargs)
             path.write_bytes(b'partial ZIP')
             raise OSError('fixture interrupted write')
         with patch('split_release.write_zip', side_effect=interrupted):
@@ -126,6 +129,61 @@ class SplitRelease(unittest.TestCase):
             for name in (declared, unknown, 'bin/xess/libxess.dll'):
                 self.assertEqual(regular.read('Workshop/' + name), old.read('Workshop/' + name))
         validate(Path(result['runtime']), require_sidecar=True)
+
+    def test_both_companions_receive_the_same_reproducible_timestamp(self):
+        original = self.complete()
+        with patch.dict(os.environ, {'SOURCE_DATE_EPOCH': '1792014307'}):
+            first = split(original, self.folder / 'first')
+            second = split(original, self.folder / 'second')
+        self.assertEqual(first['archive_timestamp_utc'], '2026-10-14T21:45:07Z')
+        for kind in ('runtime', 'developer'):
+            self.assertEqual(checksum(Path(first[kind])), checksum(Path(second[kind])))
+            with zipfile.ZipFile(first[kind]) as archive:
+                self.assertTrue(archive.infolist())
+                for info in archive.infolist():
+                    # DOS ZIP dates have two-second precision. Keep writable
+                    # Windows attributes as well as the date in both headers.
+                    self.assertEqual(info.date_time, (2026, 10, 14, 21, 45, 6))
+                    self.assertEqual(info.create_system, 0)
+                    self.assertEqual(info.external_attr, 0x20)
+                info = archive.infolist()[0]
+                raw = Path(first[kind]).read_bytes()
+                dos_time, dos_date = struct.unpack_from('<HH', raw, info.header_offset + 10)
+                self.assertEqual(dos_time, (21 << 11) | (45 << 5) | 3)
+                self.assertEqual(dos_date, ((2026 - 1980) << 9) | (10 << 5) | 14)
+                self.assertIsNone(archive.testzip())
+
+    def test_invalid_epoch_does_not_leave_an_export(self):
+        original = self.complete()
+        for value in ('', 'not a timestamp', '-1', '0', '4354819200'):
+            with self.subTest(value=value), patch.dict(os.environ, {'SOURCE_DATE_EPOCH': value}):
+                with self.assertRaisesRegex(ValueError, 'Archive timestamp'):
+                    split(original, self.folder)
+            self.assertFalse(list(self.folder.glob('*.zip*')))
+
+    def test_verified_checkout_supplies_the_source_commit_date(self):
+        original = self.complete()
+        from release_integrity import validate as real_validate
+        with patch.dict(os.environ, {}, clear=True), \
+             patch('split_release.validate', side_effect=lambda path, **kw:
+                   real_validate(path, require_sidecar=kw.get('require_sidecar', False))), \
+             patch('split_release.subprocess.check_output', return_value='1792014307\n') as git:
+            result = split(original, self.folder, repo=self.fixture.root)
+        git.assert_called_once_with(['git', 'show', '-s', '--format=%ct', '1' * 40],
+                                    cwd=self.fixture.root, text=True)
+        self.assertEqual(result['archive_timestamp_utc'], '2026-10-14T21:45:07Z')
+
+
+class ArchiveTimestamps(unittest.TestCase):
+    def test_standalone_writer_uses_current_build_time_instead_of_1980(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True), \
+             patch('split_release.time.time', return_value=1792014307):
+            package = Path(folder) / 'build.zip'
+            write_zip(package, 'Workshop', {'Bloodborne.exe': b'fixture'})
+            with zipfile.ZipFile(package) as archive:
+                self.assertEqual(archive.infolist()[0].date_time, (2026, 10, 14, 21, 45, 6))
+            self.assertEqual(package.with_suffix('.zip.sha256').read_text(),
+                             checksum(package) + '  build.zip\n')
 
 
 if __name__ == '__main__': unittest.main()

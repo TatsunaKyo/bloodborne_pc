@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Separate developer records from a complete package without removing runtime dependencies."""
 import argparse
+import calendar
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
+import subprocess
+import time
 import zipfile
 
 from release_integrity import checksum, package_name, safe_member, validate, validate_developer, require
@@ -32,11 +36,26 @@ def developer_file(name, identity=None):
             or temporary_runtime_copy(name, identity))
 
 
-def write_zip(path, root, entries):
+def archive_epoch(epoch=None):
+    """Use one explicit UTC time for every member, rather than ZIP's 1980 default."""
+    if epoch is None:
+        epoch = os.environ.get('SOURCE_DATE_EPOCH', str(int(time.time())))
+    require((isinstance(epoch, int) and not isinstance(epoch, bool)) or
+            (isinstance(epoch, str) and re.fullmatch(r'[0-9]+', epoch)),
+            'Archive timestamp must be an integer Unix timestamp')
+    epoch = int(epoch)
+    require(calendar.timegm((1980, 1, 1, 0, 0, 0)) <= epoch <=
+            calendar.timegm((2107, 12, 31, 23, 59, 59)),
+            'Archive timestamp must be between 1980 and 2107')
+    return epoch
+
+
+def write_zip(path, root, entries, *, epoch=None):
+    timestamp = time.gmtime(archive_epoch(epoch))[:6]
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for name, data in sorted(entries.items()):
             safe_member(name)
-            entry = zipfile.ZipInfo(str(PurePosixPath(root) / name))
+            entry = zipfile.ZipInfo(str(PurePosixPath(root) / name), date_time=timestamp)
             entry.create_system = 0; entry.external_attr = 0x20
             entry.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(entry, data)
@@ -64,6 +83,14 @@ def split(package, destination, *, repo=None):
     package, destination = Path(package), Path(destination)
     report = validate(package, repo=repo)
     version = report['version']; runtime_root = report['root']
+    # SOURCE_DATE_EPOCH permits reproducible exports outside a checkout too.
+    # With a verified checkout, the recorded source commit supplies the date.
+    epoch = None
+    if repo is not None and 'SOURCE_DATE_EPOCH' not in os.environ:
+        epoch = subprocess.check_output(['git', 'show', '-s', '--format=%ct',
+                                         report['identity']['source_commit']], cwd=repo,
+                                        text=True).strip()
+    epoch = archive_epoch(epoch)
     destination.mkdir(parents=True, exist_ok=True)
     runtime = destination / package_name(version)
     developer = destination / (runtime.stem + '-Developer.zip')
@@ -106,12 +133,12 @@ def split(package, destination, *, repo=None):
     development['ORIGINAL-BUILD-IDENTITY.json'] = regular['BUILD-IDENTITY.json']
     identity['executables'] = {k: v for k, v in identity['executables'].items() if not developer_file(k)}
     try:
-        write_zip(developer, runtime_root + '-Developer', development)
+        write_zip(developer, runtime_root + '-Developer', development, epoch=epoch)
         identity['developer_bundle'] = {'filename': developer.name, 'sha256': checksum(developer),
                                          'source_commit': identity['source_commit'], 'optional_for_play': True}
         identity['package_layout'] = 'runtime-with-developer-companion-v1'
         regular['BUILD-IDENTITY.json'] = (json.dumps(identity, indent=2) + '\n').encode()
-        write_zip(runtime, runtime_root, regular)
+        write_zip(runtime, runtime_root, regular, epoch=epoch)
         runtime_report = validate(runtime, repo=repo, require_sidecar=True)
         validate_developer(developer, runtime_report, require_sidecar=True)
     except BaseException:
@@ -122,7 +149,8 @@ def split(package, destination, *, repo=None):
     return {'runtime': str(runtime), 'runtime_sha256': checksum(runtime), 'runtime_bytes': runtime.stat().st_size,
             'developer': str(developer), 'developer_sha256': checksum(developer), 'developer_bytes': developer.stat().st_size,
             'source_files_preserved': len(original_files), 'runtime_files': len(regular),
-            'developer_files': len(development), 'original_sha256': checksum(package)}
+            'developer_files': len(development), 'original_sha256': checksum(package),
+            'archive_timestamp_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(epoch))}
 
 
 def main():

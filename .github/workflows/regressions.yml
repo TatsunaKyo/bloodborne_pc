@@ -73,6 +73,10 @@ jobs:
         shell: pwsh
         run: |
           $env:BB_SAVE_ACCESS_TEST = (Resolve-Path out/verification/save-access-test.exe).Path
+          python tests/test_release_integrity.py 2>&1 | Tee-Object out/verification/release-integrity-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_release_split.py 2>&1 | Tee-Object out/verification/release-split-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tests/test_support_report.py 2>&1 | Tee-Object out/verification/support-windows.log
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tests/test_save_manager.py 2>&1 | Tee-Object out/verification/save-windows.log

@@ -20,6 +20,8 @@ python tools/prepare_release.py path/to/Bloodborne-Windows-v1.6-TatsunaKyo-Revis
 
 Use the actual package filename for the revision you built. The second command writes a ready-to-review Markdown description and JSON containing the publishing URL, exact source commit, tag, channel, package and checksum. It reads the matching notes already included in the package and refuses mismatched executables, runtimes, source or dependencies.
 
+I now give ZIP members an explicit date instead of Python's default of 1 January 1980, which left many modification dates blank in Explorer. The splitter uses the recorded source commit's UTC date when `--repo` is supplied, or the export time otherwise. `SOURCE_DATE_EPOCH` can supply a fixed date for reproducible exports outside a checkout. Both companion archives use the same timestamp; ZIP stores it with two-second precision and no time zone. This is a package date, not a claim about when each individual file was edited. Windows files keep their writable archive attributes.
+
 `--channel preview` prepares a prerelease. To regenerate the form for an already-published legacy stable tag, use `--channel stable --existing-tag windows-v1.6-tatsunakyo.21-preview` with that release's package. The tool never edits tags or publishes a release.
 
 1. Review the prepared page and its source target.
