@@ -63,7 +63,8 @@ class UpdateArchive(unittest.TestCase):
             self.verify(self.fixture.package(), '1.6-tatsunakyo.25')
 
     def test_unsafe_paths_rejected_before_extraction(self):
-        for path in ('Workshop/../outside', 'Workshop/NUL.txt', 'Workshop/README.md.', 'Workshop/README.MD'):
+        for path in ('Workshop/../outside', 'Workshop/NUL.txt', 'Workshop/README.md.', 'Workshop/README.MD',
+                     'Workshop/dir\\evil', 'Workshop/extra\x00hidden'):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 self.verify(self.fixture.package(extra=[(path, b'x')]))
 

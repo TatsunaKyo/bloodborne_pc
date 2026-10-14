@@ -116,7 +116,9 @@ def validate_developer(package, runtime, *, require_sidecar=False):
         infos = archive.infolist()
         require(infos and len(infos) <= 100000 and sum(i.file_size for i in infos) <= 8 * 1024**3,
                 'Empty or excessive developer archive')
-        paths = [safe_member(i.filename) for i in infos]
+        # ZipInfo normalizes backslashes on Windows and truncates NULs. Check
+        # the name recorded in the archive before either can hide an alias.
+        paths = [safe_member(i.orig_filename) for i in infos]
         require(all(i.file_size <= 1024**3 and not i.flag_bits & 1 and not stat.S_ISLNK(i.external_attr >> 16)
                     for i in infos), 'Unsupported developer archive member')
         require(len({i.filename.casefold() for i in infos}) == len(infos), 'Duplicate Windows archive paths')
@@ -159,7 +161,7 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
         require(sum(i.file_size for i in infos) <= 8 * 1024**3
                 and all(i.file_size <= 1024**3 and not i.flag_bits & 1 for i in infos),
                 'Excessive or encrypted release archive')
-        paths = [safe_member(i.filename) for i in infos]
+        paths = [safe_member(i.orig_filename) for i in infos]
         require(len({i.filename.casefold() for i in infos}) == len(infos), 'Duplicate Windows archive paths')
         require(all(not stat.S_ISLNK(i.external_attr >> 16) for i in infos), 'Archive symlinks are not supported')
         require(len({p.parts[0] for p in paths}) == 1, 'Expected one package root')

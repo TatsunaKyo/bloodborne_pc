@@ -98,7 +98,7 @@ class SplitRelease(unittest.TestCase):
             entries = {name: archive.read(name) for name in archive.namelist()}
         def rewrite(changed):
             with zipfile.ZipFile(developer, 'w') as archive:
-                for name, data in changed.items(): archive.writestr(name, data)
+                for name, data in changed.items(): fixtures.raw_member(archive, name, data)
             sha = checksum(developer)
             developer.with_suffix('.zip.sha256').write_text(sha + '  ' + developer.name + '\n')
             report['identity']['developer_bundle']['sha256'] = sha
@@ -108,9 +108,11 @@ class SplitRelease(unittest.TestCase):
         broken[key] = json.dumps(identity).encode(); rewrite(broken)
         with self.assertRaisesRegex(ValueError, 'build identity disagrees'):
             validate_developer(developer, report, require_sidecar=True)
-        broken = dict(entries); broken['Workshop-Developer/../outside.txt'] = b'bad'; rewrite(broken)
-        with self.assertRaisesRegex(ValueError, 'Unsafe archive path'):
-            validate_developer(developer, report, require_sidecar=True)
+        for name in ('Workshop-Developer/../outside.txt', 'Workshop-Developer/dir\\evil',
+                     'Workshop-Developer/extra\x00hidden'):
+            broken = dict(entries); broken[name] = b'bad'; rewrite(broken)
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'Unsafe archive path'):
+                validate_developer(developer, report, require_sidecar=True)
 
     def test_only_undeclared_copies_of_known_libraries_leave_the_game_package(self):
         temporary = 'bin/xess/.libxess.dll.Abc123'

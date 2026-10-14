@@ -9,12 +9,21 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'tools'))
 integrity = importlib.import_module('release_integrity')
 prepare = importlib.import_module('prepare_release').prepare
+
+
+def raw_member(archive, name, data):
+    # Preserve malformed fixture bytes on Windows too: ZipInfo's constructor
+    # would otherwise sanitize the very filename this regression must test.
+    entry = zipfile.ZipInfo('fixture')
+    entry.filename = entry.orig_filename = name
+    archive.writestr(entry, data)
 
 
 def pe():
@@ -44,7 +53,7 @@ class Releases(unittest.TestCase):
         path = self.root/integrity.package_name(version)
         with zipfile.ZipFile(path, 'w') as archive:
             for name, value in data.items(): archive.writestr('Workshop/'+name, value)
-            for name, value in extra or []: archive.writestr(name, value)
+            for name, value in extra or []: raw_member(archive, name, value)
         return path
 
     def test_preparation_uses_identity_notes_and_real_hash(self):
@@ -97,6 +106,18 @@ class Releases(unittest.TestCase):
         for name in ('Workshop/../evil', 'Workshop/C:/evil', 'Workshop/eboot.bin',
                      'Other/extra', 'Workshop/README.MD', 'Workshop/dir\\evil'):
             with self.subTest(name=name), self.assertRaises(ValueError): integrity.validate(self.package(extra=[(name,b'x')]))
+
+    def test_parser_normalization_cannot_hide_unsafe_member_names(self):
+        for name in ('Workshop/dir\\evil', 'Workshop/extra\x00hidden'):
+            package = self.package(extra=[(name, b'x')])
+            # Exercise Windows parsing on Linux as well as in Windows CI.
+            with self.subTest(name=name), patch('zipfile.os.sep', '\\'):
+                with zipfile.ZipFile(package) as archive:
+                    entry = archive.infolist()[-1]
+                    self.assertEqual(entry.orig_filename, name)
+                    self.assertNotEqual(entry.filename, name)
+                with self.assertRaisesRegex(ValueError, 'Unsafe archive path'):
+                    integrity.validate(package)
 
     def test_symlink_rejected(self):
         p = self.package()
