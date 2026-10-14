@@ -6,6 +6,7 @@
 #include "bbport_background.h"
 #include "bbport_latency.h"
 #include "bbport_frame_metrics.h"
+#include "core/emulator_settings.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include <algorithm>
@@ -46,7 +47,12 @@ TokenPool<sl::MAX_FRAMES_IN_FLIGHT> token_pool;
 std::condition_variable simulation_ready;
 Token simulation_token;
 uint32_t frame_index{};
-bool rendering{}, simulation_sleeping{}, fg_on{}, failed{};
+bool rendering{}, simulation_sleeping{}, simulation_pending{}, fg_on{}, failed{};
+// Publish the cap and multiplier together. VideoOut only yields its limiter
+// after the driver has accepted that exact foreground pacing policy.
+std::atomic<uint64_t> pacing_policy{};
+sl::ReflexOptions applied_reflex_options;
+bool reflex_options_applied{};
 std::atomic<bool> fg_supported{}, reflex_supported{};
 vk::Semaphore latest_fence;
 uint64_t latest_value{};
@@ -75,6 +81,13 @@ void Error(const sl::APIError&) {
 void Mark(sl::PCLMarker marker, const Token& token) {
     if (marker_api && token) marker_api(marker,*static_cast<sl::FrameToken*>(token->native));
 }
+bool ApplyReflexOptions(const sl::ReflexOptions& options) {
+    if (reflex_options_applied && options.mode==applied_reflex_options.mode &&
+        options.frameLimitUs==applied_reflex_options.frameLimitUs) return true;
+    if (reflex_options(options)!=sl::Result::eOk) return false;
+    applied_reflex_options=options;reflex_options_applied=true;
+    return true;
+}
 bool Wanted() {
     const auto& s=BbSettings::Get();
     return (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia ||
@@ -92,7 +105,9 @@ Token NewSimulationToken(std::unique_lock<std::mutex>& lock) {
     return token;
 }
 bool BeginRenderLocked(std::unique_lock<std::mutex>& lock) {
-    simulation_ready.wait(lock, [] { return !simulation_sleeping || !initialized; });
+    simulation_ready.wait(lock, [] {
+        return (!simulation_sleeping && !simulation_pending) || !initialized;
+    });
     if (!initialized || !reflex_supported || !Wanted()) return false;
     if (!simulation_token) {
         simulation_token=NewSimulationToken(lock);
@@ -133,6 +148,15 @@ void WaitLatestInputs() {
     }
 }
 void Off() {
+    pacing_policy=0;
+    if (reflex_options_applied && applied_reflex_options.frameLimitUs &&
+        reflex_options && reflex_supported) {
+        sl::ReflexOptions options;
+        const auto& s=BbSettings::Get();
+        const bool low_latency=Wanted() && (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia);
+        options.mode=low_latency ? s.reflex==2 ? sl::ReflexMode::eLowLatencyWithBoost : sl::ReflexMode::eLowLatency : sl::ReflexMode::eOff;
+        ApplyReflexOptions(options); // Remove the output interval before FG changes mode.
+    }
     // Wait before SetOptions(Off), which may release the SDK's input semaphore.
     // Draw frames from an older epoch must not wait on a destroyed SDK handle.
     WaitLatestInputs();
@@ -241,43 +265,84 @@ void QueueFlip(int index,int64_t argument) {
     if (!initialized || !reflex_supported || !Wanted()) return;
     std::unique_lock lock{mutex};
     // Starting the render and assigning its flip must use one simulation token.
-    // NextSimulation runs outside the guest submission lock on another thread.
+    // The next simulation is reserved before releasing the guest submission lock.
     if (BeginRenderLocked(lock)) flips.push_back({index,argument,simulation_token});
 }
 void CancelFlip(int index,int64_t argument) {
     if (!initialized) return;std::scoped_lock lock{mutex};
     std::erase_if(flips,[&](const Flip& f){return f.index==index && f.argument==argument;});
 }
+void PrepareNextSimulation() {
+    if (!initialized || !reflex_supported) return;
+    std::scoped_lock lock{mutex};
+    if (initialized) simulation_pending=true;
+}
+bool PacesFrames(unsigned real_limit) {
+    if (!initialized || !reflex_supported || !real_limit) return false;
+    const auto& s=BbSettings::Get();
+    const auto policy=pacing_policy.load();
+    return s.frame_generation==BbSettings::FrameGenerationNvidia &&
+        s.variable_frame_time && (s.window_focused || s.background_mode==BbSettings::BackgroundRun) &&
+        unsigned(policy>>32)==real_limit && unsigned(policy)==unsigned(s.frame_generation_cap_multiplier.load()) &&
+        unsigned(policy)>1 && !s.nvidia_api_error;
+}
 void NextSimulation() {
     if (!initialized || !reflex_supported) return;
     Token next;
+    uint64_t requested_policy{};
+    sl::ReflexOptions sleep_options;
     {
         std::unique_lock lock{mutex};
         simulation_ready.wait(lock, [] { return !simulation_sleeping || !initialized; });
         if (!initialized) return;
+        // Cover token-pool pressure as well as the SDK sleep: allocation can
+        // release this mutex while the prior frame still owns its ring slot.
+        simulation_sleeping=true;simulation_pending=false;
+        const auto ready=[&] { simulation_sleeping=false;simulation_ready.notify_all(); };
         sl::ReflexOptions options;
         const auto& s=BbSettings::Get();
         const bool low_latency=Wanted() && (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia);
         options.mode=low_latency ? s.reflex==2 ? sl::ReflexMode::eLowLatencyWithBoost : sl::ReflexMode::eLowLatency : sl::ReflexMode::eOff;
-        // Preserve the real-frame limiter in VideoOut. Passing its 75 directly
-        // as a display limiter would incorrectly cap FG to 75 total FPS.
-        options.frameLimitUs=0;
-        if (reflex_options(options)!=sl::Result::eOk) return;
-        if (!Wanted()) {simulation_token.reset();rendering=false;BbSettings::Get().pc_latency_ms=-1.0f;return;}
+        // Reflex's interval counts output frames with DLSS FG. Translate the
+        // effective real cap (including the optional output cap) to output FPS.
+        // At 60 real FPS with x2 this is 120, never a 60 FPS output ceiling.
+        const bool driver_pacing=low_latency && fg_on && s.variable_frame_time &&
+            s.frame_generation==BbSettings::FrameGenerationNvidia;
+        const unsigned real_limit=driver_pacing ?
+            BbSettings::EffectiveFrameLimit(EmulatorSettings.GetFrameLimit()) : 0;
+        const unsigned multiplier=driver_pacing ? configured_generated+1 : 0;
+        const uint64_t output_limit=uint64_t(real_limit)*multiplier;
+        options.frameLimitUs=output_limit ? uint32_t((1'000'000+output_limit-1)/output_limit) : 0;
+        if (!ApplyReflexOptions(options)) {pacing_policy=0;ready();return;}
+        requested_policy=output_limit ? (uint64_t(real_limit)<<32)|multiplier : 0;
+        sleep_options=options;
+        if (!Wanted()) {simulation_token.reset();rendering=false;BbSettings::Get().pc_latency_ms=-1.0f;ready();return;}
         next=NewSimulationToken(lock);
         if (!next) {
+            pacing_policy=0;
+            options.frameLimitUs=0;ApplyReflexOptions(options);
             if (!Wanted()) {simulation_token.reset();rendering=false;}
+            ready();
             return;
         }
-        simulation_token=next;rendering=false;simulation_sleeping=true;
+        simulation_token=next;rendering=false;
     }
     // Never sleep on Liverpool's EOP thread or while holding m_submit_lock.
     // Previous render submission and present markers must be able to progress.
-    sleep_api(*static_cast<sl::FrameToken*>(next->native));
+    const auto sleep_result=sleep_api(*static_cast<sl::FrameToken*>(next->native));
     std::scoped_lock lock{mutex};
     simulation_sleeping=false;simulation_ready.notify_all();
     if (!initialized) {simulation_token.reset();return;}
-    if (!Wanted()) {sl::ReflexOptions options;options.mode=sl::ReflexMode::eOff;reflex_options(options);simulation_token.reset();rendering=false;return;}
+    if (!Wanted()) {sl::ReflexOptions options;options.mode=sl::ReflexMode::eOff;ApplyReflexOptions(options);pacing_policy=0;simulation_token.reset();rendering=false;return;}
+    // Focus/swapchain changes may remove the interval while Sleep is unlocked.
+    // Publish ownership only after a successful sleep with that policy intact.
+    const bool same_options=reflex_options_applied &&
+        applied_reflex_options.mode==sleep_options.mode &&
+        applied_reflex_options.frameLimitUs==sleep_options.frameLimitUs;
+    pacing_policy=sleep_result==sl::Result::eOk && same_options && fg_on ? requested_policy : 0;
+    if (sleep_result!=sl::Result::eOk && same_options) {
+        sleep_options.frameLimitUs=0;ApplyReflexOptions(sleep_options);
+    }
     Mark(sl::PCLMarker::eSimulationStart,next);
 }
 void FinishRender(Vulkan::Frame* frame,int index,int64_t argument) {
@@ -445,20 +510,21 @@ void BeforeSwapchainChange() {
     // NextSimulation rechecks focus after any sleep already in progress.
     if (!Wanted() && reflex_supported && reflex_options) {
         sl::ReflexOptions options;options.mode=sl::ReflexMode::eOff;
-        reflex_options(options);
+        ApplyReflexOptions(options);
     }
 }
 void Shutdown() {
     if (!initialized) return;BeforeSwapchainChange();std::unique_lock lock{mutex};
     if (!initialized) return;
     if (reflex_options && reflex_supported) {
-        sl::ReflexOptions options;options.mode=sl::ReflexMode::eOff;reflex_options(options);
+        sl::ReflexOptions options;options.mode=sl::ReflexMode::eOff;ApplyReflexOptions(options);
     }
     initialized=false;
     token_pool.Notify();simulation_ready.notify_all();
     // Reflex sleeps without this mutex. Let it return before unloading SDK state.
     simulation_ready.wait(lock, [] { return !simulation_sleeping; });
     shutdown_api();simulation_token.reset();flips.clear();device=nullptr;
+    simulation_pending=false;pacing_policy=0;reflex_options_applied=false;
     token_pool.Notify();simulation_ready.notify_all();
 }
 }
@@ -470,7 +536,9 @@ void Shutdown() {}
 void BeginRender() {}
 void QueueFlip(int,int64_t) {}
 void CancelFlip(int,int64_t) {}
+void PrepareNextSimulation() {}
 void NextSimulation() {}
+bool PacesFrames(unsigned) { return false; }
 void FinishRender(Vulkan::Frame*,int,int64_t) {}
 void RetireFrameToken(Vulkan::Frame* frame) { frame->nvidia_token.reset(); }
 void BeforePresent(Vulkan::Frame*,vk::CommandBuffer,vk::Image,vk::ImageView,vk::Format,uint32_t,bool,

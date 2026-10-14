@@ -8,13 +8,13 @@ Revision 26 stops before opening the launcher with `NameError: UPDATE_DIR is not
 
 ## Latest gameplay evidence
 
-Flashing and duplicated assets still occur in Revision 33 with NVIDIA DLSS FG enabled on my Windows 11 / RTX 5070 Ti PC. The latest cemetery test showed extra coffins appearing in the air and disappearing again; the earlier Hunter's Dream report also remains open. Turning FG off removes most of the problem. Revision 33 corrected two frame-tracking errors, but did not resolve this visual report.
+The cemetery test with [Revision 34](releases/windows-v1.6-tatsunakyo.34.md) finally resolved the flashing and duplicated coffins on my Windows 11 / RTX 5070 Ti PC with NVIDIA DLSS FG. The correction checks each pose binding behind a shared mesh and avoids positional history for instance slots without a verified object mapping. I am keeping those protections intact.
 
-[Revision 34](releases/windows-v1.6-tatsunakyo.34.md) checks the pose binding behind shared meshes and refuses positional history for instance batches without a verified object mapping. Its production-code control reproduces incorrect history matches in R33 and checks that valid actor, weapon and known world-instance motion remains available. The cemetery still needs a gameplay check before I call the report resolved.
+The remaining report is uneven movement with NVIDIA FG, including 60 real + 60 generated FPS. [Revision 35](releases/windows-v1.6-tatsunakyo.35.md) corrects a reproduced simulation-token handoff race and moves capped NVIDIA FG pacing to Reflex before simulation. Its CPU controls verify frame ordering, cap conversion and transitions; I still need a gameplay comparison to judge the improvement in displayed cadence.
 
 I also reproduced the startup focus failure at the window event-pump boundary: starting in the background can leave the 30 FPS policy active after returning to the game. Revision 29 reconciles the actual foreground window instead of relying on event order. The production-code regression covers a single return to 65 real / 130 total FPS, the pause gate and FG/Reflex policy.
 
-The earlier Hunter's Dream report confirmed that the Revision 19 fixes worked before this regression. I am still collecting pacing comparisons; the optional real-frame graph helps assess them. The other older reports below remain available for comparison.
+The optional real-frame graph helps compare render delivery. NVIDIA's displayed-frame timing also includes hardware scheduling, so I keep that distinction when comparing FG. The other older reports below remain available for comparison.
 
 | Earlier report to recheck | What to compare |
 |---|---|
@@ -31,7 +31,7 @@ The earlier Hunter's Dream report confirmed that the Revision 19 fixes worked be
 
 | Report | Available result |
 |---|---|
-| Earlier Hunter's Dream flashing report | Revision 19 was confirmed on Windows 11 / RTX 5070 Ti at the time. The later recurrence remains open above. |
+| Flashing/duplicated geometry with NVIDIA FG | Revision 34 confirmed in the affected cemetery on Windows 11 / RTX 5070 Ti; its motion-history protections remain included. |
 | Ignored in-game checkboxes | Actual click/navigation/save checks cover the shared controls; the interface work remains included. |
 | Fixed FPS readout with NVIDIA FG | The overlay uses confirmed NVIDIA presentation counts and has an optional active-FG field. |
 | Background pause failing to regain focus | Cooperative pause/refocus handling and its regression remain included. |
@@ -41,4 +41,4 @@ If one of these happens again, report the current revision and reproduction deta
 
 ## Code review after Revision 25
 
-I corrected the swapchain recovery lock order and synchronized its GPU drain in Revision 26. The updater now verifies the downloaded SHA-256, build identity, binaries, runtimes and Windows archive paths before starting the candidate. These were reproduced at their production code boundaries; they do not change the latest affected-scene gameplay report above. [Review findings and remaining work](code-review-2026-10-13.md) explains the checks and the next comparisons.
+I corrected the swapchain recovery lock order and synchronized its GPU drain in Revision 26. The updater now verifies the downloaded SHA-256, build identity, binaries, runtimes and Windows archive paths before starting the candidate. These were reproduced at their production code boundaries; they remain separate from the gameplay comparisons above. [Review findings and remaining work](code-review-2026-10-13.md) explains the checks and the next comparisons.

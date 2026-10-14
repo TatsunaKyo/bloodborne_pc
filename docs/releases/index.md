@@ -2,6 +2,7 @@
 
 Revision 23 is the latest published stable release, with Support Report and Save Manager. Revision 24 begins the next renderer work with safer shader-cache loading and complete cache-write draining at shutdown. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
 
+- [Revision 35 — NVIDIA FG pacing and frame handoff (preview)](windows-v1.6-tatsunakyo.35.md)
 - [Revision 34 — object motion history (preview)](windows-v1.6-tatsunakyo.34.md)
 - [Revision 33 — NVIDIA frame-token ownership and simulation ordering (preview)](windows-v1.6-tatsunakyo.33.md)
 - [Revision 32 — optional NVIDIA handoff inspection (preview)](windows-v1.6-tatsunakyo.32.md)

@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <setjmp.h>
 // Renderer tests have no guest process. Clock/host-thread services work; guest accesses abort.
+// A headless fixture has no SDL display; do not pull the game frontend into it.
+uint32_t BbDisplayRefreshHz() { return 60; }
 extern "C" {
 #ifdef _WIN32
 thread_local jmp_buf* runtime_fault_recover = nullptr;

@@ -16,7 +16,9 @@ void Shutdown();
 void BeginRender();
 void QueueFlip(int index, int64_t argument);
 void CancelFlip(int index, int64_t argument);
+void PrepareNextSimulation();
 void NextSimulation();
+bool PacesFrames(unsigned real_limit);
 void FinishRender(Vulkan::Frame* frame, int index, int64_t argument);
 void RetireFrameToken(Vulkan::Frame* frame);
 void BeforePresent(Vulkan::Frame* frame, vk::CommandBuffer command,

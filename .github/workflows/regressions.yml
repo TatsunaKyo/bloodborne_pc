@@ -165,6 +165,8 @@ jobs:
           $env:CXX = 'cl'
           python tests/test_nvidia_token_lifetime.py 2>&1 | Tee-Object out/verification/test_nvidia_token_lifetime.log
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_nvidia_frame_pacing.py 2>&1 | Tee-Object out/verification/test_nvidia_frame_pacing.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Execute production pose identity and instance continuity regressions
         shell: pwsh
         run: |

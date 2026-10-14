@@ -605,8 +605,15 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
                                    : std::chrono::nanoseconds(0);
     auto next_flip = std::chrono::steady_clock::now();
+    bool reflex_pacing=false;
     const auto update_limit = [&] {
-        const u32 current = BbSettings::EffectiveFrameLimit(foreground_limit);
+        const u32 effective = BbSettings::EffectiveFrameLimit(foreground_limit);
+        // A capped NVIDIA FG session is paced before simulation by Reflex.
+        // Avoid a second clock delaying already-rendered frames on this queue.
+        // Background modes and provider/limit changes immediately use VideoOut
+        // until the driver accepts the new foreground policy.
+        reflex_pacing=BbNvidia::PacesFrames(effective);
+        const u32 current = reflex_pacing ? 0 : effective;
         if (current != frame_limit) {
             frame_limit = current;
             frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
@@ -693,7 +700,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             main_port.vblank_cv.notify_all();
         }
 
-        if (!frame_limit || main_port.flip_rate != 0) {
+        if ((!frame_limit && !reflex_pacing) || main_port.flip_rate != 0) {
             timer.End();
             continue;
         }

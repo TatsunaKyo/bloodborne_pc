@@ -31,6 +31,7 @@ HARNESS = r'''
 #include <thread>
 #include <vector>
 #include "bbport_nvidia_tokens.h"
+#include "core/emulator_settings.h"
 using namespace std::chrono_literals;
 namespace sl {
 constexpr size_t MAX_FRAMES_IN_FLIGHT=6;
@@ -48,11 +49,16 @@ namespace BbSettings {
 enum { FrameGenerationOff=0,FrameGenerationNvidia=2,BackgroundRun=0,BackgroundPause=1 };
 struct Settings {
     std::atomic<int> reflex{1},frame_generation{FrameGenerationNvidia},background_mode{BackgroundRun};
+    std::atomic<int> frame_generation_cap_multiplier{0};
     std::atomic<bool> show_fps{true},show_latency{false},window_focused{true};
+    std::atomic<bool> nvidia_api_error{false};
+    bool variable_frame_time{true};
     float pc_latency_ms{};
 } settings;
 Settings& Get() { return settings; }
+unsigned EffectiveFrameLimit(unsigned limit) { return limit; }
 }
+u32 BbDisplayRefreshHz() { return 120; }
 namespace Vulkan {
 struct Frame {
 #if CURRENT
@@ -78,7 +84,7 @@ sl::Result NewToken(sl::FrameToken*& token,const uint32_t* index) {
 }
 std::mutex sleep_mutex;
 std::condition_variable sleep_cv;
-bool hold_sleep{},sleep_entered{},allow_sleep{};
+bool hold_sleep{},sleep_entered{},allow_sleep{},fail_sleep{};
 std::atomic<bool> sleep_active{};
 std::atomic<unsigned> shutdown_calls{};
 uint32_t sleeping_index{};
@@ -87,7 +93,8 @@ sl::Result Sleep(const sl::FrameToken& token) {
     sleep_active=true;
     sleeping_index=uint32_t(token);sleep_entered=true;sleep_cv.notify_all();
     if(hold_sleep) sleep_cv.wait(lock,[]{return allow_sleep;});
-    assert(uint32_t(token)==sleeping_index);sleep_active=false;return sl::Result::eOk;
+    assert(uint32_t(token)==sleeping_index);sleep_active=false;
+    return fail_sleep ? sl::Result::eError : sl::Result::eOk;
 }
 sl::Result Options(const sl::ReflexOptions& options) {
     assert(options.frameLimitUs==0);
@@ -114,7 +121,11 @@ bool rendering{};
 TokenPool<sl::MAX_FRAMES_IN_FLIGHT> token_pool;
 std::condition_variable simulation_ready;
 Token simulation_token;
-bool simulation_sleeping{};
+bool simulation_sleeping{},simulation_pending{},fg_on{};
+uint32_t configured_generated{};
+std::atomic<uint64_t> pacing_policy{};
+sl::ReflexOptions applied_reflex_options;
+bool reflex_options_applied{};
 struct Flip {int index;int64_t argument;Token token;};
 #else
 sl::FrameToken* simulation_token{};
@@ -296,9 +307,11 @@ def execute(folder):
         include = str(ROOT / 'gpu/shim')
         if msvc:
             command = [compiler, '/nologo', '/O1', '/EHsc', '/std:c++20', '/I' + include,
+                       '/I' + str(ROOT / 'gpu/shadps4'),
                        str(folder / (name + '.cpp')), '/Fe:' + str(exe)]
         else:
             command = [compiler, '-std=c++20', '-O1', '-pthread', '-I' + include,
+                       '-I' + str(ROOT / 'gpu/shadps4'),
                        str(folder / (name + '.cpp')), '-o', str(exe)]
         subprocess.run(command, check=True, timeout=60, cwd=folder)
         subprocess.run([str(exe)], check=True, timeout=20)

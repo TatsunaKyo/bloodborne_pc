@@ -2316,6 +2316,7 @@ s32 PS4_SYSV_ABI sceGnmSubmitAndFlipCommandBuffersForWorkload(
         BbNvidia::CancelFlip(buf_idx,flip_arg);
         BbAmd::CancelFlip(buf_idx,flip_arg);
     }
+    if (result==ORBIS_OK) BbNvidia::PrepareNextSimulation();
     lk.unlock();
     if (result==ORBIS_OK) BbNvidia::NextSimulation();
     return result;
