@@ -587,6 +587,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     // Free the frame for reuse
     const auto free_frame = [&] {
         if (!is_reusing_frame) {
+            BbNvidia::RetireFrameToken(frame);
             last_submit_frame = frame;
             std::scoped_lock fl{free_mutex};
             free_queue.push(frame);

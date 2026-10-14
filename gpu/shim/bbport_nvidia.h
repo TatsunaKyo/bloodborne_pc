@@ -3,6 +3,7 @@
 #pragma once
 #include <cstdint>
 #include <functional>
+#include "bbport_nvidia_tokens.h"
 namespace vk {
 class PhysicalDevice;class Device;class CommandBuffer;class Image;class ImageView;
 enum class Format;
@@ -17,6 +18,7 @@ void QueueFlip(int index, int64_t argument);
 void CancelFlip(int index, int64_t argument);
 void NextSimulation();
 void FinishRender(Vulkan::Frame* frame, int index, int64_t argument);
+void RetireFrameToken(Vulkan::Frame* frame);
 void BeforePresent(Vulkan::Frame* frame, vk::CommandBuffer command,
                    vk::Image image, vk::ImageView view, vk::Format format,
                    uint32_t buffers, bool game_frame, Vulkan::Scheduler& scheduler,

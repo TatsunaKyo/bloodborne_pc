@@ -5,6 +5,7 @@
 
 #include <deque>
 #include "bbport_amd.h"
+#include "bbport_nvidia_tokens.h"
 
 #include <condition_variable>
 
@@ -40,7 +41,7 @@ struct Frame {
     bool is_hdr{false};
     u8 id{};
     std::shared_ptr<FrameGeneration::Snapshot> frame_generation;
-    void* nvidia_token{};
+    BbNvidia::Token nvidia_token;
     BbAmd::FrameToken amd_token{};
     vk::Semaphore nvidia_fence{};
     u64 nvidia_fence_value{};

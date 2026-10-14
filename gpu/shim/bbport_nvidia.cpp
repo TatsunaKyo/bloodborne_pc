@@ -42,16 +42,18 @@ PFun_slReflexSleep* sleep_api;
 PFun_slReflexSetOptions* reflex_options;
 PFun_slReflexGetState* reflex_state;
 PFun_slPCLSetMarker* marker_api;
-sl::FrameToken* simulation_token;
+TokenPool<sl::MAX_FRAMES_IN_FLIGHT> token_pool;
+std::condition_variable simulation_ready;
+Token simulation_token;
 uint32_t frame_index{};
-bool rendering{}, fg_on{}, failed{};
+bool rendering{}, simulation_sleeping{}, fg_on{}, failed{};
 std::atomic<bool> fg_supported{}, reflex_supported{};
 vk::Semaphore latest_fence;
 uint64_t latest_value{};
 std::atomic<uint64_t> input_epoch{1};
 uint32_t configured_generated{},configured_width{},configured_height{},configured_format{};
 const sl::ViewportHandle viewport{0};
-struct Flip { int index; int64_t argument; sl::FrameToken* token; };
+struct Flip { int index; int64_t argument; Token token; };
 std::deque<Flip> flips;
 std::chrono::steady_clock::time_point latency_query{},latency_updated{};
 uint64_t latency_frame{};
@@ -70,14 +72,39 @@ void Log(sl::LogType type,const char* message) {
 void Error(const sl::APIError&) {
     BbSettings::Get().nvidia_api_error=true;
 }
-void Mark(sl::PCLMarker marker, sl::FrameToken* token) {
-    if (marker_api && token) marker_api(marker,*token);
+void Mark(sl::PCLMarker marker, const Token& token) {
+    if (marker_api && token) marker_api(marker,*static_cast<sl::FrameToken*>(token->native));
 }
 bool Wanted() {
     const auto& s=BbSettings::Get();
     return (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia ||
             (s.show_fps && s.show_latency)) &&
            (s.window_focused || s.background_mode==BbSettings::BackgroundRun);
+}
+Token NewSimulationToken(std::unique_lock<std::mutex>& lock) {
+    if (!token_pool.WaitAvailable(lock, [] { return initialized && Wanted(); })) return {};
+    const uint32_t id=frame_index+1;
+    auto token=token_pool.Acquire(id, [](uint32_t value)->void* {
+        sl::FrameToken* native{};
+        return new_token(native,&value)==sl::Result::eOk ? native : nullptr;
+    });
+    if (token) frame_index=id;
+    return token;
+}
+bool BeginRenderLocked(std::unique_lock<std::mutex>& lock) {
+    simulation_ready.wait(lock, [] { return !simulation_sleeping || !initialized; });
+    if (!initialized || !reflex_supported || !Wanted()) return false;
+    if (!simulation_token) {
+        simulation_token=NewSimulationToken(lock);
+        if (!simulation_token) return false;
+        Mark(sl::PCLMarker::eSimulationStart,simulation_token);
+    }
+    if (!rendering) {
+        Mark(sl::PCLMarker::eSimulationEnd,simulation_token);
+        Mark(sl::PCLMarker::eRenderSubmitStart,simulation_token);
+        rendering=true;
+    }
+    return true;
 }
 void UpdateLatency() {
     auto& s=BbSettings::Get();
@@ -207,14 +234,15 @@ void BindDevice(vk::PhysicalDevice physical,vk::Device dev) {
 }
 void BeginRender() {
     if (!initialized || !reflex_supported || !Wanted()) return;
-    std::scoped_lock lock{mutex};
-    if (!simulation_token) {const uint32_t id=++frame_index;new_token(simulation_token,&id);Mark(sl::PCLMarker::eSimulationStart,simulation_token);}
-    if (!rendering) {Mark(sl::PCLMarker::eSimulationEnd,simulation_token);Mark(sl::PCLMarker::eRenderSubmitStart,simulation_token);rendering=true;}
+    std::unique_lock lock{mutex};
+    BeginRenderLocked(lock);
 }
 void QueueFlip(int index,int64_t argument) {
     if (!initialized || !reflex_supported || !Wanted()) return;
-    BeginRender();std::scoped_lock lock{mutex};
-    flips.push_back({index,argument,simulation_token});
+    std::unique_lock lock{mutex};
+    // Starting the render and assigning its flip must use one simulation token.
+    // NextSimulation runs outside the guest submission lock on another thread.
+    if (BeginRenderLocked(lock)) flips.push_back({index,argument,simulation_token});
 }
 void CancelFlip(int index,int64_t argument) {
     if (!initialized) return;std::scoped_lock lock{mutex};
@@ -222,9 +250,11 @@ void CancelFlip(int index,int64_t argument) {
 }
 void NextSimulation() {
     if (!initialized || !reflex_supported) return;
-    sl::FrameToken* next{};
+    Token next;
     {
-        std::scoped_lock lock{mutex};
+        std::unique_lock lock{mutex};
+        simulation_ready.wait(lock, [] { return !simulation_sleeping || !initialized; });
+        if (!initialized) return;
         sl::ReflexOptions options;
         const auto& s=BbSettings::Get();
         const bool low_latency=Wanted() && (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia);
@@ -233,28 +263,41 @@ void NextSimulation() {
         // as a display limiter would incorrectly cap FG to 75 total FPS.
         options.frameLimitUs=0;
         if (reflex_options(options)!=sl::Result::eOk) return;
-        if (!Wanted()) {simulation_token=nullptr;rendering=false;BbSettings::Get().pc_latency_ms=-1.0f;return;}
-        const uint32_t id=++frame_index;
-        if (new_token(next,&id)!=sl::Result::eOk || !next) return;
+        if (!Wanted()) {simulation_token.reset();rendering=false;BbSettings::Get().pc_latency_ms=-1.0f;return;}
+        next=NewSimulationToken(lock);
+        if (!next) {
+            if (!Wanted()) {simulation_token.reset();rendering=false;}
+            return;
+        }
+        simulation_token=next;rendering=false;simulation_sleeping=true;
     }
     // Never sleep on Liverpool's EOP thread or while holding m_submit_lock.
     // Previous render submission and present markers must be able to progress.
-    sleep_api(*next);
+    sleep_api(*static_cast<sl::FrameToken*>(next->native));
     std::scoped_lock lock{mutex};
-    if (!Wanted()) {sl::ReflexOptions options;options.mode=sl::ReflexMode::eOff;reflex_options(options);simulation_token=nullptr;rendering=false;return;}
-    simulation_token=next;rendering=false;Mark(sl::PCLMarker::eSimulationStart,next);
+    simulation_sleeping=false;simulation_ready.notify_all();
+    if (!initialized) {simulation_token.reset();return;}
+    if (!Wanted()) {sl::ReflexOptions options;options.mode=sl::ReflexMode::eOff;reflex_options(options);simulation_token.reset();rendering=false;return;}
+    Mark(sl::PCLMarker::eSimulationStart,next);
 }
 void FinishRender(Vulkan::Frame* frame,int index,int64_t argument) {
-    frame->nvidia_token=nullptr;
-    if (!initialized) return;std::scoped_lock lock{mutex};
+    std::scoped_lock lock{mutex};
+    frame->nvidia_token.reset();
+    if (!initialized) return;
     const auto it=std::find_if(flips.begin(),flips.end(),[&](const Flip& f){return f.index==index && f.argument==argument;});
-    if (it!=flips.end()) {frame->nvidia_token=it->token;Mark(sl::PCLMarker::eRenderSubmitEnd,it->token);flips.erase(it);}
+    if (it!=flips.end()) {frame->nvidia_token=std::move(it->token);Mark(sl::PCLMarker::eRenderSubmitEnd,frame->nvidia_token);flips.erase(it);}
+}
+void RetireFrameToken(Vulkan::Frame* frame) {
+    std::scoped_lock lock{mutex};
+    frame->nvidia_token.reset();
 }
 void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image image,vk::ImageView view,
                    vk::Format format,uint32_t buffers,bool game_frame,Vulkan::Scheduler& scheduler,
                    uint32_t output_width,uint32_t output_height) {
     if (!initialized) return;std::scoped_lock lock{mutex};
-    auto& s=BbSettings::Get();auto* token=static_cast<sl::FrameToken*>(frame->nvidia_token);
+    if (!initialized) return;
+    auto& s=BbSettings::Get();const auto lease=frame->nvidia_token;
+    auto* token=lease ? static_cast<sl::FrameToken*>(lease->native) : nullptr;
     const auto snapshot=frame->frame_generation;
     if (s.frame_generation!=BbSettings::FrameGenerationNvidia) {Off();failed=false;s.nvidia_api_error=false;}
     if (s.frame_generation==BbSettings::FrameGenerationNvidia && (!fg_supported || !reflex_supported))
@@ -268,13 +311,13 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
                 "NVIDIA FG is waiting for scene depth and motion vectors.";
         }
         Off();if (s.nvidia_api_error) {failed=true;s.frame_generation_problem="NVIDIA FG reported an API error. Turn FG off and on to retry; see last_run.log.";}
-        Mark(sl::PCLMarker::ePresentStart,token);return;
+        Mark(sl::PCLMarker::ePresentStart,lease);return;
     }
-    if (s.frame_generation!=BbSettings::FrameGenerationNvidia) {Mark(sl::PCLMarker::ePresentStart,token);return;}
+    if (s.frame_generation!=BbSettings::FrameGenerationNvidia) {Mark(sl::PCLMarker::ePresentStart,lease);return;}
     const auto& source=snapshot->source;
     if (source.projection[0]==0 || source.projection[1]==0 || source.projection[3]==0) {
         s.frame_generation_problem="NVIDIA FG is waiting for a valid scene camera.";
-        Off();Mark(sl::PCLMarker::ePresentStart,token);return;
+        Off();Mark(sl::PCLMarker::ePresentStart,lease);return;
     }
     const uint32_t generated=uint32_t(std::clamp(s.nvidia_generated_frames.load(),1,
         std::max(1,s.nvidia_max_generated.load())));
@@ -339,14 +382,15 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
         configured_generated=generated;configured_width=snapshot->width;
         configured_height=snapshot->height;configured_format=uint32_t(format);
     }
-    Mark(sl::PCLMarker::ePresentStart,token);
+    Mark(sl::PCLMarker::ePresentStart,lease);
 }
 bool Present(Vulkan::Frame* frame,const std::function<bool()>& present) {
     if (!initialized) return present();
     // Serialize QueuePresent with GetState, SetOptions, focus and window changes.
     std::scoped_lock lock{mutex};
+    if (!initialized) return present();
     const bool presented=present();
-    Mark(sl::PCLMarker::ePresentEnd,static_cast<sl::FrameToken*>(frame->nvidia_token));
+    Mark(sl::PCLMarker::ePresentEnd,frame->nvidia_token);
     UpdateLatency();
     if (fg_state && fg_on) {
         sl::DLSSGState state;
@@ -396,6 +440,7 @@ void WaitForInputs(Vulkan::Frame* frame) {
 }
 void BeforeSwapchainChange() {
     if (!initialized) return;std::scoped_lock lock{mutex};Off();
+    token_pool.Notify();simulation_ready.notify_all();
     // Release latency scheduling before the background gate parks GPU workers.
     // NextSimulation rechecks focus after any sleep already in progress.
     if (!Wanted() && reflex_supported && reflex_options) {
@@ -404,8 +449,17 @@ void BeforeSwapchainChange() {
     }
 }
 void Shutdown() {
-    if (!initialized) return;BeforeSwapchainChange();std::scoped_lock lock{mutex};
-    shutdown_api();initialized=false;simulation_token=nullptr;flips.clear();device=nullptr;
+    if (!initialized) return;BeforeSwapchainChange();std::unique_lock lock{mutex};
+    if (!initialized) return;
+    if (reflex_options && reflex_supported) {
+        sl::ReflexOptions options;options.mode=sl::ReflexMode::eOff;reflex_options(options);
+    }
+    initialized=false;
+    token_pool.Notify();simulation_ready.notify_all();
+    // Reflex sleeps without this mutex. Let it return before unloading SDK state.
+    simulation_ready.wait(lock, [] { return !simulation_sleeping; });
+    shutdown_api();simulation_token.reset();flips.clear();device=nullptr;
+    token_pool.Notify();simulation_ready.notify_all();
 }
 }
 #else
@@ -418,6 +472,7 @@ void QueueFlip(int,int64_t) {}
 void CancelFlip(int,int64_t) {}
 void NextSimulation() {}
 void FinishRender(Vulkan::Frame*,int,int64_t) {}
+void RetireFrameToken(Vulkan::Frame* frame) { frame->nvidia_token.reset(); }
 void BeforePresent(Vulkan::Frame*,vk::CommandBuffer,vk::Image,vk::ImageView,vk::Format,uint32_t,bool,
                    Vulkan::Scheduler&,uint32_t,uint32_t) {}
 bool Present(Vulkan::Frame*,const std::function<bool()>& present) {return present();}

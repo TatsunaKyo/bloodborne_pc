@@ -2,6 +2,13 @@
 
 Revision 23 is the latest published stable release, with Support Report and Save Manager. Revision 24 begins the next renderer work with safer shader-cache loading and complete cache-write draining at shutdown. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
 
+- [Revision 33 — NVIDIA frame-token ownership and simulation ordering (preview)](windows-v1.6-tatsunakyo.33.md)
+- [Revision 32 — optional NVIDIA handoff inspection (preview)](windows-v1.6-tatsunakyo.32.md)
+- [Revision 31 — preserve depth and motion through delayed flips](windows-v1.6-tatsunakyo.31.md)
+- [Revision 30 — submission waits and world-motion safeguards](windows-v1.6-tatsunakyo.30.md)
+- [Revision 29 — motion rollback and startup focus](windows-v1.6-tatsunakyo.29.md)
+- [Revision 28 — motion coverage review](windows-v1.6-tatsunakyo.28.md)
+- [Revision 27 — launcher startup recovery](windows-v1.6-tatsunakyo.27.md)
 - [Revision 26 — integration review, recovery and verified updates](windows-v1.6-tatsunakyo.26.md)
 - [Revision 25 — presentation queue pacing and feature visuals](windows-v1.6-tatsunakyo.25.md)
 - [Revision 24 — shader-cache recovery](windows-v1.6-tatsunakyo.24.md)
