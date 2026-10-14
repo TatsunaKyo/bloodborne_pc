@@ -120,12 +120,15 @@ int main(){
     std::puts("CONTROL: R33 retrieves prior instance-slot positions without knowing which objects occupy the slots.");
 #endif
     // Verified ordered world records still retain their animated motion.
-    std::vector<std::byte> models(832),wind(768);
+    std::vector<std::byte> models(832),wind(768),relocated_wind(768);
     VS tree{Motion::ModelBatchShader,{{&models},{&wind}}};
     Motion::History verified(128);
     const auto va=verified.Prepare(Draw(tree,2));verified.NextFrame();
     assert(verified.Prepare(Draw(tree,2)).load==va.store && va.store);
     assert(Motion::CameraBounded(Draw(tree,2)));
+    verified.NextFrame();
+    VS relocated_tree{Motion::ModelBatchShader,{{&models},{&relocated_wind}}};
+    assert(verified.Prepare(Draw(relocated_tree,2)).load);
     // A weapon can animate its palette under a stable entity identity.
     VS weapon{7,{{&secondary_a}}};Motion::History weapons(64);
     assert(!weapons.Moving(Gate(weapon),ReadBindings(weapon).palette));weapons.NextFrame();

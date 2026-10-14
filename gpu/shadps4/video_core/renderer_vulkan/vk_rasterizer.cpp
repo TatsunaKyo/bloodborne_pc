@@ -1082,6 +1082,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                                                palette);
             }
         }
+        // Ordered world transforms already identify every member of these
+        // verified batches. Their wind constants may move between guest heaps.
+        if (model_batch != 0) pose_binding = 0;
         push_data.motion_param = 0;
         if (model_batch_seen && model_batch_valid && (!gated || object_motion->Moving({.shader = vs.pgm_hash,
                                              .geometry = motion_geometry,
