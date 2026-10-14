@@ -30,6 +30,9 @@ PRELUDE = r'''
 #include "bbport_background.h"
 #include "bbgpu.h"
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 using pthread_mutex_t=SRWLOCK;
 using pthread_cond_t=CONDITION_VARIABLE;
