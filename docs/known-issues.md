@@ -8,7 +8,7 @@ Revision 26 stops before opening the launcher with `NameError: UPDATE_DIR is not
 
 ## Latest gameplay evidence
 
-Flashing geometry persists in Revision 29 at the Tomb of Oedon, and turning NVIDIA FG off removes most of it. I corrected an incomplete frame-ready semaphore wait in [Revision 30](releases/windows-v1.6-tatsunakyo.30.md). I also added a continuity check for verified world batches after finding extreme tree vectors in the existing GPU capture. Actor/weapon motion and the earlier ownership fixes remain in place. The affected-scene gameplay comparison is still pending; I am not marking this report resolved.
+Flashing geometry persists through Revision 30 at the Tomb of Oedon, and turning NVIDIA FG off removes most of it. [Revision 31](releases/windows-v1.6-tatsunakyo.31.md) addresses a reproduced overwrite of retained scene inputs: depth and motion are now owned together and selected with their completed display buffer. Actor/weapon motion and the earlier synchronization/fence fixes remain included. The affected-scene gameplay comparison is still pending; I am not marking this report resolved.
 
 I also reproduced the startup focus failure at the window event-pump boundary: starting in the background can leave the 30 FPS policy active after returning to the game. Revision 29 reconciles the actual foreground window instead of relying on event order. The production-code regression covers a single return to 65 real / 130 total FPS, the pause gate and FG/Reflex policy.
 
@@ -29,7 +29,7 @@ The earlier Hunter's Dream report confirmed that the Revision 19 fixes worked be
 
 | Report | Available result |
 |---|---|
-| Hunter's Dream phantom/flashing objects with NVIDIA FG | Latest maintainer gameplay report indicates the Revision 19 correction resolved it on Windows 11 / RTX 5070 Ti. |
+| Earlier Hunter's Dream flashing report | Revision 19 was confirmed on Windows 11 / RTX 5070 Ti at the time. The later recurrence remains open above. |
 | Ignored in-game checkboxes | Actual click/navigation/save checks cover the shared controls; the interface work remains included. |
 | Fixed FPS readout with NVIDIA FG | The overlay uses confirmed NVIDIA presentation counts and has an optional active-FG field. |
 | Background pause failing to regain focus | Cooperative pause/refocus handling and its regression remain included. |

@@ -36,7 +36,7 @@ template<class T> T Handle() { return reinterpret_cast<T>(++next_handle); }
 VKAPI_ATTR VkResult VKAPI_CALL View(VkDevice,const VkImageViewCreateInfo* info,
                                     const VkAllocationCallbacks*,VkImageView* view) {
     assert(images.contains(info->image));
-    const auto aspect=info->format==VK_FORMAT_R32_SFLOAT ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    const auto aspect=(info->format==VK_FORMAT_D32_SFLOAT || info->format==VK_FORMAT_D32_SFLOAT_S8_UINT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     assert(info->subresourceRange.aspectMask==aspect);
     *view=Handle<VkImageView>();views[*view]=info->image;return VK_SUCCESS;
 }
@@ -51,7 +51,7 @@ VKAPI_ATTR void VKAPI_CALL Barrier(VkCommandBuffer,const VkDependencyInfo* depen
         assert(b.newLayout==VK_IMAGE_LAYOUT_GENERAL);
         assert(b.srcQueueFamilyIndex==VK_QUEUE_FAMILY_IGNORED && b.dstQueueFamilyIndex==VK_QUEUE_FAMILY_IGNORED);
         const auto format=images.at(b.image).format;
-        const auto expected=format==VK_FORMAT_R32_SFLOAT ? VK_IMAGE_ASPECT_COLOR_BIT :
+        const auto expected=(format!=VK_FORMAT_D32_SFLOAT && format!=VK_FORMAT_D32_SFLOAT_S8_UINT) ? VK_IMAGE_ASPECT_COLOR_BIT :
             VK_IMAGE_ASPECT_DEPTH_BIT|(format==VK_FORMAT_D32_SFLOAT_S8_UINT ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
         assert(b.subresourceRange.aspectMask==unsigned(expected));
     }
@@ -62,7 +62,8 @@ VKAPI_ATTR void VKAPI_CALL Copy(VkCommandBuffer,VkImage source,VkImageLayout sou
     assert(count==1 && source_layout==VK_IMAGE_LAYOUT_GENERAL && target_layout==VK_IMAGE_LAYOUT_GENERAL);
     assert(images.at(source).format==images.at(target).format);
     assert(region->extent.width==images.at(target).width && region->extent.height==images.at(target).height);
-    const auto aspect=images.at(source).format==VK_FORMAT_R32_SFLOAT ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    const auto format=images.at(source).format;
+    const auto aspect=(format==VK_FORMAT_D32_SFLOAT || format==VK_FORMAT_D32_SFLOAT_S8_UINT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     assert(region->srcSubresource.aspectMask==unsigned(aspect) && region->dstSubresource.aspectMask==unsigned(aspect));
     ++copies;
     commands.push_back([source,target] {images.at(target).depth=images.at(source).depth;});
@@ -71,7 +72,8 @@ extern "C" VkResult vmaCreateImage(VmaAllocator,const VkImageCreateInfo* info,
                                    const VmaAllocationCreateInfo*,VkImage* image,
                                    VmaAllocation* allocation,VmaAllocationInfo*) {
     if(reject_allocation) return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    assert(info->usage==(VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT));
+    const unsigned expected=VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    assert(info->usage==(expected | (info->format==VK_FORMAT_R16G16_SFLOAT ? VK_IMAGE_USAGE_STORAGE_BIT : 0)));
     *image=Handle<VkImage>();*allocation=Handle<VmaAllocation>();
     images.emplace(*image,ImageData{info->format,info->extent.width,info->extent.height,
         std::vector<float>(info->extent.width*info->extent.height,-1)});
@@ -110,8 +112,14 @@ int main() {
             auto owner=std::shared_ptr<const Vulkan::FrameGenerationDepthCopy>(copy);
             std::fill(images.at(source).depth.begin(),images.at(source).depth.end(),.7f);
             assert(Vulkan::FrameGeneration::FreezeDepth(device,allocator,command,source,format,width,height,copy));
-            assert(VkImage(vk::Image(copy->depth))==saved); // ordinary frames do not allocate or wait
-            Execute();assert(images.at(saved).depth.front()==.7f);
+            const auto second=VkImage(vk::Image(copy->depth));
+            assert(second!=saved); // the previous scene is still owned by frame A
+            Execute();assert(images.at(saved).depth.front()==.5f);
+            assert(images.at(second).depth.front()==.7f);
+            std::fill(images.at(source).depth.begin(),images.at(source).depth.end(),.8f);
+            assert(Vulkan::FrameGeneration::FreezeDepth(device,allocator,command,source,format,width,height,copy));
+            assert(VkImage(vk::Image(copy->depth))==second); // an unowned scene can reuse its storage
+            Execute();assert(images.at(second).depth.front()==.8f && images.at(saved).depth.front()==.5f);
             const auto larger=Handle<VkImage>();
             images.emplace(larger,ImageData{VkFormat(format),width*2,height,std::vector<float>(width*2*height,.6f)});
             assert(Vulkan::FrameGeneration::FreezeDepth(device,allocator,command,larger,format,width*2,height,copy));
@@ -130,8 +138,8 @@ int main() {
         }
     }
     assert(images.empty() && views.empty() && commands.empty());
-    assert(copies==27 && barriers==54);
-    std::printf("FG scene depth: PASS (%u cases, D32/D32S8/R32, UI overwrite reproduced, reuse, resize ownership, failure and recorded aspects/barriers)\n",cases);
+    assert(copies==36 && barriers==72);
+    std::printf("FG scene depth: PASS (%u cases, D32/D32S8/R32, UI overwrite, retained-frame contents preserved, exclusive reuse, resize, failure and recorded aspects/barriers)\n",cases);
 }
 '''
 with tempfile.TemporaryDirectory(prefix='fg-depth-') as temp:

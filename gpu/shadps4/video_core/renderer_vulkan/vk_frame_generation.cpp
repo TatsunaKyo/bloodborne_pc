@@ -69,7 +69,10 @@ bool FrameGeneration::FreezeDepth(vk::Device device, VmaAllocator allocator, vk:
                                                           : vk::ImageAspectFlagBits::eColor;
     const auto all_aspects = copied_aspect | (format == vk::Format::eD32SfloatS8Uint
         ? vk::ImageAspectFlagBits::eStencil : vk::ImageAspectFlags{});
-    const bool fresh = !copy || copy->width != w || copy->height != h || copy->format != format;
+    // A shared owner keeps the previous scene's *contents*, not just its handle.
+    // A later scene must not overwrite depth retained by a display/FG snapshot.
+    const bool fresh = !copy || copy.use_count() > 1 || copy->width != w ||
+                       copy->height != h || copy->format != format;
     if (fresh) {
         auto next = std::make_shared<FrameGenerationDepthCopy>();
         if (!next->depth.Create(allocator, format, w, h, vk::ImageUsageFlagBits::eSampled |
@@ -101,6 +104,59 @@ bool FrameGeneration::FreezeDepth(vk::Device device, VmaAllocator allocator, vk:
         .dstStageMask=vk::PipelineStageFlagBits2::eAllCommands,
         .dstAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite};
     command.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&after});
+    return true;
+}
+
+bool FrameGeneration::FreezeMotion(vk::Device device, VmaAllocator allocator,
+                                   vk::CommandBuffer command, vk::Image source,
+                                   const std::shared_ptr<FrameGenerationDepthCopy>& copy) {
+    if (!source || !copy || copy.use_count() != 1 || !copy->width || !copy->height)
+        return false;
+    const bool fresh = !copy->motion.image;
+    if (fresh) {
+        // Publish the image/view together: allocation/view failure leaves a
+        // retryable slot rather than an image with a missing descriptor view.
+        Image image;
+        if (!image.Create(allocator, vk::Format::eR16G16Sfloat, copy->width, copy->height))
+            return false;
+        auto view = device.createImageViewUnique({.image = vk::Image(image),
+            .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR16G16Sfloat,
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}});
+        if (view.result != vk::Result::eSuccess) return false;
+        std::swap(copy->motion.allocator, image.allocator);
+        std::swap(copy->motion.allocation, image.allocation);
+        std::swap(copy->motion.image, image.image);
+        copy->motion_view = std::move(view.value);
+    }
+    const vk::MemoryBarrier2 ready{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask = vk::AccessFlagBits2::eTransferRead};
+    const vk::ImageMemoryBarrier2 before{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .oldLayout = fresh ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = vk::Image(copy->motion),
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+    command.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &ready,
+                             .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &before});
+    const vk::ImageCopy region{.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .extent = {copy->width, copy->height, 1}};
+    command.copyImage(source, vk::ImageLayout::eGeneral, vk::Image(copy->motion),
+                      vk::ImageLayout::eGeneral, region);
+    const vk::MemoryBarrier2 complete{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferRead | vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
+    command.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &complete});
     return true;
 }
 FrameGeneration::FrameGeneration(vk::PhysicalDevice physical_, vk::Device device_,

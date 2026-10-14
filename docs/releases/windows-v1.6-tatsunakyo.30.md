@@ -1,5 +1,7 @@
 # Bloodborne: The Crowned Workshop — Revision 30
 
+The gameplay comparison still shows flashing in Revision 30. [Revision 31](windows-v1.6-tatsunakyo.31.md) addresses a reproduced scene-input overwrite and binds FG inputs to their display buffer; the visual comparison remains pending.
+
 Revision 29 did not eliminate the flashing assets. Turning NVIDIA FG off removes most of the problem, so I checked the frame inputs and their synchronization rather than treating the earlier rollback as a complete fix.
 
 I corrected a submission dependency: the frame-ready semaphore was waited at color attachment output even though presentation reads the frame through earlier transfer and compute work. Every submitted wait now covers those consumers, and the stage array covers all four supported dependencies. The regression executes the production submission function, reproduces the incomplete wait in Revision 29 and checks the corrected path with zero to four waits.

@@ -128,6 +128,21 @@ jobs:
             & "./out/verification/submit-waits/$name.exe" 2>&1 | Tee-Object "out/verification/submit-waits-$name.log"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
+      - name: Execute immutable scene input and delayed flip regressions
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          python tests/test_fg_frame_inputs.py --prepare out/verification/fg-frame-inputs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          foreach ($name in @('revision30','current')) {
+            cl /nologo /O1 /EHsc /std:c++20 /I gpu/shadps4 /I out/test-headers /I out/test-headers/vma "out/verification/fg-frame-inputs/$name.cpp" "/Fe:out/verification/fg-frame-inputs/$name.exe"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            & "./out/verification/fg-frame-inputs/$name.exe" 2>&1 | Tee-Object "out/verification/fg-frame-inputs-$name.log"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
       - name: Compile and exercise the actual frozen Windows launcher
         shell: pwsh
         run: |

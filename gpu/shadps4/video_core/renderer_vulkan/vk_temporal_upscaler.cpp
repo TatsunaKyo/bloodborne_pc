@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 
 #include <vk_mem_alloc.h>
 
@@ -275,26 +276,55 @@ bool TemporalUpscaler::RasterScaling() const {
     return !scaled_session && scene_targets.Reduced() && !done_this_frame;
 }
 
-vk::ImageView TemporalUpscaler::FreezeFrameGenerationDepth(vk::CommandBuffer command,
-                                                         vk::Image depth, vk::Format format,
-                                                         u32 w, u32 h) {
-    if (frozen_fg_depth && (frozen_fg_depth->width != w || frozen_fg_depth->height != h ||
-                            frozen_fg_depth->format != format)) {
-        // Keep the old source alive until its draw-queue copy completes, including
-        // when resolution changes before it reaches the presentation thread.
-        scheduler.DeferOperation([old = std::move(frozen_fg_depth)] {});
+std::shared_ptr<const FrameGenerationDepthCopy> TemporalUpscaler::FreezeFrameGenerationInputs(
+    vk::CommandBuffer command, vk::Image depth, vk::Format format, u32 w, u32 h) {
+    // A producer callback and every completed display/FG snapshot own their pair.
+    // A sole pool reference means all earlier GPU work and consumers retired it.
+    std::erase_if(frozen_fg_inputs, [=](const auto& copy) {
+        return copy.use_count() == 1 &&
+               (copy->width != w || copy->height != h || copy->format != format);
+    });
+    auto slot = std::find_if(frozen_fg_inputs.begin(), frozen_fg_inputs.end(),
+                            [](const auto& copy) { return copy.use_count() == 1; });
+    if (slot == frozen_fg_inputs.end()) {
+        if (frozen_fg_inputs.size() >= MaxFrozenScenes) {
+            BbSettings::Get().frame_generation_problem = "FG scene inputs are still in use. The real frame is kept.";
+            return {};
+        }
+        frozen_fg_inputs.emplace_back();
+        slot = frozen_fg_inputs.end() - 1;
     }
-    if (!FrameGeneration::FreezeDepth(instance.GetDevice(), instance.GetAllocator(), command,
-                                      depth, format, w, h, frozen_fg_depth)) {
-        BbSettings::Get().frame_generation_problem = "FG could not preserve scene depth. The real frame is kept.";
+    auto& copy = *slot;
+    const bool depth_ok = FrameGeneration::FreezeDepth(instance.GetDevice(), instance.GetAllocator(),
+                                                       command, depth, format, w, h, copy);
+    const bool motion_ok = depth_ok && FrameGeneration::FreezeMotion(instance.GetDevice(),
+        instance.GetAllocator(), command, vk::Image(motion_image), copy);
+    if (depth_ok) {
+        // Also retain partial copies when motion allocation fails. Recorded GPU
+        // commands must not outlive their images while FG falls back to real frames.
+        scheduler.DeferOperation([owner = copy] {});
+    }
+    if (!motion_ok) {
+        BbSettings::Get().frame_generation_problem = "FG could not preserve scene depth/motion. The real frame is kept.";
+        if (!depth_ok) frozen_fg_inputs.erase(slot);
         return {};
     }
-    return *frozen_fg_depth->view;
+    return copy;
+}
+
+void TemporalUpscaler::CompleteFrame(VAddr display_address) {
+    std::scoped_lock lock{display_mutex};
+    // Color selection already uses this address; FG must use the same completed
+    // scene even when another render buffer finishes before its flip is handled.
+    displays[display_address].frame_source = std::move(fg_source);
+    fg_source = {};
 }
 
 bool TemporalUpscaler::OnFrameStart() {
-    completed_fg_source=fg_source;
-    fg_source={};
+    fg_source = {};
+    if (BbSettings::Get().frame_generation == BbSettings::FrameGenerationOff) {
+        std::erase_if(frozen_fg_inputs, [](const auto& copy) { return copy.use_count() == 1; });
+    }
     // bbport: BB_PRESET_FILE=<file> holding a preset number, read about once a second: switches
     // the preset like the menu does (scripted tests of live preset changes).
     static const char* preset_file = std::getenv("BB_PRESET_FILE");
@@ -477,7 +507,8 @@ bool TemporalUpscaler::EnsureResources(u32 w, u32 h, u32 ow, u32 oh, bool hdr) {
         .arrayLayers = 1,
         .samples = vk::SampleCountFlagBits::e1,
         .tiling = vk::ImageTiling::eOptimal,
-        .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+        .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+                 vk::ImageUsageFlagBits::eTransferSrc,
         .initialLayout = vk::ImageLayout::eUndefined,
     });
     output_image = VideoCore::UniqueImage(device, allocator);
@@ -1120,10 +1151,12 @@ void TemporalUpscaler::Run() {
     }
     last_frame = now;
     if (BbSettings::Get().frame_generation != BbSettings::FrameGenerationOff) {
-        const auto stable_depth = FreezeFrameGenerationDepth(cmdbuf,input_depth,depth_format,w,h);
-        fg_source={stable_depth,vk::Image(motion_image),*motion_view,w,h,jitter,
-                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,bool(stable_depth)};
-        fg_source.depth_owner = frozen_fg_depth;
+        const auto inputs = FreezeFrameGenerationInputs(cmdbuf,input_depth,depth_format,w,h);
+        fg_source={inputs ? *inputs->view : vk::ImageView{},
+                   inputs ? vk::Image(inputs->motion) : vk::Image{},
+                   inputs ? *inputs->motion_view : vk::ImageView{},w,h,jitter,
+                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,bool(inputs)};
+        fg_source.depth_owner = inputs;
         camera_motion.FrameGenerationCamera(fg_source);
     }
 
@@ -1677,10 +1710,12 @@ void TemporalUpscaler::RunScaled() {
     }
     last_frame = now;
     if (BbSettings::Get().frame_generation != BbSettings::FrameGenerationOff) {
-        const auto stable_depth = FreezeFrameGenerationDepth(cmdbuf,depth_image,depth_format,w,h);
-        fg_source={stable_depth,vk::Image(motion_image),*motion_view,w,h,jitter,
-                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,bool(stable_depth)};
-        fg_source.depth_owner = frozen_fg_depth;
+        const auto inputs = FreezeFrameGenerationInputs(cmdbuf,depth_image,depth_format,w,h);
+        fg_source={inputs ? *inputs->view : vk::ImageView{},
+                   inputs ? vk::Image(inputs->motion) : vk::Image{},
+                   inputs ? *inputs->motion_view : vk::ImageView{},w,h,jitter,
+                   camera_motion.InverseView(),camera_motion.Near(),camera_motion.VerticalFov(),frame_ms,reset,bool(inputs)};
+        fg_source.depth_owner = inputs;
         camera_motion.FrameGenerationCamera(fg_source);
     }
 
@@ -1964,9 +1999,14 @@ bool TemporalUpscaler::RedirectSampled(VideoCore::ImageId image,
     return true;
 }
 
-bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display, vk::Format view_format) {
+bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display, vk::Format view_format,
+                                        FrameGenerationSource& frame_source) {
     std::scoped_lock lock{display_mutex};
     const auto it = displays.find(address);
+    // One scene has one FG handoff. Repeated flips without a new scene must
+    // keep the real color instead of replaying an old motion/camera pair.
+    frame_source = it == displays.end() ? FrameGenerationSource{}
+                                       : std::exchange(it->second.frame_source, {});
     if (it == displays.end() || !it->second.valid) {
         return false;
     }

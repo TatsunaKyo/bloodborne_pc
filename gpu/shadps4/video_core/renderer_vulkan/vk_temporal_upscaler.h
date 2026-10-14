@@ -68,6 +68,8 @@ public:
 
     /// Start of a frame in the command stream (display pass).
     bool OnFrameStart();
+    /// Bind this completed scene's inputs to its actual guest display buffer.
+    void CompleteFrame(VAddr display_address);
     bool RasterScaling() const;
     /// bbport: LOD bias for scene materials, log2(render / output) while a reduced scene is
     /// upscaled (0 at native size, for TAA and without an upscaler).
@@ -124,12 +126,12 @@ public:
         u32 width, height;
         vk::ImageView view;
     };
-    bool DisplayOverride(VAddr address, Display& display, vk::Format view_format);
-    const FrameGenerationSource& FrameGenerationInputs() const { return completed_fg_source; }
+    bool DisplayOverride(VAddr address, Display& display, vk::Format view_format,
+                         FrameGenerationSource& frame_source);
 
 private:
     mutable Motion::MipBiasCache mip_bias_cache;
-    FrameGenerationSource fg_source{}, completed_fg_source{};
+    FrameGenerationSource fg_source{};
     /// bbport: views of guest images the upscaler reads, kept across frames: FSR 4 registers
     /// images by view in a registry of eight (a new view per frame filled it at Native AA).
     vk::ImageView CachedView(const VideoCore::Image& image, vk::Format format,
@@ -147,9 +149,12 @@ private:
 
     void Run();
     void RunScaled();
-    vk::ImageView FreezeFrameGenerationDepth(vk::CommandBuffer command, vk::Image depth,
-                                            vk::Format format, u32 width, u32 height);
-    std::shared_ptr<FrameGenerationDepthCopy> frozen_fg_depth;
+    std::shared_ptr<const FrameGenerationDepthCopy> FreezeFrameGenerationInputs(
+        vk::CommandBuffer command, vk::Image depth, vk::Format format, u32 width, u32 height);
+    // Reuse only unowned, GPU-retired pairs. A bounded pool avoids allocations
+    // once warm without letting a slow flip consumer corrupt an earlier scene.
+    static constexpr size_t MaxFrozenScenes = 8;
+    std::vector<std::shared_ptr<FrameGenerationDepthCopy>> frozen_fg_inputs;
     void RunUiOnly(VideoCore::ImageId color, VideoCore::ImageId depth);
     void EnsureUiResources(u32 width, u32 height, vk::Format color, vk::Format depth);
     void PrepareUiDepth(VideoCore::ImageId depth);
@@ -256,6 +261,7 @@ private:
         vk::Format format{};
         u32 width = 0, height = 0;
         bool valid = false;
+        FrameGenerationSource frame_source;
     };
     std::mutex display_mutex;
     std::unordered_map<VAddr, DisplayImage> displays;

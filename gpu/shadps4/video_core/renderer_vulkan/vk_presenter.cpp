@@ -376,8 +376,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
     // bbport: scaled upscaler presets: the output-size display buffer drawn by the port.
     TemporalUpscaler::Display display{};
+    FrameGenerationSource scene_inputs{};
     const bool upscaled = rasterizer->GetUpscaler().DisplayOverride(
-        cpu_address, display, GetFrameViewFormat(attribute.attrib.pixel_format));
+        cpu_address, display, GetFrameViewFormat(attribute.attrib.pixel_format), scene_inputs);
     VideoCore::ImageId image_id{};
     if (!upscaled) {
         auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
@@ -461,7 +462,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     pp_settings.srgb_input =
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
-    frame_generation->Capture(cmdbuf,rasterizer->GetUpscaler().FrameGenerationInputs(),
+    frame_generation->Capture(cmdbuf,scene_inputs,
                               frame->image_view,frame->width,frame->height,
                               swapchain.GetSurfaceFormat().format,frame->frame_generation);
     if (frame_dump) {

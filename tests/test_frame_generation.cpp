@@ -261,6 +261,52 @@ bool Generate(Device& gpu,Vulkan::FrameGeneration& fg,const std::shared_ptr<Vulk
     auto cmd=gpu.Begin(); const bool generated=fg.Record(*cmd,snapshot);
     fg.Submitted(gpu.Submit(*cmd)); return generated;
 }
+void TestFrozenSceneInputs(Device& gpu) {
+    auto& settings=BbSettings::Get();
+    settings.frame_generation=BbSettings::FrameGenerationNvidia;
+    settings.upscaler=BbSettings::UpscalerDlss;
+    settings.window_focused=true;
+    Vulkan::FrameGeneration fg(gpu.physical,*gpu.device,gpu.allocator,gpu.Submissions());
+    for(const bool hdr:{false,true}) {
+        Inputs inputs(gpu,64,64,128,128,hdr);
+        std::shared_ptr<Vulkan::FrameGenerationDepthCopy> pair;
+        auto first=gpu.Begin();
+        assert(Vulkan::FrameGeneration::FreezeDepth(*gpu.device,gpu.allocator,*first,
+            inputs.depth.image,vk::Format::eD32Sfloat,64,64,pair));
+        assert(Vulkan::FrameGeneration::FreezeMotion(*gpu.device,gpu.allocator,*first,inputs.motion.image,pair));
+        auto source_a=inputs.Source();
+        source_a.depth_owner=pair;source_a.depth_view=*pair->view;
+        source_a.motion_image=vk::Image(pair->motion);source_a.motion_view=*pair->motion_view;
+        gpu.Submit(*first);
+        auto next=gpu.Begin();
+        const vk::MemoryBarrier2 reuse{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eTransfer,.dstAccessMask=vk::AccessFlagBits2::eTransferWrite};
+        next->pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&reuse});
+        next->clearDepthStencilImage(inputs.depth.image,vk::ImageLayout::eGeneral,{.depth=.7f},
+            vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eDepth,0,1,0,1});
+        next->clearColorImage(inputs.motion.image,vk::ImageLayout::eGeneral,
+            vk::ClearColorValue{std::array<float,4>{-8,6,0,0}},
+            vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor,0,1,0,1});
+        assert(Vulkan::FrameGeneration::FreezeDepth(*gpu.device,gpu.allocator,*next,
+            inputs.depth.image,vk::Format::eD32Sfloat,64,64,pair));
+        assert(Vulkan::FrameGeneration::FreezeMotion(*gpu.device,gpu.allocator,*next,inputs.motion.image,pair));
+        gpu.Submit(*next);
+        assert(source_a.depth_owner.get()!=pair.get());
+        // Consume A only after B overwrote the common render scratch fields.
+        std::shared_ptr<Vulkan::FrameGeneration::Snapshot> late_a;
+        auto late=gpu.Begin();
+        fg.Capture(*late,source_a,*inputs.color.view,128,128,inputs.color_format,late_a);
+        gpu.Submit(*late);assert(late_a && late_a->hdr==hdr);
+        const auto depth=gpu.Read(vk::Image(late_a->depth),64,64,4);
+        const auto motion=gpu.Read(vk::Image(late_a->motion),64,64,4);
+        assert(*reinterpret_cast<const float*>(depth.data())==.5f);
+        const auto* mv=reinterpret_cast<const u16*>(motion.data());
+        assert(Half(mv[0])==4 && Half(mv[1])==-2);
+    }
+    settings.frame_generation=BbSettings::FrameGenerationOff;
+    std::puts("PASS: Vulkan delayed NVIDIA input capture preserves frame A depth and both motion channels after frame B, in SDR/HDR.");
+}
 void TestXessColor(Device& gpu) {
     const vk::DescriptorSetLayoutBinding bindings[]={
         {.binding=0,.descriptorType=vk::DescriptorType::eSampledImage,.descriptorCount=1,.stageFlags=vk::ShaderStageFlagBits::eCompute},
@@ -441,7 +487,7 @@ void Test(Device& gpu) {
 int main() {
     try {
         { Device gpu; if (!gpu.Create()) { std::puts("SKIP: Vulkan GPU and current Khronos validation layer required."); return 77; }
-          Test(gpu); TestXessColor(gpu); }
+          Test(gpu); TestFrozenSceneInputs(gpu); TestXessColor(gpu); }
         assert(validation_errors==0);
         std::printf("Frame Generation integration: GPU color/depth/motion copies, real FI/OF output, history reset, queue lifetime, resize and background modes passed; validation errors=%u, warnings=%u.\n",
                     validation_errors,validation_warnings);

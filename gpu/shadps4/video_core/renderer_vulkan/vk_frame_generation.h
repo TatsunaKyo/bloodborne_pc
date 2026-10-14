@@ -16,7 +16,7 @@ namespace Vulkan {
 
 struct FrameGenerationDepthCopy;
 
-// Immutable camera values captured before the display pass advances camera history.
+// Camera and owned scene inputs captured before display advances camera history.
 struct FrameGenerationSource {
     vk::ImageView depth_view;
     vk::Image motion_image;
@@ -74,6 +74,11 @@ public:
     static bool FreezeDepth(vk::Device device, VmaAllocator allocator, vk::CommandBuffer command,
                             vk::Image source, vk::Format format, u32 width, u32 height,
                             std::shared_ptr<FrameGenerationDepthCopy>& copy);
+    // The motion field belongs to the same scene as the frozen depth. Never
+    // leave FG pointing at the upscaler's scratch field for the next frame.
+    static bool FreezeMotion(vk::Device device, VmaAllocator allocator,
+                             vk::CommandBuffer command, vk::Image source,
+                             const std::shared_ptr<FrameGenerationDepthCopy>& copy);
     // Present queue: record the real FI/OF prepare and dispatch. False still
     // permits a history-seeding dispatch, but suppresses the first generated frame.
     bool Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Snapshot>& snapshot);
@@ -106,6 +111,8 @@ private:
 struct FrameGenerationDepthCopy {
     FrameGeneration::Image depth;
     vk::UniqueImageView view;
+    FrameGeneration::Image motion;
+    vk::UniqueImageView motion_view;
     vk::Format format{};
     u32 width{}, height{};
 };
