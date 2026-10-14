@@ -1033,6 +1033,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         bool gated = !all_motion;
         u64 palette = 0;
         u64 model_batch = 0;
+        u64 pose_binding = 0;
         bool model_batch_valid = true;
         bool model_batch_seen = vs.pgm_hash != Motion::ModelBatchShader;
         for (u32 buffer_index=0; buffer_index<vs.buffers.size(); ++buffer_index) {
@@ -1060,9 +1061,16 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 continue;
             }
             const auto role = Motion::ClassifyBuffer(size);
+            if (role != Motion::BufferRole::Other) {
+                // Geometry identifies the shared mesh, not the object whose
+                // pose produced its previous positions. Keep the original
+                // guest binding identity even when constants use a host ring.
+                // Pose contents must be allowed to animate under that identity.
+                const std::array<u64, 3> binding{address, size, buffer_index};
+                pose_binding = XXH3_64bits_withSeed(binding.data(), sizeof(binding), pose_binding);
+            }
             if (role == Motion::BufferRole::Skeleton) {
                 gated = false;
-                if (vs.pgm_hash != Motion::ModelBatchShader) break;
                 continue;
             }
             if (role == Motion::BufferRole::SmallSkeleton && ring) {
@@ -1079,6 +1087,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                                              .geometry = motion_geometry,
                                              .indices = index_address,
                                              .model_batch = model_batch,
+                                             .pose_binding = pose_binding,
                                              .index_count = regs.num_indices,
                                              .instances = regs.num_instances.NumInstances(),
                                              .first_instance = first_instance},
@@ -1117,6 +1126,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 .indices = index_address,
                 .topology = topology,
                 .model_batch = model_batch,
+                .pose_binding = pose_binding,
                 .index_count = regs.num_indices,
                 .instances = regs.num_instances.NumInstances(),
                 .first_instance = first_instance,

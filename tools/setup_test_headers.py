@@ -16,7 +16,7 @@ def main():
     target=ROOT/'out/test-headers';target.mkdir(parents=True,exist_ok=True)
     dependencies=ROOT/'out/dependencies';dependencies.mkdir(parents=True,exist_ok=True)
     records={}
-    for name in ('vulkan-headers','vulkan-memory-allocator'):
+    for name in ('vulkan-headers','vulkan-memory-allocator','xxhash'):
         package=lock['mingw-w64-clang-x86_64-'+name]
         path=dependencies/package['filename']
         download('https://repo.msys2.org/mingw/clang64/'+package['filename'],path,package['sha256'])
@@ -30,10 +30,10 @@ def main():
                 dest=target/relative;dest.parent.mkdir(parents=True,exist_ok=True)
                 dest.write_bytes(archive.extractfile(member).read())
         records[name]=package
-    for name in ('vulkan/vulkan.hpp','vk_video/vulkan_video_codecs_common.h','vma/vk_mem_alloc.h'):
+    for name in ('vulkan/vulkan.hpp','vk_video/vulkan_video_codecs_common.h','vma/vk_mem_alloc.h','xxhash.h'):
         if not (target/name).is_file():raise ValueError('Missing pinned test header: '+name)
     (target/'provenance.json').write_text(json.dumps(records,indent=2)+'\n')
-    print('PASS: checksum-pinned Vulkan and VMA test declarations prepared.')
+    print('PASS: checksum-pinned Vulkan, VMA and xxHash test declarations prepared.')
 
 
 if __name__=='__main__':main()

@@ -20,7 +20,7 @@ int main() {
     assert(IndexedRange(std::span(restart), 0, true).count == 0);
     assert(IndexedRange(std::span<const uint16_t>{}, 0, false).count == 0);
 
-    Draw draw{.shader = 1, .geometry = 2, .indices = 3, .topology = 4,
+    Draw draw{.shader = 1, .geometry = 2, .indices = 3, .topology = 4, .model_batch = 9,
               .index_count = 5, .instances = 2, .first_instance = 100,
               .vertices = range};
     assert(!CameraBounded(draw));

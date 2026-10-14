@@ -243,7 +243,7 @@ inline uint32_t JitterPhases(uint32_t render_width, uint32_t output_width) {
 }
 
 struct Draw {
-    uint64_t shader{}, geometry{}, indices{}, topology{}, model_batch{};
+    uint64_t shader{}, geometry{}, indices{}, topology{}, model_batch{}, pose_binding{};
     uint32_t index_count{}, instances{}, first_instance{};
     VertexRange vertices;
     bool operator==(const Draw& rhs) const = default;
@@ -265,7 +265,7 @@ public:
         uint32_t store{}, load{}, vertices{}, instances{}, first_vertex{}, first_instance{};
     };
     struct Stats {
-        uint64_t draws{}, stored{}, loaded{}, unmatched{}, exhausted{}, invalid{}, still{}, ambiguous{};
+        uint64_t draws{}, stored{}, loaded{}, unmatched{}, exhausted{}, invalid{}, still{}, ambiguous{}, unidentified_batches{};
     } stats;
 
     // A small skeleton (weapon, prop; most are static world pieces) only needs history
@@ -273,7 +273,7 @@ public:
     // Checked before the index scan of Prepare, with a cheap identity. The first frame
     // of a change stores positions (nothing to load yet), the next one loads them.
     struct GateKey {
-        uint64_t shader{}, geometry{}, indices{}, model_batch{};
+        uint64_t shader{}, geometry{}, indices{}, model_batch{}, pose_binding{};
         uint32_t index_count{}, instances{}, first_instance{}, occurrence{};
         bool operator==(const GateKey&) const = default;
     };
@@ -322,6 +322,16 @@ public:
             ++stats.invalid;
             return {};
         }
+        // InstanceIndex identifies an array slot. Culling can put a different
+        // object into that slot on the next frame without changing the mesh or
+        // draw range. Only verified ordered model records establish continuity.
+        // Static instances have exact camera motion; keep that guide until a
+        // dynamic batch has a verified mapping instead of loading another object.
+        if (draw.instances > 1 && draw.model_batch == 0) {
+            ++stats.unidentified_batches;
+            return {0, 0, draw.vertices.count, draw.instances,
+                    draw.vertices.first, draw.first_instance};
+        }
         // Repeated meshes can exchange draw order after culling. An occurrence
         // number is not an object identity: use camera motion for ambiguous matches.
         const auto* count_previous = previous_occurrences.find(Key{draw, 0});
@@ -360,7 +370,7 @@ private:
             uint64_t h = 0;
             const auto mix = [&](uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2); };
             const auto& d = key.draw;
-            mix(d.shader); mix(d.geometry); mix(d.indices); mix(d.topology); mix(d.model_batch);
+            mix(d.shader); mix(d.geometry); mix(d.indices); mix(d.topology); mix(d.model_batch); mix(d.pose_binding);
             mix(d.index_count); mix(d.instances); mix(d.first_instance);
             mix(d.vertices.first); mix(d.vertices.count); mix(key.occurrence);
             return size_t(h);
@@ -373,7 +383,7 @@ private:
         size_t operator()(const GateKey& key) const {
             uint64_t h = 0;
             const auto mix = [&](uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2); };
-            mix(key.shader); mix(key.geometry); mix(key.indices); mix(key.model_batch); mix(key.index_count);
+            mix(key.shader); mix(key.geometry); mix(key.indices); mix(key.model_batch); mix(key.pose_binding); mix(key.index_count);
             mix(key.instances); mix(key.first_instance); mix(key.occurrence);
             return size_t(h);
         }

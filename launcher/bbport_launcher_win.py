@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.33'
+VERSION = '1.6-tatsunakyo.34'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
