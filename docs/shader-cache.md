@@ -21,6 +21,8 @@ The next part concerns when real and generated frames reach the screen: GPU comp
 
 ## Verification
 
+In Revision 36 I also removed patch-directory probes when shader patching and collection are both disabled. Flat cache tables now use a bulk copy on write and a single resize/copy on read. The new regression compares their bytes with Revision 35, reads each file with both versions, and covers nested containers, strings, exact floating-point bits, existing output content and malformed lengths. The cache format and its version stay compatible. Enabled patch loading and shader collection retain their existing behavior.
+
 The regression executable uses the production serializer, cache IO worker and cached-shader creation function, with isolated paths and explicit driver responses. Four producers submit 400 writes while the worker is held; immediate shutdown must preserve all 400. Other cases cover old/new records, checksums, truncation, oversized files, missing records, temporary files, failed replacement and continued work after errors.
 
 A second fixture compiles the actual `WarmUp` body with controlled cache/driver boundaries. It checks missing, malformed and incompatible profiles; unknown/stale pipeline kinds; failed shader/pipeline loading; later valid entries; and clearing partial selections. These automated checks run on Linux and Windows CI. They exercise recovery behavior, without claiming a measured gameplay improvement.

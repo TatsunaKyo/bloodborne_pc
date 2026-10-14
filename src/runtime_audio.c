@@ -8,6 +8,7 @@
  * ports only follow the clock. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "../gpu/bbgpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +50,40 @@ static pthread_mutex_t table_lock=PTHREAD_MUTEX_INITIALIZER;
 static Port ports[PORTS];
 static int initialized, sdl_ready=-1;
 static size_t buffers_out, ports_opened;
+static pthread_once_t background_once=PTHREAD_ONCE_INIT;
+static pthread_cond_t background_changed=PTHREAD_COND_INITIALIZER;
+static int background_paused;
+
+static void background_audio_pause(int pause) {
+    pthread_mutex_lock(&table_lock);
+    if (background_paused!=pause) {
+        background_paused=pause;
+        for (int i=0;i<PORTS;++i) {
+            Port *p=&ports[i];
+            if (!p->used) continue;
+            pthread_mutex_lock(&p->lock);
+            if (p->stream && !(pause ? SDL_PauseAudioStreamDevice(p->stream)
+                                    : SDL_ResumeAudioStreamDevice(p->stream)))
+                fprintf(stderr,"Runtime: cannot %s audio port %d (%s)\n",
+                        pause ? "pause" : "resume",i,SDL_GetError());
+            if (!pause) {
+                /* The queued PCM is retained. Start a fresh wall-clock cadence
+                 * instead of catching up on periods spent in the background. */
+                p->next_deadline_ns=0; p->adjust_ns=0;
+                p->window_min=p->window_count=0;
+                p->stat_start_ns=p->stat_last_ns=p->stat_max_gap_ns=0;
+                p->stat_starved=p->stat_buffers=0;
+            }
+            pthread_mutex_unlock(&p->lock);
+        }
+        if (!pause) pthread_cond_broadcast(&background_changed);
+    }
+    pthread_mutex_unlock(&table_lock);
+}
+
+static void connect_background_audio(void) {
+    bbgpu_set_background_audio_callback(background_audio_pause);
+}
 
 static uint64_t now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t); return (uint64_t)t.tv_sec*1000000000u+(uint64_t)t.tv_nsec; }
 static void sleep_until(uint64_t deadline) {
@@ -88,6 +123,9 @@ static Port *port_of(int32_t handle, int32_t *error) {
 }
 
 static ABI int32_t audio_init(void) {
+    /* Register before taking the port lock: registration reports the current
+     * state immediately, including a launch that starts out of focus. */
+    pthread_once(&background_once,connect_background_audio);
     pthread_mutex_lock(&table_lock);
     int32_t r=initialized ? ERR_ALREADY_INIT : 0;
     initialized=1;
@@ -117,8 +155,9 @@ static ABI int32_t audio_open(int32_t user, int32_t type, int32_t index, uint32_
     if (sdl_audio()) {
         SDL_AudioSpec spec={p->is_float ? SDL_AUDIO_F32 : SDL_AUDIO_S16, p->channels, 48000};
         p->stream=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&spec,NULL,NULL);
-        if (p->stream) SDL_ResumeAudioStreamDevice(p->stream);
-        else fprintf(stderr,"Runtime: SDL audio stream failed (%s); port %d uses the timer sink\n",SDL_GetError(),id);
+        if (p->stream) {
+            if (!background_paused) SDL_ResumeAudioStreamDevice(p->stream);
+        } else fprintf(stderr,"Runtime: SDL audio stream failed (%s); port %d uses the timer sink\n",SDL_GetError(),id);
     }
     p->stats=getenv("BB_AUDIO_STATS")!=NULL;
     const char *dump=getenv("BB_AUDIO_DUMP");
@@ -151,10 +190,17 @@ static ABI int32_t audio_close(int32_t handle) {
 static int32_t output_port(int32_t handle, const void *data, int pace) {
     int32_t error=0;
     pthread_mutex_lock(&table_lock);
-    Port *p=port_of(handle,&error);
+    Port *p;
+    for (;;) {
+        p=port_of(handle,&error);
+        if (!p || !background_paused) break;
+        /* Release the table lock while parked. Closing a port and the window
+         * event loop remain responsive, and a closed handle is rechecked. */
+        pthread_cond_wait(&background_changed,&table_lock);
+    }
+    if (p) pthread_mutex_lock(&p->lock);
     pthread_mutex_unlock(&table_lock);
     if (!p) return error;
-    pthread_mutex_lock(&p->lock);
     size_t samples=(size_t)p->frames*(size_t)p->channels, bytes=samples*(size_t)p->sample_bytes;
     uint64_t period=(uint64_t)p->frames*1000000000u/48000u;
     if (data) {

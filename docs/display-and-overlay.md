@@ -46,8 +46,10 @@ With **V-sync in borderless** off, I request Immediate presentation for lower qu
 | When in background | Behavior |
 |---|---|
 | Keep running | Retains the foreground policy and FG. |
-| Pause game and rendering | Pauses game work while window events remain responsive; game clocks exclude paused time. |
+| Pause game and rendering | Pauses game work, rendering and audio while window events remain responsive; game clocks exclude paused time. |
 | Limit to 30 FPS | Uses up to 30 real FPS, respecting a lower foreground cap. |
 | Limit to 60 FPS | Uses up to 60 real FPS, respecting a lower foreground cap. |
 
 The foreground policy returns when the window regains focus. FG is suspended during background pause or a background limit. [FG details](frame-generation.md) covers resource ownership and history resets during those transitions.
+
+Pause also stops the audio device and parks new audio output. I keep its queued samples so the music resumes where it stopped, and restart the audio clock when you return. Keep running and the 30/60 FPS modes keep playing audio.

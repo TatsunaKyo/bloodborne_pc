@@ -100,8 +100,16 @@ struct Writer {
 
   void Write(const auto &v) {
     Write(v.size());
-    for (const auto &elem : v) {
-      Write(elem);
+    using Element = typename std::remove_reference_t<decltype(v)>::value_type;
+    if constexpr (requires { v.data(); } &&
+                  std::is_trivially_copyable_v<Element> && !Container<Element>) {
+      // The old per-element writes used these same native bytes. Keep the
+      // format, but copy flat cache tables in one operation on the render thread.
+      Write(v.data(), v.size() * sizeof(Element));
+    } else {
+      for (const auto &elem : v) {
+        Write(elem);
+      }
     }
   }
 
@@ -142,9 +150,19 @@ struct Reader {
     if (num_elements > ar.RemainingBytes() / minimum) {
       throw ReadError("Shader cache container length exceeds its record");
     }
-    for (size_t i = 0; i < num_elements; ++i) {
-      v.emplace_back();
-      Read(v.back());
+    if constexpr (requires { v.data(); v.resize(size_t{}); v.max_size(); } &&
+                  std::is_trivially_copyable_v<Element> && !Container<Element>) {
+      if (num_elements > v.max_size() - v.size()) {
+        throw ReadError("Shader cache container length exceeds capacity");
+      }
+      const auto start = v.size();
+      v.resize(start + num_elements);
+      if (num_elements) Read(v.data() + start, num_elements * sizeof(Element));
+    } else {
+      for (size_t i = 0; i < num_elements; ++i) {
+        v.emplace_back();
+        Read(v.back());
+      }
     }
   }
 

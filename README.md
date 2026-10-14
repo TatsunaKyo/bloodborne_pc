@@ -5,7 +5,7 @@
 <p align="center">Experience Bloodborne natively on Windows, enhanced with modern rendering technologies, customizable gameplay and a redesigned launcher.</p>
 
 <p align="center">
-  <a href="docs/releases/windows-v1.6-tatsunakyo.35.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 35" height="28"></a>
+  <a href="docs/releases/windows-v1.6-tatsunakyo.36.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 36" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/windows.svg" alt="Windows 10 / 11" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/vulkan.svg" alt="Vulkan 1.3" height="28"></a>
   <a href="LICENSE"><img src="docs/assets/readme/license.svg" alt="GPL-2.0+" height="28"></a>
@@ -112,7 +112,7 @@ I also added a choice for when you Alt-Tab or leave the game in the background. 
 | Background mode | What happens while the window is unfocused |
 |---|---|
 | Keep running | Keeps your normal frame policy and FG. |
-| **Pause game and rendering** | Pauses game work and rendering, while the window remains able to receive focus again. |
+| **Pause game and rendering** | Pauses game work, rendering and audio, while the window remains able to receive focus again. |
 | **30 FPS** | Limits real background frames to 30, or your lower foreground cap. |
 | **60 FPS** | Limits real background frames to 60, or your lower foreground cap. |
 

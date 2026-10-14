@@ -37,6 +37,9 @@ void bbgpu_before_input(void);
 unsigned bbgpu_symbol_count(void);
 /* Completed and current cooperative pause time; the window event loop keeps running. */
 uint64_t bbgpu_background_paused_ns(void);
+/* Process-lifetime audio callback, synchronized with pause transitions. It is
+ * immediately given the current state and must not re-enter the pause API. */
+void bbgpu_set_background_audio_callback(void (*callback)(int paused));
 #ifdef __cplusplus
 }
 #endif

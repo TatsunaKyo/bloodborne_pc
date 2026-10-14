@@ -16,6 +16,8 @@ The suite executes settings and updater behavior, altered-package rejection, pro
 
 ## Windows checks
 
+Revision 36 adds `tests/test_audio_background.py` and `tests/test_cache_hotpaths.py` on both hosts. The audio fixture runs the production ports and pause gate with a recorded SDL boundary: startup out of focus, two-port feeding, twelve pause/resume cycles, retained PCM, fresh clock cadence, a closed paused port and silent/failed devices. Its R35 control reproduces the music/output continuing while the game is paused. The cache fixture proves that the old and new serializers produce identical bytes and cross-read both files, including nested containers, strings, floating-point bit patterns, append behavior and malformed lengths. It also executes the production shader-patch lookup with real filesystem operations: disabled features do no path work, while enabled patches and debug collection still load the expected words.
+
 The manual **Windows build and package** workflow compiles native components and the launcher, executes the CPU regression programs and checks the compiled Windows launcher before assembling a candidate. It pins MSYS2 package checksums and the unchanged vendor runtime baseline. Package validation checks PE imports/exports, binary/runtime hashes, source commit/tree, source patch and SHA256 sidecar.
 
 A successful hosted build does not test a player's graphics driver. FSR/NVIDIA presentation, HDR, latency, focus transitions and affected scenes still need the named hardware results. The first hosted Windows build is a separate manual run; portable CI starts automatically on source pushes. Local tests and hosted results are recorded with their actual environment.

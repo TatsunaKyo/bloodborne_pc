@@ -54,6 +54,35 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & ./out/verification/cache-warmup-test.exe 2>&1 | Tee-Object out/verification/cache-warmup-windows.log
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Execute production cache hot paths and background audio regressions
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          python tests/test_cache_hotpaths.py --prepare out/verification/cache-hotpaths
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          foreach ($name in @('revision35','current')) {
+            foreach ($target in @('serialization','patch-lookup')) {
+              cl /nologo /O2 /EHsc /std:c++20 /I gpu/shadps4 "/Iout/verification/cache-hotpaths/$name" "out/verification/cache-hotpaths/$name/$target.cpp" "/Fe:out/verification/cache-hotpaths/$name/$target.exe"
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            }
+          }
+          python tests/test_cache_hotpaths.py --verify-existing out/verification/cache-hotpaths 2>&1 | Tee-Object out/verification/cache-hotpaths-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_audio_background.py --prepare out/verification/audio-background
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          foreach ($name in @('revision35','current')) {
+            cl /nologo /O1 /EHsc /std:c++20 /I gpu /I gpu/shim "out/verification/audio-background/$name.cpp" gpu/shim/bbport_background.cpp "/Fe:out/verification/audio-background/$name.exe"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          & ./out/verification/audio-background/revision35.exe 2>&1 | Tee-Object out/verification/audio-background-windows.log
+          if ($LASTEXITCODE -ne 7) { throw 'Revision 35 did not reproduce unpaused background audio.' }
+          foreach ($mode in @('recording','silent','open-failure')) {
+            & ./out/verification/audio-background/current.exe $mode 2>&1 | Tee-Object -Append out/verification/audio-background-windows.log
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
       - name: Execute production presentation lock regression
         shell: pwsh
         run: |

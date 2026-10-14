@@ -1009,6 +1009,11 @@ void PipelineCache::DumpShader(std::span<const u32> code, u64 hash, Shader::HwSt
 std::optional<std::vector<u32>> PipelineCache::GetShaderPatch(u64 hash, Shader::HwStage stage,
                                                               size_t perm_idx,
                                                               std::string_view ext) {
+    // Ordinary first-use compilation does not need filesystem probes for a
+    // disabled patch/debug feature. Keep collection's existing patch record.
+    if (!EmulatorSettings.IsPatchShaders() && !EmulatorSettings.IsShaderCollect()) {
+        return {};
+    }
 
     using namespace Common::FS;
     const auto patch_dir = GetUserPath(PathType::ShaderDir) / "patch";
