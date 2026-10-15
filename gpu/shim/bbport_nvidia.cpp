@@ -305,7 +305,7 @@ void BindDevice(vk::PhysicalDevice physical,vk::Device dev) {
             BbSettings::Get().nvidia_max_generated=state.numFramesToGenerateMax;
     }
     std::printf("NVIDIA Vulkan: FG supported=%d, Reflex supported=%d\n",int(fg_supported),int(reflex_supported));
-    if (fg_supported && reflex_supported) preset_observer.Start(UpdatePreset, [] {
+    preset_observer.Start(UpdatePreset, [] {
         if (nvapi_unload) nvapi_unload();
         if (nvapi_module) FreeLibrary(nvapi_module);
         nvapi_unload=nullptr;nvapi_module=nullptr;get_override=nullptr;nvapi_attempted=false;
