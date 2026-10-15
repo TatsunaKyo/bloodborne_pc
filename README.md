@@ -41,7 +41,7 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 
 ## What this fork adds
 
-### High-fidelity upscaling support: DLSS, FSR and XeSS
+### High-fidelity upscaling support: DLSS, FSR and XeSS.
 
 ![DLSS, FSR and XeSS: input scene, reconstruction and display output](docs/assets/features/upscaling.png)
 
