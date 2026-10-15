@@ -850,15 +850,23 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     if (sel.worker) {
         // bbport: draw-preparation worker: look up only, with the worker's own Info copy.
         auto& worker = *sel.worker;
-        std::shared_lock lk{programs_mutex};
-        const auto found_program = program_cache.find(params.hash);
-        if (found_program == program_cache.end() || !found_program->second->info_template) {
-            worker.failed = true;
-            return {};
+        const Program* program;
+        Shader::Info* worker_info;
+        {
+            // Speculation must never keep the GPU thread behind a background
+            // worker's guest page fault, resource walk or fetch-shader parse.
+            std::shared_lock lk{programs_mutex,std::try_to_lock};
+            if (!lk.owns_lock()) { worker.failed=true;return {}; }
+            const auto found_program = program_cache.find(params.hash);
+            if (found_program == program_cache.end() || !found_program->second->info_template) {
+                worker.failed = true;
+                return {};
+            }
+            program = found_program->second.get();
+            worker_info = &worker.infos.try_emplace(program,*program->info_template).first->second;
         }
-        const Program* program = found_program->second.get();
-        auto [it_info, new_info] = worker.infos.try_emplace(program, *program->info_template);
-        auto& info = it_info->second;
+        // Programs live until after DrawPreparation joins all its workers.
+        auto& info = *worker_info;
         info.pgm_base = params.Base();
         info.user_data = params.user_data;
         // The walk of resource tables and the fetch shader parse read guest memory through
@@ -867,6 +875,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         // thread. A jump out of the specialization leaks its partial allocations (rare).
         sigjmp_buf recover;
         if (sigsetjmp(recover, 0)) {
+            runtime_fault_recover = nullptr;
             worker.failed = true;
             return {};
         }
@@ -874,6 +883,11 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         info.RefreshFlatBuf();
         auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
         runtime_fault_recover = nullptr;
+        // A permutation may have been added while reading guest memory. Read
+        // the current module list under a short lock; never retain an iterator
+        // across the unlocked walk or block on an in-progress publication.
+        std::shared_lock lk{programs_mutex,std::try_to_lock};
+        if (!lk.owns_lock()) { worker.failed=true;return {}; }
         const auto it = std::ranges::find_if(program->modules, [&](const auto& candidate) {
             return candidate.module && candidate.spec == spec;
         });
@@ -903,6 +917,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         new_program->info_template = std::make_unique<Shader::Info>(new_program->info);
         Program* program = new_program.get();
         {
+            BbHitch::Scope hitch{"shader registry publish"};
             std::unique_lock lk{programs_mutex};
             program_cache.emplace(params.hash, std::move(new_program));
         }
@@ -913,6 +928,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     auto& program = it_pgm.value();
     if (!program->info_template) {
         // Programs loaded by the pipeline cache warm-up get their template on first use.
+        BbHitch::Scope hitch{"shader registry publish"};
         std::unique_lock lk{programs_mutex};
         program->info_template = std::make_unique<Shader::Info>(program->info);
     }
@@ -943,6 +959,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
 
         RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+        BbHitch::Scope hitch{"shader registry publish"};
         std::unique_lock lk{programs_mutex};
         program->AddPermut(module, std::move(spec));
     } else {

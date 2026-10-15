@@ -239,25 +239,28 @@ void Scheduler::KickRecording(bool force) {
     if (full_chunks.empty() && record_chunk->Empty()) {
         return;
     }
+    // Acquire and install the replacement before the old chunk is published.
+    // Guest copies/allocations may fault and re-enter recording on this thread.
+    // The old order left record_chunk null during queue handoff/allocation.
+    auto replacement = AcquireChunk();
+    auto ready_chunk = std::exchange(record_chunk,std::move(replacement));
+    auto ready_full_chunks = std::move(full_chunks);
+    full_chunks.clear();
     bool wake;
     {
         std::scoped_lock lk{recorder_mutex};
-        for (auto& chunk : full_chunks) {
+        for (auto& chunk : ready_full_chunks) {
             recorder_queue.push_back(std::move(chunk));
         }
-        if (!record_chunk->Empty()) {
-            recorder_queue.push_back(std::move(record_chunk));
+        if (!ready_chunk->Empty()) {
+            recorder_queue.push_back(std::move(ready_chunk));
         }
         wake = recorder_sleeping;
         queued_chunks.store(recorder_queue.size(), std::memory_order_release);
     }
-    full_chunks.clear();
     // A busy recorder picks the new chunks up by itself: waking it is a syscall per draw.
     if (wake) {
         recorder_cv.notify_one();
-    }
-    if (!record_chunk) {
-        record_chunk = AcquireChunk();
     }
 }
 

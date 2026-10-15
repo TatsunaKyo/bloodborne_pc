@@ -22,14 +22,21 @@ struct SceneCamera {
     std::array<uint32_t,2> size;
 };
 // Decode the exact scene-constant snapshot bound by this draw, never later guest data.
-inline std::optional<SceneCamera> DecodeSceneCamera(std::span<const float> data) {
+inline std::optional<SceneCamera> DecodeSceneCamera(std::span<const float> data,
+                                                  float viewport_x = 1.0f,
+                                                  float viewport_y = -1.0f) {
     if (data.size() < 216 || data[0] != 3000.0f || !std::isfinite(data[1]) ||
         !(data[4] >= 64.0f && data[4] <= 32768.0f && data[5] >= 64.0f && data[5] <= 32768.0f) ||
         std::abs(data[1]*data[0]-1.0f) > 1e-3f) return std::nullopt;
     SceneCamera result;
     std::copy_n(data.begin()+8,12,result.camera.view.begin());
     std::copy_n(data.begin()+180,12,result.camera.inv_view.begin());
-    result.camera.proj = {data[52],data[57],data[62],data[63]};
+    if (!std::isfinite(viewport_x) || !std::isfinite(viewport_y) ||
+        viewport_x == 0 || viewport_y == 0) return std::nullopt;
+    // Motion/TAA/SL use screen clip coordinates (+x right, +y up). The
+    // guest viewport, not the projection buffer alone, determines their sign.
+    result.camera.proj = {std::copysign(1.0f,viewport_x)*data[52],
+                         -std::copysign(1.0f,viewport_y)*data[57],data[62],data[63]};
     result.size = {uint32_t(data[4]),uint32_t(data[5])};
     return result;
 }
@@ -94,27 +101,41 @@ public:
             return false;
         }
         sample.valid = true;
-        previous = current;
+        previous = completed;
         current = sample;
-        reset = reset || resized || CameraDiscontinuity(previous, current);
+        reset = forced_reset || resized || CameraDiscontinuity(previous, current);
         if (reset) previous = current; // zero velocity; do not reuse the preceding scene
         captured = true;
         return true;
     }
     void Invalidate() noexcept {
-        current.valid = previous.valid = false;
+        current.valid = previous.valid = completed.valid = false;
+        captured = false;
+        forced_reset = true;
         reset = true;
+    }
+    // A different G-buffer depth/viewport starts another candidate camera.
+    // Every candidate compares with the previous COMPLETED frame, never with
+    // an auxiliary camera captured earlier in this frame.
+    void BeginPass() noexcept {
+        captured = false;
+        current.valid = previous.valid = false;
+        reset = forced_reset;
     }
     void EndFrame() noexcept {
         if (!captured) Invalidate();
+        else completed = current;
         captured = false;
+        forced_reset = false;
         reset = false; // a missing/invalid camera will request reset on its next capture
     }
     bool NeedsCamera() const noexcept { return !captured; }
     bool Reset() const noexcept { return reset; }
 
 private:
+    CameraSample completed;
     bool captured = false;
+    bool forced_reset = true;
     bool reset = true;
 };
 

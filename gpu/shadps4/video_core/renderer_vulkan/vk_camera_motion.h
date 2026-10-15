@@ -79,7 +79,7 @@ public:
     void OnConstants(const float* data);
 
     /// The G-buffer pass (5+ color targets): its depth is the scene depth.
-    void OnGBufferPass(VideoCore::ImageId depth);
+    void OnGBufferPass(VideoCore::ImageId depth, float viewport_x, float viewport_y);
 
     /// The pass copying the finished frame (`frame`, the last target drawn) to the display: the
     /// frame's depth and camera are complete. Records the debug overlay, starts a new frame.
@@ -104,7 +104,9 @@ private:
     Motion::CameraSample& previous = history.previous;
     std::array<float, 2> jitter{}, previous_jitter{};
     std::array<u32, 2> render_size{};
+    std::array<u32, 2> completed_render_size{};
     VideoCore::ImageId depth_id{};
+    std::array<float,2> viewport_scale{1.0f,-1.0f};
 
     vk::UniqueDescriptorSetLayout desc_layout;
     vk::UniquePipelineLayout pipeline_layout;

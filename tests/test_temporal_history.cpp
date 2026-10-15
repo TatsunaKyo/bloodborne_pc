@@ -39,7 +39,7 @@ int main() {
     assert(history.Capture(Camera()) && history.Reset());
     assert(history.current.valid && history.previous.valid);
     assert(history.current.inv_view == history.previous.inv_view);
-    assert(!history.Capture(Camera(100))); // subsequent passes cannot replace the main camera
+    assert(!history.Capture(Camera(100))); // later constants within the same pass are ignored
     history.EndFrame();
     assert(history.NeedsCamera() && !history.Reset());
     for (int i = 1; i <= 120; ++i) {
@@ -100,6 +100,33 @@ int main() {
     assert(!CameraDiscontinuity(Camera(0, 3.13f), Camera(0, -3.13f)));
     assert(!CameraDiscontinuity(Camera(), Camera(9.9f, 1.5f)));
     assert(CameraDiscontinuity(Camera(), Camera(10)));
+
+    // A preliminary camera must not replace the completed main-scene baseline.
+    CameraHistory passes;
+    assert(passes.Capture(Camera(2)));
+    passes.EndFrame();
+    passes.BeginPass();
+    assert(passes.Capture(Camera(100)) && passes.Reset());
+    passes.BeginPass();
+    assert(passes.NeedsCamera() && !passes.current.valid);
+    assert(passes.Capture(Camera(2.1f)) && !passes.Reset());
+    assert(passes.previous.inv_view == Camera(2).inv_view);
+    assert(!passes.Capture(Camera(200)));
+    passes.EndFrame();
+    passes.BeginPass();
+    assert(passes.Capture(Camera(100)));
+    passes.BeginPass(); // no valid camera for the final depth: never pair with the first
+    passes.EndFrame();
+    assert(!passes.current.valid && !passes.previous.valid);
+    assert(passes.Capture(Camera(2.2f)) && passes.Reset());
+
+    for (float x : {-960.f,960.f}) for (float y : {-540.f,540.f}) {
+        const auto camera=DecodeSceneCamera(submitted,x,y);
+        assert(camera && camera->camera.proj[0] == std::copysign(1.f,x)*submitted[52]);
+        assert(camera->camera.proj[1] == -std::copysign(1.f,y)*submitted[57]);
+    }
+    assert(!DecodeSceneCamera(submitted,0,540));
+    assert(!DecodeSceneCamera(submitted,960,std::numeric_limits<float>::infinity()));
 
     MipBiasCache bias;
     assert(bias.Get(0, 0) == 0 && bias.Get(0, 3840) == 0);

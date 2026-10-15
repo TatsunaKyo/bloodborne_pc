@@ -153,7 +153,7 @@ CameraMotion::CameraMotion(const Instance& instance_, Scheduler& scheduler_,
 CameraMotion::~CameraMotion() = default;
 
 float CameraMotion::VerticalFov() const noexcept {
-    return 2.0f * std::atan(1.0f / current.proj[1]);
+    return 2.0f * std::atan(1.0f / std::abs(current.proj[1]));
 }
 
 float CameraMotion::Near() const noexcept {
@@ -178,6 +178,7 @@ vk::Image CameraMotion::ObjectMotionImage(u32 width, u32 height) const noexcept 
 
 void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
                                 vk::ImageView motion_view, u32 width, u32 height) {
+    if (HistoryReset() && object_motion) object_motion->DiscardPreviousHistory();
     bool object_valid = false;
     const vk::ImageView object_view = object_motion && object_motion->Enabled()
         ? object_motion->PrepareRead(cmdbuf, width, height, object_valid) : depth_view;
@@ -219,14 +220,13 @@ void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_vi
 }
 
 void CameraMotion::OnConstants(const float* data) {
-    if (!NeedsCamera()) return; // only the first main camera is used this frame
-    const auto decoded = Motion::DecodeSceneCamera({data,216});
+    if (!NeedsCamera()) return; // first valid snapshot of THIS G-buffer pass
+    const auto decoded = Motion::DecodeSceneCamera({data,216},viewport_scale[0],viewport_scale[1]);
     if (!decoded) return;
     const auto& size = decoded->size;
-    if (!history.Capture(decoded->camera, size != render_size)) return;
+    if (!history.Capture(decoded->camera, size != completed_render_size)) return;
     if (HistoryReset()) {
         previous_jitter = jitter;
-        if (object_motion) object_motion->DiscardPreviousHistory();
     }
     if (size != render_size) {
         std::printf("Camera motion: scene render size %ux%u\n", size[0], size[1]);
@@ -234,14 +234,18 @@ void CameraMotion::OnConstants(const float* data) {
     }
 }
 
-void CameraMotion::OnGBufferPass(VideoCore::ImageId depth) {
+void CameraMotion::OnGBufferPass(VideoCore::ImageId depth, float viewport_x, float viewport_y) {
+    const std::array<float,2> scale{viewport_x,viewport_y};
+    if (depth != depth_id || scale != viewport_scale) history.BeginPass();
     depth_id = depth;
+    viewport_scale = scale;
 }
 
 void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
     if (debug_overlay && frame && depth_id && current.valid && previous.valid) {
         Overlay(frame);
     }
+    completed_render_size = Ready() ? render_size : std::array<u32,2>{};
     history.EndFrame();
     depth_id = {};
 }
