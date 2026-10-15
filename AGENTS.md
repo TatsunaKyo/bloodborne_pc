@@ -12,3 +12,5 @@ The owner's delivery preference, updated 15 October 2026, is **one ZIP and its m
 - Do not regenerate an already delivered revision solely to change its packaging. Apply this rule to the next requested build, avoiding another redundant saved copy. Existing saved files are not to be deleted without an explicit request.
 
 Validate the final archive's contents, executable/dependency hashes, source identity and checksum before delivery. Include enough recovery information to continue from the saved work without storing a second copy of the same build.
+
+NVIDIA feature DLLs can be loaded dynamically through NGX search paths and do not appear in PE import tables. Preserve both `bin/nvngx_dlss.dll` and `bin/streamline/nvngx_dlss.dll` with matching bytes; Streamline initializes NGX before the separate SR bridge. Run `verify_dlss_search_paths` on the assembled layout. Identical DLL contents at distinct required search paths are not unused optional files. Report compilation, UI/package verification and actual GPU/game execution separately.

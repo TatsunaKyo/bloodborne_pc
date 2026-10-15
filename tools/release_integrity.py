@@ -29,6 +29,19 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def verify_dlss_search_paths(read):
+    """NGX feature loads are dynamic and are absent from PE import tables.
+
+    Streamline initializes NGX before our SR bridge and supplies its plugin
+    directory as a feature path. Keep the same SR runtime at both entry points.
+    """
+    bridge_runtime = read('bin/nvngx_dlss.dll')
+    plugin_runtime = read('bin/streamline/nvngx_dlss.dll')
+    verify_pe(plugin_runtime, 'bin/streamline/nvngx_dlss.dll')
+    require(plugin_runtime == bridge_runtime,
+            'DLSS SR runtimes in bin and bin/streamline disagree')
+
+
 def version_parts(version):
     match = VERSION_RE.fullmatch(version) if isinstance(version, str) else None
     require(match, 'Invalid TatsunaKyo Windows version')
@@ -195,12 +208,19 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
                 verify_pe(data, name)
         for name in DATA: read(name)
         for name in RUNTIMES: verify_pe(read(name), name)
+        # Preserve historical package-reading support, but never accept the R39
+        # omission in a new release, even if its self-recorded hashes omit it.
+        if (tuple(map(int, base.split('.'))), revision) >= ((1, 6), 40):
+            verify_dlss_search_paths(read)
         python_dlls = [name for name in names if re.fullmatch(re.escape(root)+r'/_internal/python3\d+\.dll', name)]
         require(len(python_dlls) == 1, 'Expected one versioned Python runtime')
         verify_pe(archive.read(python_dlls[0]), python_dlls[0])
         runtimes = identity.get('runtime_files')
         if runtimes is not None:
             require(isinstance(runtimes, dict) and set(RUNTIMES).issubset(runtimes), 'Missing runtime provenance')
+            if (tuple(map(int, base.split('.'))), revision) >= ((1, 6), 40):
+                require('bin/streamline/nvngx_dlss.dll' in runtimes,
+                        'Missing dynamic DLSS runtime provenance')
             for name, expected in runtimes.items():
                 safe_member(name)
                 require(hashlib.sha256(read(name)).hexdigest() == expected, 'Runtime checksum mismatch: '+name)

@@ -164,7 +164,7 @@ void Dlss::AppendDeviceExtensions(vk::Instance instance, vk::PhysicalDevice phys
     u32 count{};
     const VkExtensionProperties* required{};
     if (!impl->api->DeviceExtensions(instance, physical, &count, &required)) {
-        return impl->Disable("this GPU or driver does not support DLSS (GeForce RTX needed)");
+        return impl->Disable("NVIDIA DLSS feature discovery failed; see last_run.log for the NGX error");
     }
     const auto [result, extensions] = physical.enumerateDeviceExtensionProperties();
     if (result != vk::Result::eSuccess ||
@@ -182,7 +182,7 @@ void Dlss::Initialize(vk::Instance instance, vk::PhysicalDevice physical, vk::De
     if (!impl->api->Initialize(instance, physical, device,
                                VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
                                VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr)) {
-        return impl->Disable("NVIDIA NGX initialization failed (update the GPU driver)");
+        return impl->Disable("NVIDIA NGX initialization failed; see last_run.log for the NGX error");
     }
     impl->available = true;
     std::printf("DLSS: ready\n");

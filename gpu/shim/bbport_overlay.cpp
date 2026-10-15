@@ -278,14 +278,19 @@ void ImageSettings() {
             ImGui::EndDisabled();
             if (!supported) {
                 ImGui::SameLine();
-                ImGui::TextDisabled("%s", Text("— not supported by this GPU",
-                                         "— не поддерживается видеокартой"));
+                ImGui::TextDisabled("%s", i == BbSettings::UpscalerDlss
+                    ? Text("— unavailable", "— недоступен")
+                    : Text("— not supported by this GPU", "— не поддерживается видеокартой"));
             }
         }
         ImGui::EndCombo();
     }
-    if (const char* problem = s.dlss_problem.load(); problem && upscaler == BbSettings::UpscalerDlss) {
+    // ConfigureDlssSupport switches to FSR on failure. Keep the reason visible
+    // after that fallback instead of incorrectly blaming the selected GPU.
+    if (const char* problem = s.dlss_problem.load()) {
+        ImGui::PushTextWrapPos();
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "DLSS: %s", problem);
+        ImGui::PopTextWrapPos();
     }
     if (const char* problem=s.xess_problem.load()) ImGui::TextWrapped("XeSS: %s",problem);
     if (const char* problem = s.fsr4_problem.load()) {

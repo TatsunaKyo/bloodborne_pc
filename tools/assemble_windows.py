@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 import urllib.request
 import zipfile
-from release_integrity import checksum, package_name, canonical_tag, validate, require
+from release_integrity import checksum, package_name, canonical_tag, validate, require, verify_dlss_search_paths
 from pe_integrity import PE, system
 from nvidia_fg_runtime import install as install_nvidia_fg
 
@@ -65,9 +65,6 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
             subprocess.run(['llvm-strip','--strip-debug','-o',str(stage/output),str(native/(name+'.exe'))],check=True)
             programs[output]=checksum(stage/output)
         install_nvidia_fg(stage, ROOT)
-        # DLSS SR uses bin/nvngx_dlss.dll through our NGX bridge. Only FG/Reflex/PCL
-        # are requested from Streamline; its second SR runtime is unused.
-        (stage/'bin/streamline/nvngx_dlss.dll').unlink(missing_ok=True)
         (stage/'redist/vc_redist.x64.exe').unlink(missing_ok=True)
         # Use the pinned CLANG64 DLLs selected for this build, including transitive dependencies.
         require(dll_dir is not None, 'Provide the CLANG64 DLL directory for this build')
@@ -89,6 +86,11 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
                 target=stage/'bin'/dll
                 if not target.is_file() and dll in available:
                     shutil.copy2(available[dll],target);pending.append(target)
+        # Streamline initializes process-wide NGX before the DLSS SR bridge.
+        # Its plugin directory is an NGX feature path, so this copy is required
+        # even though SR is called through the bridge rather than sl.dlss.dll.
+        shutil.copy2(stage/'bin/nvngx_dlss.dll', stage/'bin/streamline/nvngx_dlss.dll')
+        verify_dlss_search_paths(lambda name: (stage/name).read_bytes())
         command='@echo off\r\ncd /d "%~dp0"\r\npowershell -NoProfile -Command "$p=Join-Path (Get-Location) \'Bloodborne.exe\'; if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne \''+programs['Bloodborne.exe']+'\') {Write-Error \'Incorrect launcher for TatsunaKyo revision '+revision+'.\'; exit 1}; Start-Process -FilePath $p -WorkingDirectory (Get-Location)"\r\n'
         (stage/'Start-Verified-Launcher.cmd').write_bytes(command.encode('ascii'))
         source_dir=stage/'source';source_dir.mkdir()

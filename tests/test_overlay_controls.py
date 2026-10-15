@@ -162,6 +162,7 @@ bool TrackedInputInt(const char* label,int* value,int step,int fast,ImGuiInputTe
 '''
 id_checks='\n'.join('    assert(ImHashStr('+a+') == ImHashStr('+b+'));' for a,b in pairs if '###' in decode(a))
 main=r'''
+std::string menu_text;
 void Frame(bool log=false) {
     controls.clear(); control_windows.clear(); buttons.clear(); tabs.clear();
     ImGui::NewFrame();
@@ -170,6 +171,7 @@ void Frame(bool log=false) {
     FpsCounter();
     if (log) {
         const std::string content=GImGui->LogBuffer.c_str();
+        menu_text=content;
         assert(content.find("###")==std::string::npos);
         const bool ru=BbSettings::Get().menu_language==BbSettings::MenuRussian;
         assert(content.find(ru ? "Картинка" : "Image")!=std::string::npos);
@@ -212,6 +214,32 @@ void Reveal(const char* key) {
     const auto rect=controls.at(key);
     ImGui::SetScrollFromPosY(window,rect.GetCenter().y-window->Pos.y,0.5f);
     Frame(); Frame();
+}
+void TestDlssFallback() {
+    auto& s=BbSettings::Get();
+    const char* reason="NVIDIA DLSS feature discovery failed; see last_run.log for the NGX error";
+    s.upscaler=BbSettings::UpscalerDlss;
+    BbSettings::ConfigureDlssSupport(false,reason);
+    assert(s.upscaler==BbSettings::UpscalerFsr3 && !s.dlss_supported);
+    for (int language : {BbSettings::MenuEnglish,BbSettings::MenuRussian}) {
+        s.menu_language=language;
+        Reveal("upscaler");
+        Frame(true);
+        assert(menu_text.find(reason)!=std::string::npos);
+        selectables.clear(); Click(controls.at("upscaler").GetCenter()); Frame(true);
+        const auto label=menu_text.find("DLSS (NVIDIA RTX)");
+        assert(label!=std::string::npos);
+        const auto row=menu_text.substr(label,menu_text.find('\n',label)-label);
+        assert(row.find(language==BbSettings::MenuEnglish ? "unavailable" : "недоступен")!=std::string::npos);
+        Click(selectables.at("DLSS (NVIDIA RTX)").GetCenter());
+        assert(s.upscaler==BbSettings::UpscalerFsr3);
+        auto& io=ImGui::GetIO();
+        io.AddKeyEvent(ImGuiKey_Escape,true); Frame();
+        io.AddKeyEvent(ImGuiKey_Escape,false); Frame();
+    }
+    BbSettings::ConfigureDlssSupport(true,nullptr);
+    s.menu_language=BbSettings::MenuEnglish;
+    std::puts("PASS: unavailable DLSS stays disabled, with its reason visible after FSR fallback in both languages.");
 }
 void TestBoolean(const char* key,std::atomic<bool>& value) {
     for (bool desired : {true,false}) {
@@ -835,6 +863,7 @@ int main(int argc,char** argv) {
     }
 
     base_scale=1.0f; io.DisplaySize={1920,1080};
+    TestDlssFallback();
     for (int language : {BbSettings::MenuEnglish,BbSettings::MenuRussian}) {
         s.menu_language=language; s.upscaler=BbSettings::UpscalerFsr3;
         s.fsr4_supported=true; s.fsr411_supported=true;

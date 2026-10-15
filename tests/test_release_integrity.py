@@ -41,13 +41,14 @@ class Releases(unittest.TestCase):
 
     def package(self, version='1.6-tatsunakyo.22', modify=None, extra=None):
         data = {name:pe() for name in integrity.CORE+integrity.RUNTIMES+('_internal/python314.dll',)}
+        data['bin/streamline/nvngx_dlss.dll'] = data['bin/nvngx_dlss.dll']
         data.update({name:b'fixture' for name in integrity.DATA})
         data['source/modified-files/launcher/bbport_launcher_win.py'] = f'VERSION = {version!r}\n'.encode()
         data[f'docs/releases/windows-v{version}.md'] = b'# Workshop revision\n\nI kept the settings shared.\n'
         identity = {'version':version, 'source_commit':'1'*40, 'source_tree':'2'*40,
                     'release_tag':'windows-v'+version, 'channel':'stable',
                     'executables':{name:hashlib.sha256(data[name]).hexdigest() for name in integrity.CORE},
-                    'runtime_files':{name:hashlib.sha256(data[name]).hexdigest() for name in integrity.RUNTIMES+('_internal/python314.dll',)}}
+                    'runtime_files':{name:hashlib.sha256(data[name]).hexdigest() for name in integrity.RUNTIMES+('bin/streamline/nvngx_dlss.dll','_internal/python314.dll')}}
         if modify: modify(identity, data)
         data['BUILD-IDENTITY.json'] = json.dumps(identity).encode()
         path = self.root/integrity.package_name(version)
@@ -95,6 +96,31 @@ class Releases(unittest.TestCase):
                      lambda i,d:d.pop('docs/releases/windows-v1.6-tatsunakyo.22.md')]
         for mutation in mutations:
             with self.subTest(mutation=mutation), self.assertRaises(ValueError): integrity.validate(self.package(modify=mutation))
+
+    def test_new_releases_require_both_ngx_search_paths(self):
+        version = '1.6-tatsunakyo.40'
+        self.assertEqual(integrity.validate(self.package(version))['version'], version)
+        def r39_omission(identity, data):
+            # R39 removed the file AND its recorded hash, so import and hash
+            # checks passed. The search-path contract must reject that layout.
+            data.pop('bin/streamline/nvngx_dlss.dll')
+            identity['runtime_files'].pop('bin/streamline/nvngx_dlss.dll')
+        with self.assertRaisesRegex(ValueError, 'missing bin/streamline/nvngx_dlss.dll'):
+            integrity.validate(self.package(version, modify=r39_omission))
+        # Existing archives remain readable for recovery, without claiming that
+        # the old broken layout is fit for another release.
+        integrity.validate(self.package('1.6-tatsunakyo.39', modify=r39_omission))
+
+    def test_dynamic_dlss_runtime_requires_matching_bytes_and_provenance(self):
+        def mismatch(identity, data):
+            name = 'bin/streamline/nvngx_dlss.dll'
+            data[name] += b'another runtime'
+            identity['runtime_files'][name] = hashlib.sha256(data[name]).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'runtimes in bin and bin/streamline disagree'):
+            integrity.validate(self.package('1.6-tatsunakyo.40', modify=mismatch))
+        with self.assertRaisesRegex(ValueError, 'Missing dynamic DLSS runtime provenance'):
+            integrity.validate(self.package('1.6-tatsunakyo.40', modify=lambda i,d:
+                i['runtime_files'].pop('bin/streamline/nvngx_dlss.dll')))
 
     def test_wrong_binary_architecture_even_with_matching_hash(self):
         def mutation(identity, data):

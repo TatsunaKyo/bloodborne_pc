@@ -1,0 +1,11 @@
+# TatsunaKyo Revision 40 — DLSS runtime packaging hotfix
+
+- Restore `bin/streamline/nvngx_dlss.dll`, removed from Revision 39 as an assumed duplicate of `bin/nvngx_dlss.dll`. Streamline initializes NGX before the separate DLSS Super Resolution bridge and supplies its plugin directory as an NGX feature search path. Both locations now contain the same original NVIDIA SR runtime. This corrects the packaging regression associated with DLSS becoming unavailable on the reported RTX 5070 Ti; confirmation in the game is still needed.
+- Validate both dynamic NGX search paths, matching runtime bytes and recorded hashes before accepting a new package. PE import validation remains in place; it cannot by itself detect these dynamically loaded feature files. Regression tests reproduce R39's omission of both the file and its hash.
+- Show DLSS as **unavailable** when initialization fails, rather than claiming every failure means an unsupported GPU. Keep the failure reason visible in Image after the automatic FSR fallback and direct NGX discovery/initialization errors to `last_run.log`. Genuine runtime support checks remain enabled.
+- Retain R39's texture readback batching, original signed DLSS-G 310.9.16.0 with C/Lite support, FG model reporting, and the optional isolated RTX 20/30 mod. The mod defaults off and does not load on RTX 40/50. R34's flashing correction and R35's pacing/token scheduling are unchanged. The cemetery traversal stutter is still under investigation.
+- One complete ZIP and its SHA256, with required runtime, licenses, source patch and compact recovery inside the ZIP. Replace the program files with this complete build while keeping your game files, saves and settings.
+
+Validation: Windows cross-build, rebuilt launcher bytecode, dynamic runtime path checks, package/source/hash checks, real ImGui failure/fallback controls and compiled launcher UI regressions. Windows game execution and NVIDIA hardware testing were unavailable locally; this release does not claim a hardware-tested DLSS or cemetery result.
+
+Implementation reference: [Streamline v2.14.1 NGX feature paths and initialization](https://github.com/NVIDIA-RTX/Streamline/blob/2122257e0fce486f91b385aa63b9a09b0a34b363/source/plugins/sl.common/commonEntry.cpp).
