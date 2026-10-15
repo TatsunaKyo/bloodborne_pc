@@ -7,6 +7,7 @@
 #include <span>
 #include "common/types.h"
 #include "shader_recompiler/frontend/tessellation.h"
+#include "shader_recompiler/motion_address.h"
 #include "video_core/amdgpu/pixel_format.h"
 #include "video_core/amdgpu/regs_shader.h"
 #include "video_core/amdgpu/regs_vertex.h"
@@ -87,8 +88,8 @@ struct MotionVectors {
     static constexpr u32 Output = 7;            ///< color attachment index
     /// Per-draw parameters (u32x4: store base, load base, vertices per instance, flags) and
     /// the position array (vec4 per vertex; element 0 is scratch), fixed for the session.
-    static inline u64 params_address = 0;
-    static inline u64 positions_address = 0;
+    static inline u64& params_address = MotionAddress::params_address;
+    static inline u64& positions_address = MotionAddress::positions_address;
     static constexpr u32 FlagStore = 1;
     static constexpr u32 FlagLoad = 2;
     static constexpr u32 FlagBoundedWorld = 4;

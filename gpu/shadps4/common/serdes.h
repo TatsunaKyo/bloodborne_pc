@@ -84,8 +84,11 @@ struct Writer {
     if (!size) {
       return;
     }
-    if (ar.offset + size >= ar.container.size()) {
-      ar.Grow(size);
+    // Fetch-shader records reserve their fixed fields up front. Grow only by
+    // the missing bytes: growing a whole write left an unused tail, which the
+    // metadata reader correctly rejected as an incomplete round trip.
+    if (size > ar.RemainingBytes()) {
+      ar.Grow(size - ar.RemainingBytes());
     }
     std::memcpy(ar.CurrPtr(), reinterpret_cast<const void *>(ptr), size);
     ar.Advance(size);

@@ -79,9 +79,14 @@ def validate_patch_requirements(names, game):
 
 def effect_patches(settings):
     names=[]
+    # Temporal reconstruction consumes the unfiltered scene. Keep the user's
+    # native-AA preference for an upscaler-off launch, without prefiltering DLSS,
+    # FSR, XeSS or our temporal AA through the game's spatial AA first.
+    temporal = settings.get('upscaler', 'fsr3') in ('fsr3', 'fsr4', 'fsr411', 'dlss', 'xess', 'taa')
     for key,(off,on) in EFFECTS.items():
-        if key not in settings: continue
-        name=on if settings[key]=='1' else off
+        value = '0' if key == 'effect_game_aa' and temporal else settings.get(key)
+        if value is None: continue
+        name=on if value=='1' else off
         if name: names.append(name)
     # Enemy Control and the free camera use the same buttons: the free camera wins.
     if 'Enemy Control' in names and 'Restore Debug Camera' in names:

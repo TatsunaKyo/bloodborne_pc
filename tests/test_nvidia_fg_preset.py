@@ -84,7 +84,7 @@ class PresetTests(unittest.TestCase):
         self.db.settings = {123: 456, fg.ENABLE: 0, fg.PRESET: 27}
         for index, preset in enumerate('abc', 1):
             self.assertIn('waiting for runtime confirmation', self.apply(preset))
-            self.assertEqual(self.db.settings, {123: 456, fg.ENABLE: 1, fg.PRESET: index})
+            self.assertEqual(self.db.settings, {123: 456, fg.ENABLE: 0, fg.PRESET: index})
         self.assertEqual(self.db.opens, 6)
         self.assertIn('restored', self.apply('default'))
         self.assertEqual(self.db.settings, {123: 456, fg.ENABLE: 0, fg.PRESET: 27})
@@ -92,7 +92,7 @@ class PresetTests(unittest.TestCase):
 
     def test_restore_inherited_settings_by_removing_own_override(self):
         self.apply('c')
-        self.assertEqual(self.db.settings, {fg.ENABLE: 1, fg.PRESET: 3})
+        self.assertEqual(self.db.settings, {fg.ENABLE: 0, fg.PRESET: 3})
         self.apply('default')
         self.assertEqual(self.db.settings, {})
 
@@ -100,6 +100,27 @@ class PresetTests(unittest.TestCase):
         self.apply('b')
         self.apply('b')
         self.assertEqual(self.db.saves, 1)
+
+    def test_revision41_owned_dll_replacement_migrates_without_losing_original(self):
+        self.apply('c')
+        path = self.journal()
+        journal = json.loads(path.read_text())
+        journal['applied'][str(fg.ENABLE)] = 1
+        path.write_text(json.dumps(journal))
+        self.db.settings[fg.ENABLE] = 1
+        self.apply('c')
+        self.assertEqual(self.db.settings, {fg.ENABLE: 0, fg.PRESET: 3})
+        self.assertEqual(json.loads(path.read_text())['original'], journal['original'])
+        self.apply('default')
+        self.assertEqual(self.db.settings, {})
+
+    def test_default_restores_preexisting_driver_dll_replacement(self):
+        self.db.exists = True
+        self.db.settings = {fg.ENABLE: 1, fg.PRESET: 2}
+        self.apply('c')
+        self.assertEqual(self.db.settings, {fg.ENABLE: 0, fg.PRESET: 3})
+        self.apply('default')
+        self.assertEqual(self.db.settings, {fg.ENABLE: 1, fg.PRESET: 2})
 
     def test_interruption_before_and_after_driver_commit(self):
         for point in ('before', 'after'):

@@ -28,6 +28,17 @@ def immediate(writes, address):
 
 
 class NativeUiTests(unittest.TestCase):
+    def test_temporal_reconstruction_skips_native_aa_without_changing_preference(self):
+        for provider in ('fsr3', 'fsr4', 'fsr411', 'dlss', 'xess', 'taa'):
+            for preference in ('0', '1'):
+                settings = {'upscaler': provider, 'effect_game_aa': preference}
+                before = dict(settings)
+                self.assertIn('Disable AA', effect_patches(settings))
+                self.assertEqual(settings, before)
+        self.assertIn('Disable AA', effect_patches({}))
+        self.assertNotIn('Disable AA', effect_patches({'upscaler': 'off', 'effect_game_aa': '1'}))
+        self.assertIn('Disable AA', effect_patches({'upscaler': 'off', 'effect_game_aa': '0'}))
+
     def test_xess_uses_all_seven_modern_ratios_and_keeps_ui_native(self):
         inputs = ((1920, 1080), (1476, 830), (1280, 720), (1130, 636),
                   (960, 540), (834, 470), (640, 360))
@@ -135,7 +146,7 @@ class NativeUiTests(unittest.TestCase):
 
 class DebugPatchTests(unittest.TestCase):
     def test_camera_patch_is_optional_and_compatible_with_fps_and_debug_menu(self):
-        self.assertEqual(effect_patches({'debug_camera': '0', 'debug_menu': '0'}), [])
+        self.assertEqual(effect_patches({'upscaler': 'off', 'debug_camera': '0', 'debug_menu': '0'}), [])
         camera = effect_patches({'debug_camera': '1'})
         writes = compile_patches(XML, camera, '01.09', SEGMENTS)
         self.assertGreater(len(writes), 0)

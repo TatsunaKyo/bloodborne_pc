@@ -1483,8 +1483,8 @@ class Launcher:
                    'Нужны совместимые GPU, драйвер и планирование GPU с аппаратным ускорением. Работают только поддерживаемые GPU множители. Поддерживаются SDR и HDR10.'))
         self.nvidia_fg_preset_row = self.row(f, _('NVIDIA FG preset', 'Пресет NVIDIA FG'),
                  self.choice(f, 'nvidia_fg_preset', 'menu', NVIDIA_FG_PRESETS),
-                 _('Applied before the next launch through this installation\'s NVIDIA profile. Default restores the previous settings. C/Lite needs DLSS-G 310.9.16, included in this revision. The driver must accept the model for this process; see the detected model and exact errors under Frames in-game.',
-                   'Применяется перед следующим запуском через профиль этой установки. Default возвращает прежние настройки. Обновления среды NVIDIA включены. Данные драйвера и ошибки доступны в Frames в игре.'))
+                 _('Applied before the next launch using the included NVIDIA runtime. Selecting a model disables driver DLL replacement for this installation; Default restores the previous settings. C/Lite needs DLSS-G 310.9.16, included here. The driver must accept the model for this process; see the detected model and exact errors under Frames in-game.',
+                   'Применяется перед следующим запуском с включённой средой NVIDIA. Выбор модели отключает замену DLL драйвером для этой установки; Default возвращает прежние настройки. Данные драйвера и ошибки доступны в Frames в игре.'))
         self.check(f, 'nvidia_fg_mod', 'menu',
                    _('DLSSG mod for RTX 20/30 (experimental)', 'Мод DLSSG для RTX 20/30 (экспериментальный)'),
                    _('Requires restart and NVIDIA FG. Downloads the pinned RTX Encore provider once, only for the selected RTX 20/30. Vulkan support is experimental. RTX 40/50 always keep the original NVIDIA path. A supplied bin/mods/dlssg/dlssg_sm86.dll takes precedence.',
@@ -1593,6 +1593,8 @@ class Launcher:
                  _('A game patch (game version 1.09).', 'Патч игры (версия 1.09).'))
         for key, title, _on in EFFECTS:
             self.check(f, key, 'ini', _(*title))
+        self.note(f, _('The game\'s AA preference is used with the upscaler off. Temporal upscalers use their own AA. Switching between Off and a temporal upscaler requires a restart to apply this game patch.',
+                       'Собственное сглаживание игры используется без апскейлера. Временные апскейлеры используют своё сглаживание. Для переключения между Off и временным апскейлером нужен перезапуск.'))
         f = self.settings_section(page, _('Camera & gameplay extras', 'Камера и игровой процесс'))
         for key, title, _on in EXTRAS:
             self.check(f, key, 'ini', _(*title))

@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 import tempfile
 
+# This enables driver DLL replacement, not model selection. The included FG
+# runtime supports its own presets; replacing it is a separate NVIDIA setting.
 ENABLE = 0x10E41E03
 PRESET = 0x10E41DF1
 KEYS = (ENABLE, PRESET)
@@ -209,7 +211,7 @@ def apply(preset, executable, store, driver_factory=Driver):
                 owned = [v[key] for f in ('original', 'applied', 'pending') if (v := journal.get(f)) is not None]
                 if value not in owned:
                     raise ProfileError('NVIDIA FG settings changed outside the launcher; no settings were overwritten and the backup was kept')
-        target = journal['original'] if preset == 'default' else {str(ENABLE): 1, str(PRESET): ord(preset) - ord('a') + 1}
+        target = journal['original'] if preset == 'default' else {str(ENABLE): 0, str(PRESET): ord(preset) - ord('a') + 1}
         if current != target:
             journal['pending'] = target
             # A recoverable backup must reach disk before SaveSettings can change DRS.
@@ -228,7 +230,7 @@ def apply(preset, executable, store, driver_factory=Driver):
             return 'NVIDIA FG preset: previous per-game NVIDIA settings restored.'
         journal['applied'], journal['pending'] = target, None
         write_journal(path, journal)
-        return f'NVIDIA FG preset: {preset.upper()} saved to this installation\'s driver profile; waiting for runtime confirmation.'
+        return f'NVIDIA FG preset: {preset.upper()} saved to this installation\'s driver profile, driver DLL replacement off (application runtime); waiting for runtime confirmation.'
     finally:
         driver.close()
 

@@ -14,7 +14,7 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 10u; // separate verified-world motion confidence from actor/weapon history
+static constexpr u32 ShaderBinaryVersion = 11u; // portable vertex-motion buffer-address relocations
 static constexpr u32 ShaderMetaVersion = 7u; // bbport: ImageResource::needs_native
 static constexpr u32 PipelineKeyVersion = 5u; // bbport: Info layout (ImageResource::needs_native)
 } // namespace Serialization
@@ -123,9 +123,10 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
         throw Serialization::ReadError("Invalid shader metadata or permutation index");
     }
 
-    // Motion vertex shaders embed session-local buffer device addresses. They must be
-    // recompiled for the current allocation, never loaded from a previous process.
-    if (info.hw_stage == Shader::HwStage::Vertex && spec.runtime_info.hw.vs.motion_vectors) {
+    // Portable motion binaries are linked to live buffers at module creation.
+    // Warm-up must follow ObjectMotion's allocations, never bind absent buffers.
+    if (info.hw_stage == Shader::HwStage::Vertex && spec.runtime_info.hw.vs.motion_vectors &&
+        (!Shader::MotionVectors::params_address || !Shader::MotionVectors::positions_address)) {
         return false;
     }
 

@@ -854,6 +854,8 @@ void AdvancedSettings() {
 void EffectSettings() {
     auto& s = BbSettings::Get();
     Section(Text("Game effects (restart required)", "Эффекты игры (после перезапуска)"));
+    Hint(Text("The game's AA preference is used with the upscaler off. Temporal upscalers use their own AA. Switching between Off and a temporal upscaler requires a restart.",
+              "Собственное сглаживание игры используется без апскейлера. Временные апскейлеры используют своё сглаживание. Для переключения между Off и временным апскейлером нужен перезапуск."));
     const char* lods[] = {
         Text("Highest (-2)###lod_highest", "Максимальная (-2)###lod_highest"),
         Text("Game default###lod_default", "Как в игре###lod_default"),
@@ -1000,6 +1002,7 @@ void Menu() {
     }
     ImGui::Separator();
     bool restart = s.object_motion != s.startup_object_motion ||
+                   ((s.upscaler == BbSettings::UpscalerOff) != (s.startup_upscaler == BbSettings::UpscalerOff)) ||
                    s.nvidia_fg_mod != s.startup_nvidia_fg_mod ||
                    s.nvidia_fg_preset != s.startup_nvidia_fg_preset ||
                    s.model_lod != s.startup_model_lod ||
