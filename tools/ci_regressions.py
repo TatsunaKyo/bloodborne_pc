@@ -40,6 +40,7 @@ def main():
     run([sys.executable,'tests/test_present_queue_scope.py'])
     run([sys.executable,'tests/test_swapchain_recovery.py'])
     run([sys.executable,'tests/test_cpu_integrations.py'])
+    run([sys.executable,'tests/test_streaming_write_prepare.py'])
     run([sys.executable,'tests/test_window_focus.py'])
     run([sys.executable,'tests/test_audio_background.py'])
     run([sys.executable,'tests/test_submit_wait_stages.py'])

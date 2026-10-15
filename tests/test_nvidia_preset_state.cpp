@@ -25,6 +25,34 @@ int main() {
     state.frame_preset=4;assert(Reported(state)==-1);
     assert(BbSettings::ParseNvidiaFgPreset("M")==0);
     assert(BbSettings::ParseNvidiaFgPreset("3")==0);
+    // Current V2 and old V1 drivers must agree. Only -9 permits an ABI retry;
+    // never hide a real API failure by issuing another query.
+    int queries=0;
+    auto modern=[&](void* data) {
+        ++queries;auto& v=*static_cast<DriverStateV2*>(data);
+        assert(v.version==(sizeof(v)|(2u<<16)) && v.process==777);
+        v.fg=complete;v.frame_preset=3;return 0;
+    };
+    assert(ReadState(modern,777,state)==0 && Reported(state)==3 && queries==1);
+    queries=0;
+    auto legacy=[&](void* data) {
+        ++queries;auto version=*static_cast<uint32_t*>(data);
+        if ((version>>16)==2) return -9;
+        auto& v=*static_cast<DriverState*>(data);
+        assert(v.version==(sizeof(v)|(1u<<16)) && v.process==777);
+        v.fg=complete;v.frame_preset=2;return 0;
+    };
+    assert(ReadState(legacy,777,state)==0 && Reported(state)==2 && queries==2);
+    queries=0;
+    auto failure=[&](void*) {++queries;return -1;};
+    assert(ReadState(failure,777,state)==-1 && queries==1 && state.fg==0);
+    char label[64];
+    FormatLabel(label,sizeof(label),true,3,2,0);assert(std::string(label)=="FG model:C");
+    FormatLabel(label,sizeof(label),true,-1,3,0);assert(std::string(label)=="FG model:C?");
+    FormatLabel(label,sizeof(label),true,-1,3,1ull<<19);assert(std::string(label)=="FG model:C!");
+    FormatLabel(label,sizeof(label),true,-1,-1,0);assert(std::string(label)=="FG model:?");
+    FormatLabel(label,sizeof(label),false,3,3,0);assert(std::string(label)=="FG model:off");
+    assert(std::string(ErrorName(1ull<<19))=="runtime/model not found");
     // A blocked driver query runs on the observer, not the caller/Present thread.
     using namespace std::chrono_literals;
     Observer observer;

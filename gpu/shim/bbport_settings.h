@@ -79,6 +79,8 @@ struct Values {
     // Driver profile choice, applied by run.py before the next renderer process starts.
     std::atomic<int> nvidia_fg_preset{0}, nvidia_fg_reported_preset{-1};
     std::atomic<int> nvidia_fg_preset_status{0}; // 0 unknown, 1 driver confirms, 2 driver error
+    std::atomic<int> nvidia_fg_profile_preset{-1}, nvidia_fg_query_result{0};
+    std::atomic<uint64_t> nvidia_fg_feedback{0};
     int startup_nvidia_fg_preset = 0;
     std::atomic<bool> amd_antilag{false}, amd_antilag_supported{false};
     // -1 keeps the startup/display policy, 0 removes the real-frame cap.
@@ -108,7 +110,7 @@ struct Values {
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
     std::atomic<bool> show_fps{false};
-    std::atomic<bool> show_dlss_preset{false};
+    std::atomic<bool> show_dlss_preset{false}, show_fg_preset{false};
     std::atomic<bool> show_resolution{false};
     std::atomic<bool> show_frame_generation{false}, show_latency{false};
     std::atomic<bool> show_frametime_graph{false};

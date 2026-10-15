@@ -3,6 +3,7 @@
 // TatsunaKyo revision. NVIDIA API declarations retain their original license.
 #include "bbport_nvidia.h"
 #include "bbport_nvidia_preset.h"
+#include "bbport_nvidia_profile.h"
 #include "bbport_settings.h"
 #include "bbport_background.h"
 #include "bbport_latency.h"
@@ -68,16 +69,20 @@ BbFrameMetrics::Counter frame_metrics;
 HMODULE nvapi_module{};
 using NvapiQuery=void* (__cdecl*)(uint32_t);
 using NvapiInitialize=int (__cdecl*)();
-using NvapiGetOverride=int (__cdecl*)(Preset::DriverState*);
+using NvapiGetOverride=int (__cdecl*)(void*);
 NvapiGetOverride get_override{};
+NvapiQuery nvapi_query{};
+unsigned profile_poll{};
 NvapiInitialize nvapi_unload{};
 bool nvapi_attempted{};
 Preset::Observer preset_observer;
 void UpdatePreset() {
     auto& s=BbSettings::Get();
-    if (s.frame_generation!=BbSettings::FrameGenerationNvidia || s.frame_generation_active<=1) {
-        s.nvidia_fg_reported_preset=-1;s.nvidia_fg_preset_status=0;return;
+    if (s.frame_generation!=BbSettings::FrameGenerationNvidia) {
+        s.nvidia_fg_reported_preset=-1;s.nvidia_fg_preset_status=0;s.nvidia_fg_feedback=0;return;
     }
+    // Keep observing initialization failures too; a failed model must not hide
+    // its driver error merely because it never reached an active multiplier.
     if (!nvapi_attempted) {
         nvapi_attempted=true;
         nvapi_module=LoadLibraryExW(L"nvapi64.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -85,20 +90,27 @@ void UpdatePreset() {
         const auto init=query ? reinterpret_cast<NvapiInitialize>(query(0x0150e828)) : nullptr;
         const auto unload=query ? reinterpret_cast<NvapiInitialize>(query(0xd22bdd7e)) : nullptr;
         if (init && unload && init()==0) {
-            nvapi_unload=unload;
+            nvapi_unload=unload;nvapi_query=query;
             get_override=reinterpret_cast<NvapiGetOverride>(query(0x3fd96fba));
         }
     }
+    if (nvapi_query && profile_poll++%10==0) {
+        const int profile=Preset::Drs::ReadPreset(nvapi_query);
+        if (s.nvidia_fg_profile_preset!=profile)
+            std::printf("NVIDIA FG profile preference: preset=%d (configuration only)\n",profile);
+        s.nvidia_fg_profile_preset=profile;
+    }
     if (!get_override) return;
     Preset::DriverState state{};
-    state.version=uint32_t(sizeof(state))|(1u<<16);
-    state.process=GetCurrentProcessId();
-    const int result=get_override(&state);
-    const int reported=result==0 ? Preset::Reported(state) : -1;
+    const int result=Preset::ReadState(get_override,GetCurrentProcessId(),state);
+    const int reported=result==0 && s.frame_generation_active>1 ? Preset::Reported(state) : -1;
     const int status=result==0 && (state.fg&Preset::ErrorMask) ? 2 : reported>=0 ? 1 : 0;
-    if (s.nvidia_fg_reported_preset!=reported || s.nvidia_fg_preset_status!=status)
+    if (s.nvidia_fg_reported_preset!=reported || s.nvidia_fg_preset_status!=status ||
+        s.nvidia_fg_query_result!=result || s.nvidia_fg_feedback!=state.fg)
         std::printf("NVIDIA FG driver feedback: preset=%d, status=%d, flags=0x%llx, API=%d\n",
                     reported,status,static_cast<unsigned long long>(state.fg),result);
+    s.nvidia_fg_feedback=result==0 ? state.fg : 0;
+    s.nvidia_fg_query_result=result;
     s.nvidia_fg_reported_preset=reported;s.nvidia_fg_preset_status=status;
 }
 template<class T> bool Import(T*& target, const char* name) {
@@ -260,7 +272,8 @@ void* VulkanLoader(void* native) {
     pref.pathsToPlugins=paths;pref.numPathsToPlugins=1;
     pref.featuresToLoad=features;pref.numFeaturesToLoad=3;
     pref.flags=sl::PreferenceFlags::eUseManualHooking|sl::PreferenceFlags::eDisableCLStateTracking|
-               sl::PreferenceFlags::eUseFrameBasedResourceTagging;
+               sl::PreferenceFlags::eUseFrameBasedResourceTagging|
+               sl::PreferenceFlags::eAllowOTA|sl::PreferenceFlags::eLoadDownloadedPlugins;
     pref.renderAPI=sl::RenderAPI::eVulkan;pref.engineVersion="bbport-TatsunaKyo";
     pref.projectId="42359704-c9f3-4806-9fb5-d469000fdb8a";pref.logMessageCallback=Log;
     const auto result=init(pref,sl::kSDKVersion);
@@ -269,7 +282,7 @@ void* VulkanLoader(void* native) {
         std::printf("NVIDIA Streamline init failed (%u); native Vulkan retained.\n",unsigned(result));
         if (result==sl::Result::eOk) shutdown_api();return native;
     }
-    initialized=true;std::puts("NVIDIA Streamline 2.14.1: Vulkan manual hooks initialized.");return reinterpret_cast<void*>(proc);
+    initialized=true;std::puts("NVIDIA Streamline 2.14.1: Vulkan manual hooks initialized; NVIDIA OTA updates and updated plugin loading enabled.");return reinterpret_cast<void*>(proc);
 }
 void BindDevice(vk::PhysicalDevice physical,vk::Device dev) {
     if (!initialized) return;

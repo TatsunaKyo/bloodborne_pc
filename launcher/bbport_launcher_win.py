@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.37'
+VERSION = '1.6-tatsunakyo.38'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -186,13 +186,13 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'online_community': COMMUNITY_SERVER, 'save_auto_backup': True, 'save_backup_retention': 10}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'xess_preset': '2', 'show_fps': '1', 'show_dlss_preset': '0',
-                 'show_resolution': '0', 'show_frame_generation': '0', 'show_latency': '0', 'show_frametime_graph': '0',
+                 'show_resolution': '0', 'show_fg_preset': '0', 'show_frame_generation': '0', 'show_latency': '0', 'show_frametime_graph': '0',
                  'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1', 'nvidia_fg_preset': 'default',
                  'amd_antilag': '0', 'real_fps_limit': '-1',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
                  'cheat_infinite_stamina': '0', 'cheat_no_consume': '0', 'cheat_no_fall_damage': '0'}
 MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution',
-              'show_frame_generation', 'show_latency', 'show_frametime_graph',
+              'show_frame_generation', 'show_fg_preset', 'show_latency', 'show_frametime_graph',
               'cheat_infinite_stamina', 'cheat_no_consume', 'cheat_no_fall_damage', 'limit_generated_fps', 'amd_antilag'}
 CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
 MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
@@ -1483,8 +1483,8 @@ class Launcher:
                    'Нужны совместимые GPU, драйвер и планирование GPU с аппаратным ускорением. Работают только поддерживаемые GPU множители. Поддерживаются SDR и HDR10.'))
         self.nvidia_fg_preset_row = self.row(f, _('NVIDIA FG preset', 'Пресет NVIDIA FG'),
                  self.choice(f, 'nvidia_fg_preset', 'menu', NVIDIA_FG_PRESETS),
-                 _('Applied before the next launch through this installation\'s NVIDIA profile. Default restores the previous settings. C needs NVIDIA\'s updated beta runtime; choosing it does not install that runtime. Check driver confirmation under Frames in-game.',
-                   'Применяется перед следующим запуском через профиль этой установки. Default возвращает прежние настройки. Для C нужна новая бета-среда NVIDIA. Подтверждение драйвера доступно в Frames в игре.'))
+                 _('Applied before the next launch through this installation\'s NVIDIA profile. Default restores the previous settings. NVIDIA runtime updates are enabled. The driver must accept the model for this process; see the detected model and exact errors under Frames in-game.',
+                   'Применяется перед следующим запуском через профиль этой установки. Default возвращает прежние настройки. Обновления среды NVIDIA включены. Данные драйвера и ошибки доступны в Frames в игре.'))
         def fg_preset_visibility(*_args):
             self.show_row(self.nvidia_fg_preset_row, self.var('frame_generation', 'menu').get() == 'nvidia')
         self.var('frame_generation', 'menu').trace_add('write', fg_preset_visibility)
@@ -1564,6 +1564,10 @@ class Launcher:
                    _('Show Frame Generation in overlay', 'Показывать генерацию кадров в статистике'),
                    _('Show whether FG is active and its current multiplier on the same line.',
                      'Состояние генерации кадров и текущий множитель в той же строке.'))
+        self.check(f, 'show_fg_preset', 'menu',
+                   _('Show NVIDIA FG preset in overlay', 'Показывать пресет NVIDIA FG в статистике'),
+                   _('FG model:C means NVIDIA confirms C. C? is a driver profile preference awaiting confirmation; C! means an override error. Independent of the DLSS upscaling preset.',
+                     'FG model:C: NVIDIA подтверждает C. C?: значение профиля без подтверждения. C!: ошибка. Отдельно от пресета апскейлера DLSS.'))
         self.check(f, 'show_latency', 'menu',
                    _('Show PC latency in overlay', 'Показывать задержку ПК в статистике'),
                    _('Measured by NVIDIA Reflex, from simulation start to GPU completion. N/A means the driver has no valid sample. This excludes monitor and input-device latency.',

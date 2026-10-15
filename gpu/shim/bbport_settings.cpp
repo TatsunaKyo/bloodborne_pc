@@ -143,6 +143,7 @@ void Load() {
     v.dlss_preset = 0;
     v.show_fps = false;
     v.show_dlss_preset = false;
+    v.show_fg_preset = false;
     v.show_resolution = false;
     v.show_frame_generation = false;
     v.show_latency = false;
@@ -202,6 +203,8 @@ void Load() {
                 v.show_fps = value == "1";
             } else if (key == "show_dlss_preset") {
                 v.show_dlss_preset = value == "1";
+            } else if (key == "show_fg_preset") {
+                v.show_fg_preset = value == "1";
             } else if (key == "show_frame_generation") {
                 v.show_frame_generation = value == "1";
             } else if (key == "show_latency") {
@@ -387,6 +390,7 @@ void Save() {
                      int(v.limit_generated_fps.load()),v.generated_fps_limit.load());
         std::fprintf(file,"show_frame_generation=%d\nshow_latency=%d\n",
                      int(v.show_frame_generation.load()),int(v.show_latency.load()));
+        std::fprintf(file,"show_fg_preset=%d\n",int(v.show_fg_preset.load()));
         std::fprintf(file,"show_frametime_graph=%d\n",int(v.show_frametime_graph.load()));
         std::fprintf(file, "cheat_damage=%s\ncheat_incoming=%s\ncheat_echoes=%s\ncheat_movement=%s\n"
                           "cheat_infinite_stamina=%d\ncheat_no_consume=%d\n",

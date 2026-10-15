@@ -55,6 +55,7 @@ prefix=r'''#include <algorithm>
 #include <map>
 #include <mutex>
 #include "bbport_settings.h"
+#include "bbport_nvidia_preset.h"
 #include "bbport_frametime.h"
 #include "bbcheats.h"
 #include "imgui.h"
@@ -333,6 +334,7 @@ void TestNvidiaControls() {
     }
     TestBoolean("limit_generated_fps",s.limit_generated_fps);
     TestBoolean("show_frame_generation",s.show_frame_generation);
+    TestBoolean("show_fg_preset",s.show_fg_preset);
     TestBoolean("show_latency",s.show_latency);
     s.limit_generated_fps=true;s.generated_fps_limit=130;
     Reveal("generated_fps_limit");auto rect=controls.at("generated_fps_limit");
@@ -720,6 +722,19 @@ int main(int argc,char** argv) {
     assert(std::count(osd.begin(),osd.end(),'\n')==original_rows);
     if(ImGui::FindWindowByName("##fps")->Size.x>521) std::fprintf(stderr,"Expanded OSD width %.1f, font %.1f, text: %s\n",ImGui::FindWindowByName("##fps")->Size.x,ImGui::GetFontSize(),osd.c_str());
     assert(ImGui::FindWindowByName("##fps")->Size.x<=521);
+    s.show_fg_preset=true;s.nvidia_fg_reported_preset=3;s.nvidia_fg_profile_preset=3;
+    s.nvidia_fg_feedback=BbNvidia::Preset::PresetFlag|BbNvidia::Preset::Created|BbNvidia::Preset::Evaluated;
+    osd=OsdFrame();OsdFrame();OsdFrame();
+    assert(osd.find("FG model:C")!=std::string::npos && osd.find("C?")==std::string::npos);
+    s.nvidia_fg_reported_preset=-1;s.nvidia_fg_feedback=0;
+    assert(OsdFrame().find("FG model:C?")!=std::string::npos);
+    s.nvidia_fg_feedback=1ull<<19;
+    assert(OsdFrame().find("FG model:C!")!=std::string::npos);
+    // The model field works without the multiplier field, and survives save/reload.
+    s.show_frame_generation=false;BbSettings::Save();s.show_fg_preset=false;BbSettings::Load();
+    assert(s.show_fg_preset);s.frame_generation_active=2;
+    osd=OsdFrame();assert(osd.find("FG model:C!")!=std::string::npos && osd.find("FG:NV")==std::string::npos);
+    s.show_fg_preset=false;s.show_frame_generation=true;s.nvidia_fg_feedback=0;
     s.nvidia_output_fps=150;s.frame_generation_active=1;
     osd=OsdFrame();assert(osd.find("150fps")==std::string::npos); // Requested FG is never reported as active.
     s.pc_latency_ms=-1;osd=OsdFrame();assert(osd.find("PC:N/A")!=std::string::npos);

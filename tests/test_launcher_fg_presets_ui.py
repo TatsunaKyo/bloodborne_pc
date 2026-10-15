@@ -70,6 +70,18 @@ with tempfile.TemporaryDirectory(prefix='bbport-fg-preset-ui-') as directory:
                     obj.collect()
                     assert launcher.load_menu()['nvidia_fg_preset'] == key
                     checks += 1
+                obj.show('overlay');root.update()
+                pending=[obj.pages['overlay']];toggles=[]
+                while pending:
+                    widget=pending.pop();pending.extend(widget.winfo_children())
+                    if isinstance(widget,ttk.Checkbutton) and str(widget.cget('variable'))==str(obj.vars['show_fg_preset']):
+                        toggles.append(widget)
+                assert len(toggles)==1
+                for _ in range(2):
+                    before=obj.vars['show_fg_preset'].get();toggles[0].invoke();root.update();obj.collect()
+                    assert bool(obj.vars['show_fg_preset'].get()) != bool(before)
+                    assert launcher.load_menu()['show_fg_preset']==('0' if before else '1')
+                    assert launcher.load_menu()['nvidia_fg_preset']==key
                 # No hidden-row reuse: following controls occupy distinct grid rows.
                 parent = box.master
                 rows = [int(w.grid_info()['row']) for w in parent.winfo_children()
@@ -78,4 +90,4 @@ with tempfile.TemporaryDirectory(prefix='bbport-fg-preset-ui-') as directory:
             finally:
                 obj.closing = True
                 root.destroy()
-print(f'PASS: {checks} actual NVIDIA FG preset popup selections, both languages, 100/150/200%, conditional rows and persisted choices.')
+print(f'PASS: {checks} actual NVIDIA FG preset popup selections, both languages, 100/150/200%, conditional rows and persisted choices; 12 independent FG model OSD toggle/save operations.')

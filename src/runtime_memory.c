@@ -727,6 +727,37 @@ void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalid
     write_unlock();
     flush_hooks();
 }
+/* File reads overwrite known contiguous spans. Notify the existing GPU tracking
+ * path in bounded ranges before asking the OS to write, rather than discovering
+ * every tracked texture page through a separate protection fault. Keep the
+ * page touches in runtime_file.c as a fallback (partial GPU mappings, races).
+ * Do not hold the VMA lock while the renderer drains uploads or GPU readbacks. */
+void runtime_memory_prepare_io_write(uintptr_t address, uint64_t size) {
+    if (!hook_invalidate || size < 64*1024 || address < USER_MIN ||
+        address >= USER_MAX || size > USER_MAX-address) return;
+    while (size) {
+        uint64_t chunk = size > 1024*1024 ? 1024*1024 : size;
+#ifdef _WIN32
+        /* Ordinary CPU staging buffers need no GPU synchronization. Windows
+         * coalesces equal protections, so a writable multi-MiB span costs one
+         * query and no draw-pipe drain. Protected spans retain the usual path. */
+        MEMORY_BASIC_INFORMATION info;
+        if (!VirtualQuery((void *)address,&info,sizeof(info)) || info.State!=MEM_COMMIT) return;
+        uintptr_t end=(uintptr_t)info.BaseAddress+info.RegionSize;
+        if (end<=address) return;
+        uint64_t span=end-address;
+        if (span>size) span=size;
+        DWORD access=info.Protect&0xff;
+        if (!(info.Protect&PAGE_GUARD) && (access==PAGE_READWRITE || access==PAGE_WRITECOPY ||
+            access==PAGE_EXECUTE_READWRITE || access==PAGE_EXECUTE_WRITECOPY)) {
+            address+=span;size-=span;continue;
+        }
+        if (chunk>span) chunk=span;
+#endif
+        hook_invalidate(address,chunk);
+        address+=chunk;size-=chunk;
+    }
+}
 /* Writes through the backing view; 0 when part of the range has no backing. */
 int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t size) {
     read_lock();

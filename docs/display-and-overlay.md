@@ -53,3 +53,7 @@ With **V-sync in borderless** off, I request Immediate presentation for lower qu
 The foreground policy returns when the window regains focus. FG is suspended during background pause or a background limit. [FG details](frame-generation.md) covers resource ownership and history resets during those transitions.
 
 Pause also stops the audio device and parks new audio output. I keep its queued samples so the music resumes where it stopped, and restart the audio clock when you return. Keep running and the 30/60 FPS modes keep playing audio.
+
+### NVIDIA Frame Generation model
+
+Enable **Show NVIDIA FG preset in overlay** in the launcher's Overlay page or the in-game Overlay tab. The upscaler preset and FG model are independent. `FG model:C` means NVIDIA confirms an evaluated C override. `C?` shows the driver profile preference awaiting execution confirmation, `C!` an override error, and `?` an unknown model. The Frames tab includes the exact driver error and preference. FG off/paused does not claim an active model. The field stays on the existing OSD row and is saved separately.

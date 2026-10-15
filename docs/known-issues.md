@@ -46,3 +46,9 @@ If one of these happens again, report the current revision and reproduction deta
 ## Code review after Revision 25
 
 I corrected the swapchain recovery lock order and synchronized its GPU drain in Revision 26. The updater now verifies the downloaded SHA-256, build identity, binaries, runtimes and Windows archive paths before starting the candidate. These were reproduced at their production code boundaries; they remain separate from the gameplay comparisons above. [Review findings and remaining work](code-review-2026-10-13.md) explains the checks and the next comparisons.
+
+## Revision 38 follow-up
+
+The owner confirms that Revision 37 did **not** remove the repeated cemetery-exit traversal hitch. R38 adds range-based preparation of large file-read destinations through the existing GPU invalidation callback. Reads of at least 64 KiB notify intervals of at most 1 MiB before the existing page touches. Windows skips already writable spans, avoiding GPU synchronization for ordinary CPU staging buffers. This reduces repeated CPU protection faults during asset streaming while retaining readback, dirty tracking, draw/upload ordering and the per-page fallback. It changes neither shader compilation nor resource lifetime fences. A protected-memory regression checks unchanged destination bytes, unaligned buffers, small reads and invalid-range guards. Its reduction in fault count is not a target-gameplay result. The cemetery hitch remains open.
+
+The owner also reports C working in other applications but producing an error here. R38 corrects Streamline's disabled OTA flags and adds process/profile telemetry and exact error categories. Actual C execution and the cemetery route still require the target Windows/NVIDIA comparison; no Linux test establishes either.

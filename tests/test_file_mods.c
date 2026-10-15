@@ -1,5 +1,6 @@
 /* Exercise actual guest file operations on a linked overlay and writable saves. */
 #include "../src/runtime_file.c"
+void runtime_memory_prepare_io_write(uintptr_t address,uint64_t size) {(void)address;(void)size;}
 #include <assert.h>
 static int32_t guest_errno;
 int32_t *runtime_errno(void) { return &guest_errno; }

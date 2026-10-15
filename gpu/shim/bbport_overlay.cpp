@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "bbport_overlay.h"
+#include "bbport_nvidia_preset.h"
 
 #include <algorithm>
 #include <atomic>
@@ -557,12 +558,18 @@ void FrameSettings() {
         if (s.nvidia_fg_preset_status==1)
             ImGui::Text(Text("NVIDIA driver reports FG preset: %s","Драйвер NVIDIA сообщает пресет FG: %s"),
                         BbSettings::NvidiaFgPresetName(s.nvidia_fg_reported_preset));
-        else if (s.nvidia_fg_preset_status==2)
-            Hint(Text("NVIDIA reports an FG override error. The selected preset is not confirmed.",
-                      "NVIDIA сообщает об ошибке переопределения FG. Выбранный пресет не подтверждён."));
-        else
-            Hint(Text("FG preset not confirmed by NVIDIA. C needs the updated NVIDIA beta runtime; choosing it does not install that runtime.",
-                      "Пресет FG не подтверждён NVIDIA. Для C нужна новая бета-среда NVIDIA; выбор C не устанавливает её."));
+        else if (s.nvidia_fg_preset_status==2) {
+            ImGui::TextWrapped("NVIDIA FG: %s (0x%llx).",
+                BbNvidia::Preset::ErrorName(s.nvidia_fg_feedback),
+                static_cast<unsigned long long>(s.nvidia_fg_feedback.load()));
+            Hint(Text("The driver did not confirm the selected FG model. See last_run.log for the profile and runtime result.",
+                      "Драйвер не подтвердил модель FG. Результат профиля и среды — в last_run.log."));
+        } else
+            Hint(Text("FG model not yet confirmed by NVIDIA. Runtime updates are enabled; the driver must accept the override for this process.",
+                      "Модель FG ещё не подтверждена NVIDIA. Обновления среды включены; драйвер должен принять переопределение для этого процесса."));
+        if (s.nvidia_fg_profile_preset>=1)
+            ImGui::Text(Text("Driver profile FG preference: %s","Пресет FG в профиле драйвера: %s"),
+                        BbSettings::NvidiaFgPresetName(s.nvidia_fg_profile_preset));
         const int selected=s.nvidia_generated_frames;
         const std::string preview=std::to_string(selected+1)+"x";
         if (ImGui::BeginCombo(Text("NVIDIA FG multiplier###nvidia_generated_frames","Множитель NVIDIA FG###nvidia_generated_frames"),preview.c_str())) {
@@ -707,6 +714,10 @@ void OverlaySettings() {
               "Текущее разрешение рендера и вывода в той же строке статистики."));
     Checkbox(Text("Show Frame Generation in overlay###show_frame_generation",
                   "Показывать генерацию кадров в статистике###show_frame_generation"),s.show_frame_generation);
+    Checkbox(Text("Show NVIDIA FG preset in overlay###show_fg_preset",
+                  "Показывать пресет NVIDIA FG в статистике###show_fg_preset"),s.show_fg_preset);
+    Hint(Text("FG model:C: NVIDIA confirms C. C?: profile preference, not yet confirmed. C!: override error. Separate from DLSS upscaling.",
+              "FG model:C: NVIDIA подтверждает C. C?: значение профиля без подтверждения. C!: ошибка. Отдельно от апскейлера DLSS."));
     Checkbox(Text("Show PC latency in overlay###show_latency",
                   "Показывать задержку ПК в статистике###show_latency"),s.show_latency);
     Hint(Text("Reflex measures simulation start to GPU completion. N/A means there is no valid driver sample. Monitor and input-device latency are not included.",
@@ -1073,7 +1084,7 @@ void FpsCounter() {
                       s.active_render_width.load(), s.active_render_height.load(),
                       s.active_output_width.load(), s.active_output_height.load());
     } else {
-        if (s.show_frame_generation || s.show_latency)
+        if (s.show_frame_generation || s.show_fg_preset || s.show_latency)
             std::snprintf(line,sizeof(line),"%.0ffps %.1fms %s",fps,displayed_ms,upscaler);
         else std::snprintf(line, sizeof(line), Text("%.0f FPS  %.1f ms  %s", "%.0f FPS  %.1f мс  %s"),
                            fps, displayed_ms, upscaler);
@@ -1093,6 +1104,12 @@ void FpsCounter() {
             append(detail);
         }
     }
+    if (s.show_fg_preset && s.frame_generation==BbSettings::FrameGenerationNvidia) {
+        char detail[48];
+        BbNvidia::Preset::FormatLabel(detail,sizeof(detail),s.frame_generation_active>1,
+            s.nvidia_fg_reported_preset,s.nvidia_fg_profile_preset,s.nvidia_fg_feedback.load()&BbNvidia::Preset::ErrorMask);
+        append(detail);
+    }
     if (s.show_latency) {
         char detail[48];
         const float latency=s.pc_latency_ms;
@@ -1100,13 +1117,13 @@ void FpsCounter() {
         else std::snprintf(detail,sizeof(detail),"PC:N/A");
         append(detail);
     }
-    if (s.show_resolution || s.show_frame_generation || s.show_latency) {
+    if (s.show_resolution || s.show_frame_generation || s.show_fg_preset || s.show_latency) {
         // Extra fields stay on one row. Preserve the usual font unless a fit is needed.
-        const float width=s.show_frame_generation || s.show_latency ? 520.0f : 420.0f;
+        const float width=s.show_frame_generation || s.show_fg_preset || s.show_latency ? 520.0f : 420.0f;
         const float limit=std::min(width*base_scale,viewport->WorkSize.x-pad*2.0f);
         const float natural=ImGui::CalcTextSize(line).x;
         // Extra fields may need slightly more room than resolution alone.
-        const float floor=s.show_frame_generation || s.show_latency ? 0.80f : 0.85f;
+        const float floor=s.show_frame_generation || s.show_fg_preset || s.show_latency ? 0.80f : 0.85f;
         const float ratio=std::clamp((limit-ImGui::GetStyle().WindowPadding.x*2.0f-2.0f) /
                                      std::max(natural,1.0f),floor,1.0f);
         // ImGui rounds font sizes to pixels; a fractional fit can round back

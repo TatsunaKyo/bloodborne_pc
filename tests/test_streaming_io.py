@@ -66,9 +66,25 @@ ssize_t pread(int fd,void* p,size_t n,int64_t offset){
 struct Listing {};
 void free_listing(Listing* p){assert(!p);}
 #define MAX_FILES 1024
+#define USER_MIN UINT64_C(0x1000000000)
+#define USER_MAX UINT64_C(0xfc00000000)
+static void (*hook_invalidate)(uintptr_t,uint64_t);
 '''
 
 MAIN = r'''
+static uintptr_t tracked_begin,tracked_end;
+static std::atomic<unsigned> tracked_faults{},range_notices{};
+static LONG CALLBACK PageFault(EXCEPTION_POINTERS* info){
+    if(info->ExceptionRecord->ExceptionCode!=EXCEPTION_ACCESS_VIOLATION)return EXCEPTION_CONTINUE_SEARCH;
+    uintptr_t page=info->ExceptionRecord->ExceptionInformation[1]&~uintptr_t(4095);
+    if(page<tracked_begin || page>=tracked_end)return EXCEPTION_CONTINUE_SEARCH;
+    DWORD old{};if(!VirtualProtect((void*)page,4096,PAGE_READWRITE,&old))return EXCEPTION_CONTINUE_SEARCH;
+    ++tracked_faults;return EXCEPTION_CONTINUE_EXECUTION;
+}
+static void PrepareRange(uintptr_t address,uint64_t size){
+    assert(address>=tracked_begin && size<=tracked_end-address);
+    DWORD old{};assert(VirtualProtect((void*)address,size,PAGE_READWRITE,&old));++range_notices;
+}
 int main(){
     using namespace std::chrono_literals;
     wchar_t folder[MAX_PATH], path[MAX_PATH];
@@ -106,6 +122,25 @@ int main(){
     assert(do_pread(3,bytes,32,INT64_MAX-4)==-EINVAL);
     assert(runtime_asset_read_at(nullptr,bytes,1,0)==-1 && errno==EBADF);
     assert(_lseeki64(fd,0,SEEK_CUR)==27);
+    const size_t tracked_size=3*1024*1024;
+    void* tracked=VirtualAlloc((void*)(USER_MIN+0x40000000),tracked_size,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE);
+    assert(tracked);tracked_begin=(uintptr_t)tracked;tracked_end=tracked_begin+tracked_size;
+    void* handler=AddVectoredExceptionHandler(1,PageFault);assert(handler);
+    DWORD old{};assert(VirtualProtect(tracked,tracked_size,PAGE_READONLY,&old));
+    // Control: production per-page fallback still works without a renderer hook.
+    assert(do_pread(3,tracked,tracked_size,0)==int64_t(tracked_size));
+    assert(tracked_faults==tracked_size/4096 && !range_notices);
+    assert(!std::memcmp(tracked,content.data(),tracked_size));
+    tracked_faults=0;hook_invalidate=PrepareRange;
+    assert(do_pread(3,tracked,tracked_size,0)==int64_t(tracked_size));
+    assert(!tracked_faults && !range_notices); // Writable staging skips GPU synchronization.
+    assert(VirtualProtect(tracked,tracked_size,PAGE_READONLY,&old));
+    assert(do_pread(3,tracked,tracked_size,4096)==int64_t(tracked_size));
+    assert(!tracked_faults && range_notices==3);
+    assert(!std::memcmp(tracked,content.data()+4096,tracked_size));
+    hook_invalidate=nullptr;assert(RemoveVectoredExceptionHandler(handler));
+    assert(VirtualFree(tracked,0,MEM_RELEASE));
+    std::puts("PASS: Windows protected streaming destination: 768 page faults -> 3 range invalidations; exact file bytes.");
     std::printf("Windows asset IO: 1024 parallel offset reads, exact bytes/cursor and >4 GiB/EOF checks in %.2f ms\n",
         std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count());
     hold_reads=true;const int before=entered;
@@ -132,6 +167,7 @@ def prepare(directory):
     compat = (ROOT / 'src/compat_win.c').read_text()
     fs = (ROOT / 'src/runtime_file.c').read_text()
     reader = (ROOT / 'src/runtime_asset_io.c').read_text()
+    memory = (ROOT / 'src/runtime_memory.c').read_text()
     file_type = re.search(r'typedef struct \{\n    int used, host;[\s\S]*?\} File;', fs).group()
     declarations = file_type + r'''
 static File files[MAX_FILES];
@@ -151,7 +187,7 @@ static auto bb_atomic_add_fetch(auto* value,auto add,int){return std::atomic_ref
     # setup and an entry gate around the reader to verify descriptor lifetime.
     code = PREFIX + '#include <winioctl.h>\n#include <mutex>\n' + function(compat, 'compat_errno_from_win32')
     code += '\n#define runtime_asset_read_at ProductionReadAt\n' + reader + '\n#undef runtime_asset_read_at\n'
-    code += MIDDLE + declarations
+    code += MIDDLE + '\n' + function(memory, 'runtime_memory_prepare_io_write') + '\n' + declarations
     for name in ('get', 'host_fd', 'touch_for_write', 'do_close', 'do_pread'):
         code += '\n' + function(fs, name)
     code += MAIN.replace('    {std::scoped_lock unused;}\n', '')

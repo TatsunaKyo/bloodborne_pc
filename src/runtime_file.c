@@ -327,6 +327,7 @@ static ssize_t host_write(int h,const void *buffer,uint64_t size) { return write
  * goes through the handler, which unprotects it (and records the upcoming write). */
 static void touch_for_write(void *buffer,uint64_t size) {
     if (!size) return;
+    runtime_memory_prepare_io_write((uintptr_t)buffer,size);
     uintptr_t p=(uintptr_t)buffer & ~(uintptr_t)4095, end=(uintptr_t)buffer+size;
     for (; p<end; p+=4096) {
         volatile unsigned char *b=(volatile unsigned char *)(p<(uintptr_t)buffer ? (uintptr_t)buffer : p);
