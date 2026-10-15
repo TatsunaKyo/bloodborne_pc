@@ -55,6 +55,7 @@ prefix=r'''#include <algorithm>
 #include <map>
 #include <mutex>
 #include "bbport_settings.h"
+#include "bbport_hitch.h"
 #include "bbport_nvidia_preset.h"
 #include "bbport_frametime.h"
 #include "bbcheats.h"

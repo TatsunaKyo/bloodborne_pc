@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "bbport_hitch.h"
 #include <thread>
 #include <algorithm>
 #include <cstdio>
@@ -261,6 +262,7 @@ void Scheduler::KickRecording(bool force) {
 }
 
 void Scheduler::SyncRecording() {
+    BbHitch::Scope hitch{"recording drain"};
     if (!recording_threaded) {
         return;
     }
@@ -325,6 +327,7 @@ void Scheduler::Flush() {
 }
 
 void Scheduler::Finish() {
+    BbHitch::Scope hitch{"GPU finish"};
     // When finishing, we need to wait for the submission to have executed on the device.
     const u64 presubmit_tick = CurrentTick();
     SubmitInfo info{};
@@ -340,6 +343,7 @@ void Scheduler::WaitSubmitted() {
 }
 
 void Scheduler::Wait(u64 tick) {
+    BbHitch::Scope hitch{"GPU timeline wait"};
     if (tick >= work_semaphore.CurrentTick()) {
         // Make sure we are not waiting for the current tick without signalling
         SubmitInfo info{};

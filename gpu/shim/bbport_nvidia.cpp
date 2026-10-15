@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // TatsunaKyo revision. NVIDIA API declarations retain their original license.
+#include "bbport_hitch.h"
 #include "bbport_nvidia.h"
 #include "bbport_nvidia_preset.h"
 #include "bbport_nvidia_profile.h"
@@ -187,8 +188,27 @@ void UpdateLatency() {
     if (reflex_state(state)!=sl::Result::eOk || !state.latencyReportAvailable) {
         s.pc_latency_ms=-1.0f;return;
     }
+    if (!initialized || !Wanted()) {s.pc_latency_ms=-1.0f;return;}
     if (const auto sample=BbLatency::Latest(state.frameReport,latency_frame)) {
         latency_frame=sample->frame;latency_updated=now;s.pc_latency_ms=sample->milliseconds;
+    }
+}
+void UpdateTelemetry() {
+    // GetLatencyReports is diagnostic driver IO. Keep it off QueuePresent and
+    // outside the mutex needed by BeginRender/NextSimulation. The observer is
+    // joined before slShutdown, so the imported function stays alive throughout.
+    if (!initialized) return;
+    UpdateLatency();
+    static auto next_preset=std::chrono::steady_clock::time_point{};
+    const auto now=std::chrono::steady_clock::now();
+    if (now>=next_preset) {
+        next_preset=now+std::chrono::seconds(1);
+        UpdatePreset();
+    }
+    static auto next_cadence=std::chrono::steady_clock::time_point{};
+    if (Wanted() && now>=next_cadence) {
+        next_cadence=now+std::chrono::seconds(5);
+        BbHitch::ReportCadence(BbSettings::Get().nvidia_output_fps);
     }
 }
 void WaitLatestInputs() {
@@ -391,11 +411,11 @@ void BindDevice(vk::PhysicalDevice physical,vk::Device dev) {
             BbSettings::Get().nvidia_max_generated=state.numFramesToGenerateMax;
     }
     std::printf("NVIDIA Vulkan: FG supported=%d, Reflex supported=%d\n",int(fg_supported),int(reflex_supported));
-    preset_observer.Start(UpdatePreset, [] {
+    preset_observer.Start(UpdateTelemetry, [] {
         if (nvapi_unload) nvapi_unload();
         if (nvapi_module) FreeLibrary(nvapi_module);
         nvapi_unload=nullptr;nvapi_module=nullptr;get_override=nullptr;nvapi_attempted=false;
-    });
+    },std::chrono::milliseconds(100));
 }
 void BeginRender() {
     if (!initialized || !reflex_supported || !Wanted()) return;
@@ -472,7 +492,9 @@ void NextSimulation() {
     }
     // Never sleep on Liverpool's EOP thread or while holding m_submit_lock.
     // Previous render submission and present markers must be able to progress.
+    const auto sleep_started=BbHitch::Clock::now();
     const auto sleep_result=sleep_api(*static_cast<sl::FrameToken*>(next->native));
+    BbHitch::Record("Reflex sleep",sleep_started);
     std::scoped_lock lock{mutex};
     simulation_sleeping=false;simulation_ready.notify_all();
     if (!initialized) {simulation_token.reset();return;}
@@ -599,7 +621,6 @@ bool Present(Vulkan::Frame* frame,const std::function<bool()>& present) {
     if (!initialized) return present();
     const bool presented=present();
     Mark(sl::PCLMarker::ePresentEnd,frame->nvidia_token);
-    UpdateLatency();
     if (fg_state && fg_on) {
         sl::DLSSGState state;
         const auto result=fg_state(viewport,state,nullptr);
@@ -638,6 +659,7 @@ bool Present(Vulkan::Frame* frame,const std::function<bool()>& present) {
     return presented;
 }
 void WaitForInputs(Vulkan::Frame* frame) {
+    BbHitch::Scope hitch{"FG input retirement"};
     std::scoped_lock lock{mutex};
     if (frame->nvidia_fence_epoch==input_epoch && frame->nvidia_fence && frame->nvidia_fence_value && device) {
         const auto sem=frame->nvidia_fence;const auto value=frame->nvidia_fence_value;

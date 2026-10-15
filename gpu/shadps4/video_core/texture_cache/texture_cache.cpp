@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "bbport_hitch.h"
 #include <xxhash.h>
 
 #include "bbport_toggles.h"
@@ -64,6 +65,7 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
 TextureCache::~TextureCache() = default;
 
 void TextureCache::ProcessDownloadImages() {
+    BbHitch::Scope hitch{"texture readbacks"};
     std::unique_lock lk{download_images_mutex};
     BbReadback::Batch batch{[this] { scheduler.Finish(); }};
     for (const ImageId image_id : download_images) {
@@ -770,6 +772,7 @@ ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc
 }
 
 void TextureCache::RefreshImage(Image& image) {
+    BbHitch::Scope hitch{"texture refresh"};
     if (False(image.flags & ImageFlagBits::Dirty) || image.info.num_samples > 1) {
         return;
     }
@@ -1022,6 +1025,7 @@ void TextureCache::UntrackImageTail(ImageId image_id) {
 }
 
 void TextureCache::GarbageCollectImages() {
+    BbHitch::Scope hitch{"texture GC"};
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
         // bbport: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding

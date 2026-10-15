@@ -9,6 +9,7 @@
 #include <io.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
 int compat_errno_from_win32(unsigned long error);
 
 void *runtime_asset_reader_open(int fd) {
@@ -36,6 +37,8 @@ int64_t runtime_asset_read_at(void *reader, void *buffer, size_t size, int64_t o
     if (!event) { errno = compat_errno_from_win32(GetLastError()); return -1; }
     size_t done = 0;
     int error = 0;
+    LARGE_INTEGER before,after,frequency;
+    QueryPerformanceCounter(&before);
     while (done < size) {
         DWORD chunk = size - done > 0x40000000u ? 0x40000000u : (DWORD)(size - done);
         DWORD count = 0;
@@ -57,6 +60,12 @@ int64_t runtime_asset_read_at(void *reader, void *buffer, size_t size, int64_t o
         if (count < chunk) break;
     }
     CloseHandle(event);
+    QueryPerformanceCounter(&after);
+    QueryPerformanceFrequency(&frequency);
+    const double elapsed=1000.0*(double)(after.QuadPart-before.QuadPart)/(double)frequency.QuadPart;
+    if (elapsed>=8.0)
+        printf("Streaming IO: read %.2f ms, %llu bytes at %lld\n",elapsed,
+               (unsigned long long)done,(long long)offset);
     if (error && !done) { errno = error; return -1; }
     return (int64_t)done;
 }

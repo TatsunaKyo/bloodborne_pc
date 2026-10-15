@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "bbport_hitch.h"
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -361,6 +362,7 @@ std::atomic<u64> g_bb_compile_ns;
 std::atomic<u32> g_bb_compiles;
 namespace {
 struct CompileTimer {
+    BbHitch::Scope hitch{"shader/pipeline compile"};
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~CompileTimer() {
         g_bb_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(

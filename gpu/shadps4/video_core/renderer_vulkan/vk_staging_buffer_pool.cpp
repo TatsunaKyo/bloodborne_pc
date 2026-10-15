@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "bbport_hitch.h"
 #include "bbport_toggles.h"
 #include <algorithm>
 #include <bit>
@@ -59,6 +60,7 @@ StagingBufferPool::~StagingBufferPool() = default;
 
 StagingBufferRef StagingBufferPool::Request(u64 size, MemoryType type, u64 alignment,
                                             bool deferred) {
+    BbHitch::Scope hitch{"staging allocation"};
     Ring& ring = rings[u32(type)];
     if (deferred || size > BLOCK_SIZE) {
         return RequestLarge(size, type, deferred);

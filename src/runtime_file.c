@@ -352,7 +352,15 @@ static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
     if (reader) ++f->pending_reads;
     pthread_mutex_unlock(&lock);
     if (reader) {
+        LARGE_INTEGER before,after,frequency;
+        QueryPerformanceCounter(&before);
         touch_for_write(buffer,size);
+        QueryPerformanceCounter(&after);
+        QueryPerformanceFrequency(&frequency);
+        const double prepare_ms=1000.0*(double)(after.QuadPart-before.QuadPart)/(double)frequency.QuadPart;
+        if (prepare_ms>=8.0)
+            printf("Streaming IO: destination preparation %.2f ms, %llu bytes at %lld\n",
+                   prepare_ms,(unsigned long long)size,(long long)offset);
         int64_t n=runtime_asset_read_at(reader,buffer,(size_t)size,offset);
         int error=errno;
         pthread_mutex_lock(&lock);

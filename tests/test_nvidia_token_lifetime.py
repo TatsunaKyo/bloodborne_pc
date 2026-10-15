@@ -17,6 +17,7 @@ BASE = 'b4e60b00b7759729e202dfac3f15e10335c49c3e'
 SOURCE = 'gpu/shim/bbport_nvidia.cpp'
 
 HARNESS = r'''
+#include "bbport_hitch.h"
 #include <array>
 #include <atomic>
 #include <cassert>
