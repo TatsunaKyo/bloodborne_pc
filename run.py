@@ -223,6 +223,8 @@ def main():
         if backup['snapshot']:
             print('Save Manager: pre-launch snapshot created and verified')
         env.setdefault('BB_GPU_USER_DIR', str(user_dir))
+        from dlssg_mod import configure_launch as configure_dlssg_mod
+        print(configure_dlssg_mod(config, probe, env))
         from nvidia_fg_preset import configure_launch
         print(configure_launch(config, probe, env))
         if env.get('BB_ONLINE') == '1':

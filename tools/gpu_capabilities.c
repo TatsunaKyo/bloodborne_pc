@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan.h>
+#include "../gpu/shim/bbport_legacy_gpu.h"
 
 static VkDeviceSize largest_local_heap(VkPhysicalDevice device) {
     VkPhysicalDeviceMemoryProperties memory;
@@ -67,6 +68,7 @@ static int live_resolution_suits(VkPhysicalDevice device) {
 int main(int argc, char **argv) {
     const int live_mode = argc > 1 && !strcmp(argv[1], "--live-resolution");
     const int anti_lag_mode = argc > 1 && !strcmp(argv[1], "--amd-antilag");
+    const int dlssg_mod_mode = argc > 1 && !strcmp(argv[1], "--dlssg-mod");
     const VkApplicationInfo app = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "bbport scene scaling probe",
@@ -118,6 +120,10 @@ int main(int argc, char **argv) {
     }
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(selected, &props);
+    if (dlssg_mod_mode) {
+        printf("%d\n", bb_dlssg_mod_gpu(props.vendorID, props.deviceName));
+        free(devices); vkDestroyInstance(instance, NULL); return 0;
+    }
     if (anti_lag_mode) {
         VkPhysicalDeviceAntiLagFeaturesAMD anti = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD,

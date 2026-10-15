@@ -17,8 +17,7 @@ import urllib.request
 import zipfile
 from release_integrity import checksum, package_name, canonical_tag, validate, require
 from pe_integrity import PE, system
-from prepare_release import prepare
-from split_release import split
+from nvidia_fg_runtime import install as install_nvidia_fg
 
 ROOT=Path(__file__).resolve().parents[1]
 TESTS=('frame-limits-test','frame-pacing-test','background-pause-test','temporal-history-test',
@@ -42,9 +41,7 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
     require((ROOT/'out/verification/native-windows-tests.log').is_file(), 'Run the native Windows tests before packaging')
     destination.mkdir(parents=True,exist_ok=True)
     target=destination/package_name(version);require(not target.exists(),'Package already exists; preserve the previous candidate')
-    complete_dir=destination/'complete';complete_dir.mkdir(exist_ok=True)
-    complete=complete_dir/target.name
-    require(not complete.exists(),'Complete candidate already exists; preserve the previous build')
+    complete=target
     with tempfile.TemporaryDirectory(prefix='workshop-package-') as directory:
         temp=Path(directory);stage=temp/f'Bloodborne-Windows-TatsunaKyo-Revision-{revision}'
         with zipfile.ZipFile(baseline) as z:
@@ -64,9 +61,14 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         for p in (stage/'bin').glob('*-test.exe'):p.unlink()
         programs={'Bloodborne.exe':checksum(stage/'Bloodborne.exe')}
         for name,output in [('bb-probe','bin/bb-probe.exe'),('bb-gpu-capabilities','bin/bb-gpu-capabilities.exe'),
-                            ('bb-play','Play Bloodborne.exe')]+[(n,'bin/'+n+'.exe') for n in TESTS]:
+                            ('bb-play','Play Bloodborne.exe')]:
             subprocess.run(['llvm-strip','--strip-debug','-o',str(stage/output),str(native/(name+'.exe'))],check=True)
             programs[output]=checksum(stage/output)
+        install_nvidia_fg(stage, ROOT)
+        # DLSS SR uses bin/nvngx_dlss.dll through our NGX bridge. Only FG/Reflex/PCL
+        # are requested from Streamline; its second SR runtime is unused.
+        (stage/'bin/streamline/nvngx_dlss.dll').unlink(missing_ok=True)
+        (stage/'redist/vc_redist.x64.exe').unlink(missing_ok=True)
         # Use the pinned CLANG64 DLLs selected for this build, including transitive dependencies.
         require(dll_dir is not None, 'Provide the CLANG64 DLL directory for this build')
         prefix=Path(dll_dir)
@@ -103,6 +105,8 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
                     'runtime_baseline':lock,'native_and_launcher_fresh_build':True,
                     'byte_identical_build_claimed':False}
         (stage/'BUILD-IDENTITY.json').write_text(json.dumps(provenance,indent=2)+'\n')
+        recovery=source_dir/'recovery';recovery.mkdir()
+        (recovery/'checkpoint.json').write_text(json.dumps({'source_commit':commit,'source_tree':provenance['source_tree'],'version':version,'runtime_lock':'packaging/windows/nvidia-fg-runtime.lock.json','rebuild':'.github/workflows/windows-build.yml','single_archive':True},indent=2)+'\n')
         (stage/'BUILD-INFO.txt').write_text('The Crowned Workshop\nSource: '+commit+'\nNative and launcher built from this checkout. Unchanged SDK redistributables are pinned to the recorded baseline. No claim of byte-identical compiler output.\n')
         records=source_dir/'verification';records.mkdir()
         for p in (ROOT/'out/verification').rglob('*'):
@@ -119,13 +123,7 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
             for p in sorted(stage.rglob('*')):
                 if p.is_file():z.write(p,str(Path(stage.name)/p.relative_to(stage)))
     complete.with_suffix('.zip.sha256').write_text(checksum(complete)+'  '+complete.name+'\n')
-    separation=split(complete,destination,repo=ROOT)
-    (destination/'package-layout.json').write_text(json.dumps(separation,indent=2)+'\n')
-    report=validate(target,repo=ROOT,require_sidecar=True)
-    report.pop('notes');(destination/'package-verification.json').write_text(json.dumps(report,indent=2)+'\n')
-    release=prepare(target,channel=channel,repo=ROOT)
-    (destination/'release.json').write_text(json.dumps(release,indent=2)+'\n')
-    (destination/'release.md').write_text('# '+release['title']+'\n\n'+release['body'])
+    validate(target,repo=ROOT,require_sidecar=True)
     return target
 
 

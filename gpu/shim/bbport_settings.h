@@ -82,6 +82,9 @@ struct Values {
     std::atomic<int> nvidia_fg_profile_preset{-1}, nvidia_fg_query_result{0};
     std::atomic<uint64_t> nvidia_fg_feedback{0};
     int startup_nvidia_fg_preset = 0;
+    std::atomic<bool> nvidia_fg_mod{false};
+    bool startup_nvidia_fg_mod = false;
+    std::atomic<const char*> nvidia_fg_mod_status{nullptr};
     std::atomic<bool> amd_antilag{false}, amd_antilag_supported{false};
     // -1 keeps the startup/display policy, 0 removes the real-frame cap.
     std::atomic<int> real_fps_limit{-1};

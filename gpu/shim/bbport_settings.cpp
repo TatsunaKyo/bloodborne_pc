@@ -154,6 +154,7 @@ void Load() {
     v.generated_fps_limit = 144;
     v.reflex=0;v.nvidia_generated_frames=1;
     v.nvidia_fg_preset=0;
+    v.nvidia_fg_mod=false;v.nvidia_fg_mod_status=nullptr;
     v.amd_antilag = false;
     v.real_fps_limit = -1;
     const char* fps = std::getenv("BB_FPS");
@@ -232,6 +233,8 @@ void Load() {
                 v.nvidia_generated_frames=std::clamp(std::atoi(value.c_str()),1,5);
             } else if (key == "nvidia_fg_preset") {
                 v.nvidia_fg_preset=ParseNvidiaFgPreset(value);
+            } else if (key == "nvidia_fg_mod") {
+                v.nvidia_fg_mod = value == "1";
             } else if (key == "limit_generated_fps") {
                 v.limit_generated_fps = value == "1";
             } else if (key == "generated_fps_limit") {
@@ -296,6 +299,7 @@ void Load() {
     v.startup_output_res = v.output_res;
     v.startup_live_resolution = v.live_resolution;
     v.startup_nvidia_fg_preset = v.nvidia_fg_preset;
+    v.startup_nvidia_fg_mod = v.nvidia_fg_mod;
     UpdateCheatMask();
 }
 
@@ -385,6 +389,7 @@ void Save() {
         std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : "off");
         std::fprintf(file,"reflex=%s\nnvidia_generated_frames=%d\n",v.reflex==2 ? "boost" : v.reflex==1 ? "on" : "off",v.nvidia_generated_frames.load());
         std::fprintf(file,"nvidia_fg_preset=%s\n",NvidiaFgPresetKey(v.nvidia_fg_preset));
+        std::fprintf(file,"nvidia_fg_mod=%d\n",int(v.nvidia_fg_mod.load()));
         std::fprintf(file,"amd_antilag=%d\nreal_fps_limit=%d\n",int(v.amd_antilag.load()),v.real_fps_limit.load());
         std::fprintf(file,"limit_generated_fps=%d\ngenerated_fps_limit=%d\n",
                      int(v.limit_generated_fps.load()),v.generated_fps_limit.load());

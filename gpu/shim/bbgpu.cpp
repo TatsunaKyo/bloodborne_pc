@@ -3,6 +3,7 @@
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
 #include "bbport_amd.h"
+#include "bbport_nvidia.h"
 #include "bbport_copy.h"
 #ifndef _WIN32
 #include <sys/resource.h>
@@ -211,6 +212,7 @@ static void StartProfileWriter() {
 
 extern "C" int bbgpu_init(const BbGpuConfig* config) {
     BbSettings::Load();
+    BbNvidia::PreloadMod();
 #ifdef BB_PGO_GENERATE
     StartProfileWriter();
 #endif

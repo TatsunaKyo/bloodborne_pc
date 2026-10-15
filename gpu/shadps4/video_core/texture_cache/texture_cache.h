@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include "bbport_toggles.h"
+#include "bbport_readback_batch.h"
 
 #include <condition_variable>
 #include <mutex>
@@ -344,7 +345,7 @@ private:
     }
 
     /// Copies image memory back to CPU.
-    void DownloadImageMemory(ImageId image_id, bool sync = false);
+    void DownloadImageMemory(ImageId image_id, bool sync = false, BbReadback::Batch* batch = nullptr);
 
     /// Thread function for copying downloaded images out to CPU memory.
     void DownloadedImagesThread(const std::stop_token& token);

@@ -70,6 +70,16 @@ with tempfile.TemporaryDirectory(prefix='bbport-fg-preset-ui-') as directory:
                     obj.collect()
                     assert launcher.load_menu()['nvidia_fg_preset'] == key
                     checks += 1
+                pending=[obj.pages['frames']];mod_toggles=[]
+                while pending:
+                    widget=pending.pop();pending.extend(widget.winfo_children())
+                    if isinstance(widget,ttk.Checkbutton) and str(widget.cget('variable'))==str(obj.vars['nvidia_fg_mod']):
+                        mod_toggles.append(widget)
+                assert len(mod_toggles)==1
+                for _ in range(2):
+                    before=obj.vars['nvidia_fg_mod'].get();mod_toggles[0].invoke();root.update();obj.collect()
+                    assert bool(obj.vars['nvidia_fg_mod'].get()) != bool(before)
+                    assert launcher.load_menu()['nvidia_fg_mod']==('0' if before else '1')
                 obj.show('overlay');root.update()
                 pending=[obj.pages['overlay']];toggles=[]
                 while pending:

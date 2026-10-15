@@ -332,6 +332,7 @@ void TestNvidiaControls() {
         SetOpen(false);s.nvidia_generated_frames=1;BbSettings::Load();
         assert(s.nvidia_generated_frames==i);SetOpen(true);
     }
+    TestBoolean("nvidia_fg_mod",s.nvidia_fg_mod);
     TestBoolean("limit_generated_fps",s.limit_generated_fps);
     TestBoolean("show_frame_generation",s.show_frame_generation);
     TestBoolean("show_fg_preset",s.show_fg_preset);
@@ -718,7 +719,7 @@ int main(int argc,char** argv) {
     s.frame_generation_active=2;s.nvidia_output_fps=130;s.nvidia_real_fps=65;s.pc_latency_ms=22.3f;
     s.show_frame_generation=s.show_latency=s.show_resolution=true;
     osd=OsdFrame();OsdFrame();OsdFrame();
-    assert(osd.find("130fps")!=std::string::npos && osd.find("FG:NV2x")!=std::string::npos && osd.find("PC:22.3ms")!=std::string::npos);
+    assert(osd.find("130.0fps")!=std::string::npos && osd.find("FG:NV2x")!=std::string::npos && osd.find("PC:22.3ms")!=std::string::npos);
     assert(std::count(osd.begin(),osd.end(),'\n')==original_rows);
     if(ImGui::FindWindowByName("##fps")->Size.x>521) std::fprintf(stderr,"Expanded OSD width %.1f, font %.1f, text: %s\n",ImGui::FindWindowByName("##fps")->Size.x,ImGui::GetFontSize(),osd.c_str());
     assert(ImGui::FindWindowByName("##fps")->Size.x<=521);
@@ -736,7 +737,7 @@ int main(int argc,char** argv) {
     osd=OsdFrame();assert(osd.find("FG model:C!")!=std::string::npos && osd.find("FG:NV")==std::string::npos);
     s.show_fg_preset=false;s.show_frame_generation=true;s.nvidia_fg_feedback=0;
     s.nvidia_output_fps=150;s.frame_generation_active=1;
-    osd=OsdFrame();assert(osd.find("150fps")==std::string::npos); // Requested FG is never reported as active.
+    osd=OsdFrame();assert(osd.find("150.0fps")==std::string::npos); // Requested FG is never reported as active.
     s.pc_latency_ms=-1;osd=OsdFrame();assert(osd.find("PC:N/A")!=std::string::npos);
     s.show_frame_generation=s.show_latency=s.show_resolution=false;
     s.frame_generation=BbSettings::FrameGenerationOff;s.frame_generation_active=0;

@@ -10,6 +10,7 @@ enum class Format;
 }
 namespace Vulkan { struct Frame; class Scheduler; }
 namespace BbNvidia {
+void PreloadMod();
 void* VulkanLoader(void* native);
 void BindDevice(vk::PhysicalDevice physical, vk::Device device);
 void Shutdown();

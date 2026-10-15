@@ -534,11 +534,16 @@ void FrameSettings() {
              "Выберите Unlocked в разделе Frames лаунчера для изменения FPS в игре. В этой сессии используется фиксированный тайминг."));
     const bool upscaler_on = s.upscaler != BbSettings::UpscalerOff;
     Section(Text("Frame Generation and output cap", "Генерация кадров и лимит вывода"));
+    Checkbox(Text("DLSSG mod for RTX 20/30 (experimental)###nvidia_fg_mod",
+                  "Мод DLSSG для RTX 20/30 (экспериментальный)###nvidia_fg_mod"),s.nvidia_fg_mod);
+    Hint(Text("Requires Apply and restart. Only the selected RTX 20/30 can load the isolated mod; RTX 40/50 keep the original NVIDIA path. Vulkan support is experimental. The launcher prepares the provider on restart.",
+              "Нужны применение и перезапуск. Изолированный мод загружается только для выбранной RTX 20/30; RTX 40/50 используют исходный путь NVIDIA. Vulkan экспериментален. Лаунчер подготовит мод при перезапуске."));
+    if (const char* status=s.nvidia_fg_mod_status) ImGui::TextWrapped("DLSSG: %s",status);
     const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG"};
     const int fg=std::clamp(s.frame_generation.load(),0,2);
     if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
         for (int i=0;i<3;++i) {
-            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported)));
+            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported && !s.nvidia_fg_mod)));
             if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
             ImGui::EndDisabled();
         }
@@ -989,6 +994,7 @@ void Menu() {
     }
     ImGui::Separator();
     bool restart = s.object_motion != s.startup_object_motion ||
+                   s.nvidia_fg_mod != s.startup_nvidia_fg_mod ||
                    s.nvidia_fg_preset != s.startup_nvidia_fg_preset ||
                    s.model_lod != s.startup_model_lod ||
                    s.live_resolution != s.startup_live_resolution ||
@@ -1080,12 +1086,12 @@ void FpsCounter() {
     const float fps = DisplayFps();
     const float displayed_ms=fps>0.0f ? 1000.0f/fps : 0.0f;
     if (s.show_resolution) {
-        std::snprintf(line, sizeof(line), "%.0ffps %.1fms %s  %dx%d>%dx%d", fps, displayed_ms, upscaler,
+        std::snprintf(line, sizeof(line), "%.1ffps %.1fms %s  %dx%d>%dx%d", fps, displayed_ms, upscaler,
                       s.active_render_width.load(), s.active_render_height.load(),
                       s.active_output_width.load(), s.active_output_height.load());
     } else {
         if (s.show_frame_generation || s.show_fg_preset || s.show_latency)
-            std::snprintf(line,sizeof(line),"%.0ffps %.1fms %s",fps,displayed_ms,upscaler);
+            std::snprintf(line,sizeof(line),"%.1ffps %.1fms %s",fps,displayed_ms,upscaler);
         else std::snprintf(line, sizeof(line), Text("%.0f FPS  %.1f ms  %s", "%.0f FPS  %.1f мс  %s"),
                            fps, displayed_ms, upscaler);
     }

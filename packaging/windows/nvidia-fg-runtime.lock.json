@@ -1,0 +1,8 @@
+{
+  "version": "310.9.16.0",
+  "bytes": 7506544,
+  "sha256": "cadee1aa6db3907babdc3285da2aebc4553d92b89c38ba3eae8abd8bba1bea72",
+  "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/6dcfd54c51e7fc2eb4fe25e5bb16044809c647b5/dlssg_sm86/runtime/nvngx_dlssg.dll",
+  "signer": "NVIDIA Corporation",
+  "role": "Unmodified NVIDIA DLSS-G runtime with preset C/Lite. Mirror supplies the stock signed NVIDIA file only; no proxy/backend/kernel patch is included. Full Authenticode digest, signature and trust chain verified for Revision 39."
+}

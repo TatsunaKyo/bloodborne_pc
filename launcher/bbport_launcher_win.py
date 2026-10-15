@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.38'
+VERSION = '1.6-tatsunakyo.39'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -188,11 +188,11 @@ MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_v
                  'dlss_preset': 'default', 'xess_preset': '2', 'show_fps': '1', 'show_dlss_preset': '0',
                  'show_resolution': '0', 'show_fg_preset': '0', 'show_frame_generation': '0', 'show_latency': '0', 'show_frametime_graph': '0',
                  'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1', 'nvidia_fg_preset': 'default',
-                 'amd_antilag': '0', 'real_fps_limit': '-1',
+                 'amd_antilag': '0', 'real_fps_limit': '-1', 'nvidia_fg_mod': '0',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
                  'cheat_infinite_stamina': '0', 'cheat_no_consume': '0', 'cheat_no_fall_damage': '0'}
 MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resolution',
-              'show_frame_generation', 'show_fg_preset', 'show_latency', 'show_frametime_graph',
+              'show_frame_generation', 'show_fg_preset', 'show_latency', 'show_frametime_graph', 'nvidia_fg_mod',
               'cheat_infinite_stamina', 'cheat_no_consume', 'cheat_no_fall_damage', 'limit_generated_fps', 'amd_antilag'}
 CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
 MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
@@ -1483,8 +1483,12 @@ class Launcher:
                    'Нужны совместимые GPU, драйвер и планирование GPU с аппаратным ускорением. Работают только поддерживаемые GPU множители. Поддерживаются SDR и HDR10.'))
         self.nvidia_fg_preset_row = self.row(f, _('NVIDIA FG preset', 'Пресет NVIDIA FG'),
                  self.choice(f, 'nvidia_fg_preset', 'menu', NVIDIA_FG_PRESETS),
-                 _('Applied before the next launch through this installation\'s NVIDIA profile. Default restores the previous settings. NVIDIA runtime updates are enabled. The driver must accept the model for this process; see the detected model and exact errors under Frames in-game.',
+                 _('Applied before the next launch through this installation\'s NVIDIA profile. Default restores the previous settings. C/Lite needs DLSS-G 310.9.16, included in this revision. The driver must accept the model for this process; see the detected model and exact errors under Frames in-game.',
                    'Применяется перед следующим запуском через профиль этой установки. Default возвращает прежние настройки. Обновления среды NVIDIA включены. Данные драйвера и ошибки доступны в Frames в игре.'))
+        self.check(f, 'nvidia_fg_mod', 'menu',
+                   _('DLSSG mod for RTX 20/30 (experimental)', 'Мод DLSSG для RTX 20/30 (экспериментальный)'),
+                   _('Requires restart and NVIDIA FG. Downloads the pinned RTX Encore provider once, only for the selected RTX 20/30. Vulkan support is experimental. RTX 40/50 always keep the original NVIDIA path. A supplied bin/mods/dlssg/dlssg_sm86.dll takes precedence.',
+                     'Нужны перезапуск и NVIDIA FG. Проверенный файл RTX Encore загружается один раз только для выбранной RTX 20/30. Vulkan экспериментален. RTX 40/50 используют исходный путь NVIDIA. Пользовательская bin/mods/dlssg/dlssg_sm86.dll имеет приоритет.'))
         def fg_preset_visibility(*_args):
             self.show_row(self.nvidia_fg_preset_row, self.var('frame_generation', 'menu').get() == 'nvidia')
         self.var('frame_generation', 'menu').trace_add('write', fg_preset_visibility)

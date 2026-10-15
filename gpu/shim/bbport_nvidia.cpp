@@ -8,6 +8,7 @@
 #include "bbport_background.h"
 #include "bbport_latency.h"
 #include "bbport_frame_metrics.h"
+#include "bbport_legacy_gpu.h"
 #include "core/emulator_settings.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -18,8 +19,11 @@
 #include <deque>
 #include <chrono>
 #include <mutex>
+#include <tuple>
+#include <vector>
 #ifdef _WIN32
 #include <windows.h>
+#include <wincrypt.h>
 #include <filesystem>
 #include "sl_core_api.h"
 #include "sl_dlss_g.h"
@@ -245,6 +249,88 @@ sl::Resource Resource(vk::Image image,vk::ImageView view,vk::Format format,
     r.flags=0;r.usage=VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     return r;
 }
+}
+void PreloadMod() {
+    auto& s=BbSettings::Get();
+    if (!s.startup_nvidia_fg_mod || s.frame_generation!=BbSettings::FrameGenerationNvidia) return;
+    // A private native probe must precede all third-party code and Streamline checks.
+    // Never trust a spoofed adapter name or a launcher environment flag here.
+    const auto vulkan=LoadLibraryExW(L"vulkan-1.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
+    const auto get=vulkan ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(GetProcAddress(vulkan,"vkGetInstanceProcAddr")) : nullptr;
+    const auto create=get ? reinterpret_cast<PFN_vkCreateInstance>(get(nullptr,"vkCreateInstance")) : nullptr;
+    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};app.apiVersion=VK_API_VERSION_1_3;
+    VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};info.pApplicationInfo=&app;
+    VkInstance instance{};bool eligible=false;
+    if (create && create(&info,nullptr,&instance)==VK_SUCCESS) {
+        const auto enumerate=reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(get(instance,"vkEnumeratePhysicalDevices"));
+        const auto properties=reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(get(instance,"vkGetPhysicalDeviceProperties"));
+        const auto memory=reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(get(instance,"vkGetPhysicalDeviceMemoryProperties"));
+        const auto destroy=reinterpret_cast<PFN_vkDestroyInstance>(get(instance,"vkDestroyInstance"));
+        uint32_t count{};
+        if (enumerate && properties && memory && enumerate(instance,&count,nullptr)==VK_SUCCESS && count) {
+            std::vector<VkPhysicalDevice> devices(count);
+            if (enumerate(instance,&count,devices.data())==VK_SUCCESS) {
+                const auto score=[&](VkPhysicalDevice gpu) {
+                    VkPhysicalDeviceProperties p{};VkPhysicalDeviceMemoryProperties m{};properties(gpu,&p);memory(gpu,&m);
+                    uint64_t heap{};
+                    for (uint32_t i=0;i<m.memoryHeapCount;++i)
+                        if (m.memoryHeaps[i].flags&VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) heap=std::max<uint64_t>(heap,m.memoryHeaps[i].size);
+                    return std::tuple{p.apiVersion>=VK_API_VERSION_1_3,p.deviceType==VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
+                                      p.deviceType!=VK_PHYSICAL_DEVICE_TYPE_CPU,heap};
+                };
+                uint32_t selected=0;bool valid=true;
+                if (const char* id=std::getenv("BB_GPU_ID"); id && std::atoi(id)>=0) {
+                    char* end{};const auto index=std::strtoul(id,&end,10);
+                    valid=end && !*end && index<count;if (valid) selected=uint32_t(index);
+                } else for (uint32_t i=1;i<count;++i) if (score(devices[i])>score(devices[selected])) selected=i;
+                if (valid) {
+                    VkPhysicalDeviceProperties p{};properties(devices[selected],&p);
+                    eligible=bb_dlssg_mod_gpu(p.vendorID,p.deviceName);
+                    std::printf("DLSSG mod: real selected adapter %s (0x%x), eligible=%d\n",p.deviceName,p.vendorID,int(eligible));
+                }
+            }
+        }
+        if (destroy) destroy(instance,nullptr);
+    }
+    if (vulkan) FreeLibrary(vulkan);
+    if (!eligible) {
+        s.nvidia_fg_mod_status="Mod skipped: the selected GPU could not be verified as GeForce RTX 20/30. Original NVIDIA path retained.";return;
+    }
+    wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);
+    const auto folder=std::filesystem::path(exe).parent_path()/L"mods"/L"dlssg";
+    std::error_code error;
+    auto dll=folder/L"dlssg_sm86.dll"; // Explicit user-supplied provider; keep its companions here.
+    if (!std::filesystem::is_regular_file(dll,error)) dll=folder/L"rtx-encore.asi";
+    if (!std::filesystem::is_regular_file(dll,error)) {
+        s.nvidia_fg_mod_status="Mod missing: launch through the launcher to prepare it. Original NVIDIA path retained.";return;
+    }
+    if (dll.filename()==L"rtx-encore.asi") {
+        HCRYPTPROV provider{};HCRYPTHASH hash{};
+        HANDLE file=CreateFileW(dll.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        bool ok=file!=INVALID_HANDLE_VALUE && CryptAcquireContextW(&provider,nullptr,nullptr,PROV_RSA_AES,CRYPT_VERIFYCONTEXT) &&
+                CryptCreateHash(provider,CALG_SHA_256,0,0,&hash);
+        std::array<unsigned char,65536> buffer{};DWORD count{};
+        while (ok) {
+            ok=ReadFile(file,buffer.data(),DWORD(buffer.size()),&count,nullptr);
+            if (!ok || !count) break;
+            ok=CryptHashData(hash,buffer.data(),count,0);
+        }
+        std::array<unsigned char,32> digest{};DWORD length=DWORD(digest.size());
+        ok=ok && CryptGetHashParam(hash,HP_HASHVAL,digest.data(),&length,0) && length==digest.size();
+        constexpr unsigned char expected[]={0xb6,0xa3,0x67,0xfd,0x41,0x03,0xf3,0x62,0x90,0xcc,0xf4,0x64,0xf5,0x04,0x86,0xab,
+            0x72,0x83,0x26,0x4b,0x8c,0x0c,0x15,0x58,0xa1,0x97,0x61,0x5c,0xf0,0x1b,0x13,0xb0};
+        ok=ok && std::equal(digest.begin(),digest.end(),expected);
+        if (hash) CryptDestroyHash(hash);if (provider) CryptReleaseContext(provider,0);
+        if (file!=INVALID_HANDLE_VALUE) CloseHandle(file);
+        if (!ok) {s.nvidia_fg_mod_status="Mod checksum rejected. Restart through the launcher to repair it.";return;}
+    }
+    // Process lifetime: unloading an interceptor can leave driver callbacks dangling.
+    static HMODULE mod{};
+    mod=LoadLibraryExW(dll.c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    s.nvidia_fg_mod_status=mod ?
+        "Mod preloaded before Streamline. Vulkan FG remains experimental; actual support is checked by the runtime." :
+        "Mod could not be loaded. Original NVIDIA path retained; see the launch log.";
+    std::printf("DLSSG mod: %ls, loaded=%d, Win32=%lu\n",dll.c_str(),int(mod!=nullptr),mod ? 0ul : GetLastError());
 }
 void* VulkanLoader(void* native) {
     std::scoped_lock lock{mutex};
@@ -590,6 +676,7 @@ void Shutdown() {
 }
 #else
 namespace BbNvidia {
+void PreloadMod() {}
 void* VulkanLoader(void* native) {return native;}
 void BindDevice(vk::PhysicalDevice,vk::Device) {}
 void Shutdown() {}
