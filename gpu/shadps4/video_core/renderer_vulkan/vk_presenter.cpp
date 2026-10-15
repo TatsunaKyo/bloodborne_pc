@@ -1,3 +1,4 @@
+#include "bbport_hitch.h"
 #include "bbport_nvidia.h"
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
@@ -620,6 +621,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
     }
 
+    const auto acquire_started=BbHitch::Clock::now();
     if (!swapchain.AcquireNextImage()) {
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
         if (!swapchain.AcquireNextImage()) {
@@ -629,6 +631,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             return;
         }
     }
+
+    BbHitch::Record("swapchain acquire",acquire_started);
 
     // Reset fence for queue submission. Do it here instead of GetRenderFrame() because we may
     // skip frame because of slow swapchain recreation. If a frame skip occurs, we skip signal
@@ -747,10 +751,12 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             cmdbuf.endDebugUtilsLabelEXT();
         }
 
+        const auto nvidia_started=BbHitch::Clock::now();
         BbNvidia::BeforePresent(frame,cmdbuf,swapchain.Image(),swapchain.ImageView(),
                                  swapchain.GetSurfaceFormat().format,swapchain.GetImageCount(),
                                  is_game_frame && !is_reusing_frame,present_scheduler,
                                  swapchain.GetWidth(),swapchain.GetHeight());
+        BbHitch::Record("NVIDIA setup",nvidia_started);
         // Flush vulkan commands.
 
         SubmitInfo info{};
@@ -764,11 +770,13 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         bool presented;
         // Serialize the queue call itself. SDK state/latency queries after it must
         // not stop the renderer from submitting the next frame on the same queue.
+        const auto present_started=BbHitch::Clock::now();
         presented=BbNvidia::Present(frame,[&] {
             std::scoped_lock submit_lock{Scheduler::submit_mutex};
             BbAmd::BeforePresent(frame->amd_token, final && is_game_frame && !is_reusing_frame);
             return swapchain.Present();
         });
+        BbHitch::Record("queue present + FG state",present_started);
         if (!presented && window.GetWidth() != 0 && window.GetHeight() != 0) {
             // Recreation retires NVIDIA input ownership before taking the queue
             // lock for its GPU drain. Never reverse that lock order here.
@@ -818,6 +826,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 }
 
 Frame* Presenter::GetRenderFrame() {
+    BbHitch::Scope hitch{"frame slot / present fence"};
     // Wait for free presentation frames
     Frame* frame;
     {

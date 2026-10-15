@@ -75,13 +75,14 @@ inline void FormatLabel(char* label, size_t size, bool active, int reported,
 // Driver feedback is diagnostic IO. It must never run on Present/Reflex threads.
 class Observer {
 public:
-    void Start(std::function<void()> poll, std::function<void()> finish) {
+    void Start(std::function<void()> poll, std::function<void()> finish,
+               std::chrono::milliseconds period=std::chrono::seconds(1)) {
         if (worker.joinable()) return;
-        worker=std::jthread([this,poll=std::move(poll),finish=std::move(finish)](std::stop_token stop) {
+        worker=std::jthread([this,poll=std::move(poll),finish=std::move(finish),period](std::stop_token stop) {
             while (!stop.stop_requested()) {
                 poll();
                 std::unique_lock lock{mutex};
-                wake.wait_for(lock,stop,std::chrono::seconds(1),[]{return false;});
+                wake.wait_for(lock,stop,period,[]{return false;});
             }
             finish();
         });

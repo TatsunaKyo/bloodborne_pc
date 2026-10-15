@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "bbport_hitch.h"
 #include "bbport_overlay.h"
 #include "bbport_nvidia_preset.h"
 
@@ -1367,6 +1368,7 @@ void SetTextEntry(bool active, const std::string& prompt, const std::string& tex
 }
 
 void RecordPresent(bool real_frame, bool presented) {
+    BbHitch::Present(real_frame,presented,BbSettings::Get().window_focused);
     std::scoped_lock lock{imgui_mutex};
     if (!initialized) return;
     if (!presented || !BbSettings::Get().window_focused) {

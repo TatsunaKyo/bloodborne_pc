@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "bbport_hitch.h"
 #include <xxhash.h>
+#include <boost/container/small_vector.hpp>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "bbport_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
@@ -1142,7 +1144,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
     if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth() &&
-        (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
+        ((gbuffer_draw && pipeline->GetFetchShader().has_value() && !regs.IsClipDisabled()) ||
+         regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
         draw_jitter = upscaler->Jitter();
     }
     UpdateDynamicState(pipeline, is_indexed);
@@ -1453,6 +1456,7 @@ void Rasterizer::Finish() {
 }
 
 void Rasterizer::OnSubmit() {
+    BbHitch::Scope hitch{"submit maintenance"};
     DrainDrawPipe();
     if (fault_process_pending) {
         fault_process_pending = false;
@@ -3164,13 +3168,30 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
 }
 
 bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
-    DrainDrawPipe();
-    if (!IsMapped(addr, size)) {
-        // Not GPU mapped memory, can skip invalidation logic entirely.
-        return false;
+    BbHitch::Scope hitch{"memory invalidation"};
+    if (size == 0 || addr > std::numeric_limits<VAddr>::max() - size) return false;
+    // A file read can span GPU-tracked allocations AND ordinary staging pages.
+    // Requiring the entire span to be GPU mapped rejected the bulk preparation
+    // and left each protected island to fault separately during the page touch.
+    // Snapshot intersections under the map lock; cache operations may take other
+    // locks or request GPU work, so never run them while holding that lock.
+    boost::container::small_vector<std::pair<VAddr, u64>, 4> ranges;
+    {
+        Common::RecursiveSharedLock lock{mapped_ranges_mutex};
+        const auto query = decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
+        const auto [first, last] = mapped_ranges.equal_range(query);
+        for (auto it = first; it != last; ++it) {
+            const VAddr begin = std::max<VAddr>(addr, boost::icl::lower(*it));
+            const VAddr end = std::min<VAddr>(addr + size, boost::icl::upper(*it));
+            if (begin < end) ranges.emplace_back(begin, end - begin);
+        }
     }
-    buffer_cache.InvalidateMemory(addr, size, assume_locks);
-    texture_cache.InvalidateMemory(addr, size);
+    if (ranges.empty()) return false;
+    DrainDrawPipe();
+    for (const auto& [begin, bytes] : ranges) {
+        buffer_cache.InvalidateMemory(begin, bytes, assume_locks);
+        texture_cache.InvalidateMemory(begin, bytes);
+    }
     return true;
 }
 
