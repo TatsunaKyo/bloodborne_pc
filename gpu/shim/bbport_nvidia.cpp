@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // TatsunaKyo revision. NVIDIA API declarations retain their original license.
 #include "bbport_nvidia.h"
+#include "bbport_nvidia_preset.h"
 #include "bbport_settings.h"
 #include "bbport_background.h"
 #include "bbport_latency.h"
@@ -64,6 +65,42 @@ std::deque<Flip> flips;
 std::chrono::steady_clock::time_point latency_query{},latency_updated{};
 uint64_t latency_frame{};
 BbFrameMetrics::Counter frame_metrics;
+HMODULE nvapi_module{};
+using NvapiQuery=void* (__cdecl*)(uint32_t);
+using NvapiInitialize=int (__cdecl*)();
+using NvapiGetOverride=int (__cdecl*)(Preset::DriverState*);
+NvapiGetOverride get_override{};
+NvapiInitialize nvapi_unload{};
+bool nvapi_attempted{};
+Preset::Observer preset_observer;
+void UpdatePreset() {
+    auto& s=BbSettings::Get();
+    if (s.frame_generation!=BbSettings::FrameGenerationNvidia || s.frame_generation_active<=1) {
+        s.nvidia_fg_reported_preset=-1;s.nvidia_fg_preset_status=0;return;
+    }
+    if (!nvapi_attempted) {
+        nvapi_attempted=true;
+        nvapi_module=LoadLibraryExW(L"nvapi64.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
+        const auto query=nvapi_module ? reinterpret_cast<NvapiQuery>(GetProcAddress(nvapi_module,"nvapi_QueryInterface")) : nullptr;
+        const auto init=query ? reinterpret_cast<NvapiInitialize>(query(0x0150e828)) : nullptr;
+        const auto unload=query ? reinterpret_cast<NvapiInitialize>(query(0xd22bdd7e)) : nullptr;
+        if (init && unload && init()==0) {
+            nvapi_unload=unload;
+            get_override=reinterpret_cast<NvapiGetOverride>(query(0x3fd96fba));
+        }
+    }
+    if (!get_override) return;
+    Preset::DriverState state{};
+    state.version=uint32_t(sizeof(state))|(1u<<16);
+    state.process=GetCurrentProcessId();
+    const int result=get_override(&state);
+    const int reported=result==0 ? Preset::Reported(state) : -1;
+    const int status=result==0 && (state.fg&Preset::ErrorMask) ? 2 : reported>=0 ? 1 : 0;
+    if (s.nvidia_fg_reported_preset!=reported || s.nvidia_fg_preset_status!=status)
+        std::printf("NVIDIA FG driver feedback: preset=%d, status=%d, flags=0x%llx, API=%d\n",
+                    reported,status,static_cast<unsigned long long>(state.fg),result);
+    s.nvidia_fg_reported_preset=reported;s.nvidia_fg_preset_status=status;
+}
 template<class T> bool Import(T*& target, const char* name) {
     target=reinterpret_cast<T*>(GetProcAddress(module,name)); return target!=nullptr;
 }
@@ -255,6 +292,11 @@ void BindDevice(vk::PhysicalDevice physical,vk::Device dev) {
             BbSettings::Get().nvidia_max_generated=state.numFramesToGenerateMax;
     }
     std::printf("NVIDIA Vulkan: FG supported=%d, Reflex supported=%d\n",int(fg_supported),int(reflex_supported));
+    if (fg_supported && reflex_supported) preset_observer.Start(UpdatePreset, [] {
+        if (nvapi_unload) nvapi_unload();
+        if (nvapi_module) FreeLibrary(nvapi_module);
+        nvapi_unload=nullptr;nvapi_module=nullptr;get_override=nullptr;nvapi_attempted=false;
+    });
 }
 void BeginRender() {
     if (!initialized || !reflex_supported || !Wanted()) return;
@@ -525,7 +567,10 @@ void Shutdown() {
     token_pool.Notify();simulation_ready.notify_all();
     // Reflex sleeps without this mutex. Let it return before unloading SDK state.
     simulation_ready.wait(lock, [] { return !simulation_sleeping; });
+    preset_observer.Stop();
     shutdown_api();simulation_token.reset();flips.clear();device=nullptr;
+    BbSettings::Get().nvidia_fg_reported_preset=-1;
+    BbSettings::Get().nvidia_fg_preset_status=0;
     simulation_pending=false;pacing_policy=0;reflex_options_applied=false;
     token_pool.Notify();simulation_ready.notify_all();
 }

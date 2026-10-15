@@ -12,7 +12,7 @@ The cemetery test with [Revision 34](releases/windows-v1.6-tatsunakyo.34.md) fin
 
 I previously found NVIDIA FG choppy at 60 real + 60 generated FPS, while 146 output (73 + 73) felt smoother on my 154 Hz / G-SYNC setup. In my latest Revision 35 retest that particular effect is no longer happening. I am keeping it under observation before calling it resolved. Revision 35 corrects a simulation-token handoff race and moves capped NVIDIA FG pacing to Reflex before simulation.
 
-I still see a traversal hitch when leaving the cemetery and uneven frame delivery while rotating the camera. My latest recording stays near 120 output FPS, but its real-frame graph reaches roughly 22 ms and then drops into shorter intervals; the PC-latency readout also spikes. That is enough to make movement feel uneven despite the average FPS. The recording alone does not identify whether each spike comes from compilation, streaming, GPU work or presentation. Revision 36 removes unnecessary patch-directory checks and per-element cache-table copies during shader preparation; I still need to repeat the route and camera movement with the rebuilt package.
+I still see a traversal hitch when leaving the cemetery and uneven frame delivery while rotating the camera. My latest recording stays near 120 output FPS, but its real-frame graph reaches roughly 22 ms and then drops into shorter intervals; the PC-latency readout also spikes. That is enough to make movement feel uneven despite the average FPS. The cemetery hitch repeats at the same boundary, including later passes. I am treating that as a traversal/streaming report. R36's shader-cache preparation changes did not establish its cause. R37 removes the shared synchronous file-object path from positioned reads of read-only Windows game assets: each request uses its own offset/event on a separate overlapped reader, while close waits for outstanding reads. The Windows regression checks concurrent reads, exact data, cursor preservation and descriptor lifetime. This removes a concrete streaming bottleneck; the repeatable cemetery route still needs a gameplay comparison before I can mark its hitch resolved.
 
 Background Pause also left the music playing. Revision 36 connects the audio device and output threads to the same pause state, preserving queued samples and resetting their cadence on resume. The regression reproduces the old behavior and checks repeated pause/resume, startup out of focus, silent/failed devices and closing a paused port.
 
@@ -29,7 +29,7 @@ The optional real-frame graph helps compare render delivery. NVIDIA's displayed-
 
 - The upstream empty character-creation preview and some AMD world-loading crashes need confirmation on this fork/current hardware. They are inherited reports, not confirmed failures of every current installation.
 - The game's HUD is still included in FG input. HUD separation remains planned; moving UI can produce interpolation artifacts.
-- Dynamic NVIDIA MFG, XeSS FG/XeLL, AMD ML FG and selectable FG model presets are separate roadmap items. Their unavailable controls are not broken implementations in this package.
+- Dynamic NVIDIA MFG, XeSS FG/XeLL and AMD ML FG remain separate roadmap items. NVIDIA FG presets A/B/C now have a per-installation profile selector; C requires the newer NVIDIA beta runtime and the menu distinguishes driver confirmation from an unverified request. Their unavailable controls are not broken implementations in this package.
 
 ## Resolved or superseded reports
 

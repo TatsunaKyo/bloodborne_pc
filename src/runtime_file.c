@@ -6,6 +6,7 @@
 #define _GNU_SOURCE
 #include "runtime.h"
 #include "save_access.h"
+#include "runtime_asset_io.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,13 +49,23 @@ typedef struct {
 _Static_assert(sizeof(GuestStat)==120,"FreeBSD stat layout");
 
 typedef struct { char *names; size_t count, *offsets; unsigned char *types; } Listing;
-typedef struct { int used, host; Listing *dir; size_t position; char path[512]; } File;
+typedef struct {
+    int used, host; Listing *dir; size_t position; char path[512];
+#ifdef _WIN32
+    void *asset_reader;
+    unsigned pending_reads;
+    int closing;
+#endif
+} File;
 typedef struct { char guest[64]; char host[512]; } Mount;
 static File files[MAX_FILES];
 static Mount mounts[MAX_MOUNTS];
 static size_t mount_count, opens, reads, writes, missing;
 static uint64_t bytes_read;
 static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
+#ifdef _WIN32
+static pthread_cond_t reads_finished=PTHREAD_COND_INITIALIZER;
+#endif
 
 int runtime_file_mount(const char *guest,const char *host) {
     pthread_mutex_lock(&lock);
@@ -193,6 +204,9 @@ static void convert_stat(const HostStat *s,GuestStat *g) {
 }
 static File *get(int fd) {
     if (fd<3 || fd>=MAX_FILES || !files[fd].used) return NULL;
+#ifdef _WIN32
+    if (files[fd].closing) return NULL;
+#endif
     return &files[fd];
 }
 /* BB_AUDIO_TRACE=1: sound file opens and failed reads (missing game sounds). */
@@ -243,11 +257,25 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     Listing *dir=NULL;
     if (!fstat(host,&s) && S_ISDIR(s.st_mode)) dir=list_directory(path);
 #endif
+#ifdef _WIN32
+    void *asset_reader=host>=0 && game_path(guest) && !(flags&3)
+        ? runtime_asset_reader_open(host) : NULL;
+#endif
     pthread_mutex_lock(&lock);
     int fd=-1;
     for (int i=3;i<MAX_FILES;++i) if (!files[i].used) { fd=i; break; }
-    if (fd<0) { pthread_mutex_unlock(&lock); if (host>=0) close(host); free_listing(dir); return -EMFILE; }
+    if (fd<0) {
+        pthread_mutex_unlock(&lock);
+#ifdef _WIN32
+        runtime_asset_reader_close(asset_reader);
+#endif
+        if (host>=0) close(host);
+        free_listing(dir); return -EMFILE;
+    }
     files[fd]=(File){.used=1,.host=host,.dir=dir};
+#ifdef _WIN32
+    files[fd].asset_reader=asset_reader;
+#endif
     snprintf(files[fd].path,sizeof(files[fd].path),"%s",guest);
     ++opens;
     pthread_mutex_unlock(&lock);
@@ -270,6 +298,11 @@ static int64_t do_close(int fd) {
     pthread_mutex_lock(&lock);
     File *f=get(fd);
     if (!f) { pthread_mutex_unlock(&lock); return -EBADF; }
+#ifdef _WIN32
+    f->closing=1;
+    while (f->pending_reads) pthread_cond_wait(&reads_finished,&lock);
+    runtime_asset_reader_close(f->asset_reader);
+#endif
     if (f->host>=0) close(f->host);
     free_listing(f->dir);
     *f=(File){0};
@@ -310,6 +343,26 @@ static int64_t do_read(int fd,void *buffer,uint64_t size) {
     return n;
 }
 static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
+    if (offset<0 || size>INT64_MAX || (uint64_t)offset>INT64_MAX-size) return -EINVAL;
+#ifdef _WIN32
+    pthread_mutex_lock(&lock);
+    File *f=get(fd);
+    void *reader=f ? f->asset_reader : NULL;
+    if (reader) ++f->pending_reads;
+    pthread_mutex_unlock(&lock);
+    if (reader) {
+        touch_for_write(buffer,size);
+        int64_t n=runtime_asset_read_at(reader,buffer,(size_t)size,offset);
+        int error=errno;
+        pthread_mutex_lock(&lock);
+        if (!--f->pending_reads) pthread_cond_broadcast(&reads_finished);
+        pthread_mutex_unlock(&lock);
+        if (n<0) return -error;
+        __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED);
+        __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
+        return n;
+    }
+#endif
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);

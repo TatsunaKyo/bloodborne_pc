@@ -83,6 +83,23 @@ jobs:
             & ./out/verification/audio-background/current.exe $mode 2>&1 | Tee-Object -Append out/verification/audio-background-windows.log
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
+      - name: Execute production Windows asset streaming and NVIDIA preset tests
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          python tests/test_streaming_io.py --prepare out/verification/streaming
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cl /nologo /O2 /EHsc /std:c++20 /I src out/verification/streaming/streaming-io.cpp /Fe:out/verification/streaming/streaming-io.exe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & ./out/verification/streaming/streaming-io.exe 2>&1 | Tee-Object out/verification/streaming-io-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_nvidia_fg_preset.py 2>&1 | Tee-Object out/verification/nvidia-fg-presets-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_launcher_fg_presets_ui.py 2>&1 | Tee-Object out/verification/nvidia-fg-preset-ui-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Execute production presentation lock regression
         shell: pwsh
         run: |

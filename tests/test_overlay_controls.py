@@ -317,6 +317,13 @@ void TestNvidiaControls() {
     Reveal("frame_generation");selectables.clear();Click(controls.at("frame_generation").GetCenter());Frame();Frame();
     Click(selectables.at("NVIDIA DLSS Frame Generation / MFG").GetCenter());
     assert(s.frame_generation==BbSettings::FrameGenerationNvidia);
+    for (int i=0;i<=3;++i) {
+        Reveal("nvidia_fg_preset");selectables.clear();Click(controls.at("nvidia_fg_preset").GetCenter());Frame();Frame();
+        Click(selectables.at(BbSettings::NvidiaFgPresetName(i)).GetCenter());
+        assert(s.nvidia_fg_preset==i);
+        SetOpen(false);s.nvidia_fg_preset=0;BbSettings::Load();
+        assert(s.nvidia_fg_preset==i && s.startup_nvidia_fg_preset==i);SetOpen(true);
+    }
     for (int i=1;i<=5;++i) {
         Reveal("nvidia_generated_frames");selectables.clear();Click(controls.at("nvidia_generated_frames").GetCenter());Frame();Frame();
         Click(selectables.at(std::to_string(i+1)+"x").GetCenter());

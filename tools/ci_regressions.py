@@ -25,7 +25,7 @@ def main():
     parser.add_argument('--gui',action='store_true',help='Requires a display or xvfb-run')
     args=parser.parse_args()
     (ROOT/'out/verification').mkdir(parents=True,exist_ok=True)
-    for file in ('test_launcher_updates.py','test_release_integrity.py','test_release_split.py','test_update_archive.py','test_published_release.py','test_launcher_window_settings.py','test_diagnostics.py','test_geometry_diagnostics.py','test_support_report.py'):
+    for file in ('test_launcher_updates.py','test_release_integrity.py','test_release_split.py','test_update_archive.py','test_published_release.py','test_launcher_window_settings.py','test_diagnostics.py','test_geometry_diagnostics.py','test_support_report.py','test_nvidia_fg_preset.py'):
         run([sys.executable,'tests/'+file])
     for file in ('test_run_settings.py',):
         run([sys.executable,'-m','unittest','discover','-s','tests','-p',file])
@@ -63,7 +63,7 @@ def main():
     run([sys.executable,'tests/test_overlay_controls.py','--compiler','g++',
          '--capture-dir',f'out/verification/menu{revision}'])
     if args.gui:
-        for file in ('test_launcher_startup.py','test_launcher_geometry.py','test_launcher_fg_diagnostic_ui.py','test_launcher_xess.py','test_support_report_ui.py','test_save_manager_ui.py'):
+        for file in ('test_launcher_startup.py','test_launcher_geometry.py','test_launcher_fg_diagnostic_ui.py','test_launcher_xess.py','test_launcher_fg_presets_ui.py','test_support_report_ui.py','test_save_manager_ui.py'):
             run([sys.executable,'tests/'+file])
 
 

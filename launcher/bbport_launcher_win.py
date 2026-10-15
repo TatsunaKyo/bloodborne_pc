@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.36'
+VERSION = '1.6-tatsunakyo.37'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -187,7 +187,7 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'xess_preset': '2', 'show_fps': '1', 'show_dlss_preset': '0',
                  'show_resolution': '0', 'show_frame_generation': '0', 'show_latency': '0', 'show_frametime_graph': '0',
-                 'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1',
+                 'background_mode': 'run', 'frame_generation': 'off', 'limit_generated_fps': '0', 'generated_fps_limit': '144', 'reflex': 'off', 'nvidia_generated_frames': '1', 'nvidia_fg_preset': 'default',
                  'amd_antilag': '0', 'real_fps_limit': '-1',
                  'cheat_damage': '1', 'cheat_incoming': '1', 'cheat_echoes': '1', 'cheat_movement': '1',
                  'cheat_infinite_stamina': '0', 'cheat_no_consume': '0', 'cheat_no_fall_damage': '0'}
@@ -200,6 +200,9 @@ FRAME_GENERATORS = [('off', ('Off', 'Выключено')), ('fsr', ('FSR Frame 
                     ('nvidia', ('NVIDIA DLSS Frame Generation / MFG', 'NVIDIA DLSS Frame Generation / MFG'))]
 REFLEX_MODES = [('off', ('Off', 'Выключено')), ('on', ('On', 'Включено')), ('boost', ('On + Boost', 'Включено + Boost'))]
 NVIDIA_MULTIPLIERS = [(str(n-1), (f'{n}x', f'{n}x')) for n in range(2, 7)]
+NVIDIA_FG_PRESETS = [('default', ('Default (NVIDIA settings)', 'По настройкам NVIDIA')),
+                     ('a', ('A', 'A')), ('b', ('B', 'B')),
+                     ('c', ('C (Performance / beta)', 'C (производительность / бета)'))]
 BACKGROUND_MODES = [('run', ('Keep running', 'Продолжать работу')),
                     ('pause', ('Pause game and rendering', 'Приостановить игру и рендер')),
                     ('30', ('Limit to 30 FPS', 'Лимит 30 FPS')),
@@ -340,6 +343,9 @@ def load_menu():
         values['real_fps_limit'] = '-1'
     if values['nvidia_generated_frames'] not in dict(NVIDIA_MULTIPLIERS):
         values['nvidia_generated_frames'] = '1'
+    values['nvidia_fg_preset'] = values['nvidia_fg_preset'].lower()
+    if values['nvidia_fg_preset'] not in dict(NVIDIA_FG_PRESETS):
+        values['nvidia_fg_preset'] = 'default'
     for key in MENU_FLAGS:
         values[key] = '1' if values[key] == '1' else '0'
     for key in ('cheat_damage', 'cheat_incoming', 'cheat_echoes', 'cheat_movement'):
@@ -1475,6 +1481,13 @@ class Launcher:
                  multiplier_choice,
                  _('NVIDIA FG requires a compatible GPU, driver and Hardware-accelerated GPU scheduling. Only multipliers supported by your GPU will run. SDR and HDR10 use the same FG path.',
                    'Нужны совместимые GPU, драйвер и планирование GPU с аппаратным ускорением. Работают только поддерживаемые GPU множители. Поддерживаются SDR и HDR10.'))
+        self.nvidia_fg_preset_row = self.row(f, _('NVIDIA FG preset', 'Пресет NVIDIA FG'),
+                 self.choice(f, 'nvidia_fg_preset', 'menu', NVIDIA_FG_PRESETS),
+                 _('Applied before the next launch through this installation\'s NVIDIA profile. Default restores the previous settings. C needs NVIDIA\'s updated beta runtime; choosing it does not install that runtime. Check driver confirmation under Frames in-game.',
+                   'Применяется перед следующим запуском через профиль этой установки. Default возвращает прежние настройки. Для C нужна новая бета-среда NVIDIA. Подтверждение драйвера доступно в Frames в игре.'))
+        def fg_preset_visibility(*_args):
+            self.show_row(self.nvidia_fg_preset_row, self.var('frame_generation', 'menu').get() == 'nvidia')
+        self.var('frame_generation', 'menu').trace_add('write', fg_preset_visibility)
         self.check(f, 'limit_generated_fps', 'menu',
                    _('Limit total FPS with Frame Generation', 'Лимит общих FPS с генерацией кадров'))
         holder = self.fps_cap_control(f, 'generated_fps_limit', 'menu', 30, 1000,
@@ -1490,6 +1503,8 @@ class Launcher:
         self.amd_antilag_check = self.check(f, 'amd_antilag', 'menu', 'AMD Anti-Lag 2',
                    _('Reduces input latency on supported Radeon GPUs through VK_AMD_anti_lag. Independent of the upscaler and FSR FG; unavailable drivers keep the normal path.',
                      'Снижает задержку ввода на совместимых Radeon через VK_AMD_anti_lag. Независимо от апскейлера и FSR FG; без поддержки используется обычный режим.'))
+        # Hide only after every row in the section has a permanent grid index.
+        fg_preset_visibility()
 
     def build_window(self):
         ttk = self.ttk

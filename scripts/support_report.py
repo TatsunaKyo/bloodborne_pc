@@ -35,6 +35,7 @@ ENUMS = {
     'fps_mode': {'uncap', '30', '60', '75', '90'},
     'dlss_preset': {'default', 'e', 'f', 'j', 'k', 'm', 'l'},
     'frame_generation': {'off', 'fsr', 'nvidia'},
+    'nvidia_fg_preset': {'default', 'a', 'b', 'c'},
     'reflex': {'off', 'on', 'boost'}, 'background_mode': {'run', 'pause', '30', '60'},
     'live_resolution': {'auto', '0', '1'}, 'menu_language': {'en', 'ru'},
     'draw_pipe': {'', '0', '1'}, 'readbacks': {'', '0', '2'},

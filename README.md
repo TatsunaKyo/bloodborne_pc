@@ -5,7 +5,7 @@
 <p align="center">Experience Bloodborne natively on Windows, enhanced with modern rendering technologies, customizable gameplay and a redesigned launcher.</p>
 
 <p align="center">
-  <a href="docs/releases/windows-v1.6-tatsunakyo.36.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 36" height="28"></a>
+  <a href="docs/releases/windows-v1.6-tatsunakyo.37.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 37" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/windows.svg" alt="Windows 10 / 11" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/vulkan.svg" alt="Vulkan 1.3" height="28"></a>
   <a href="LICENSE"><img src="docs/assets/readme/license.svg" alt="GPL-2.0+" height="28"></a>
@@ -74,7 +74,7 @@ For DLSS, I exposed the following presets exactly as separate choices:
 
 ![Illustrative FG toggle: 60 real FPS, 120 output FPS and an unchanged real-frame graph](docs/assets/features/frame-generation.gif)
 
-Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**; I wanted HDR users to have the same FG choices. You can activate and adjust FG **live from the in-game menu**, as well as before launch in the launcher. I kept the normal FPS limit tied to real game frames, with or without FG, and added an optional second limit for the complete FG output. This lets you control the game rate and the generated display rate separately. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
+Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**; I wanted HDR users to have the same FG choices. You can activate and adjust FG **live from the in-game menu**, as well as before launch in the launcher. I kept the normal FPS limit tied to real game frames, with or without FG, and added an optional second limit for the complete FG output. This lets you control the game rate and the generated display rate separately. I also added a separate **NVIDIA FG model choice: Default / A / B / C** under Frames in both menus. Model changes apply at the next launch, and the in-game menu shows whether NVIDIA confirms the override; C requires NVIDIA’s newer beta runtime. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
 
 ### NVIDIA Reflex and AMD Anti-Lag 2
 

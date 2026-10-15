@@ -35,7 +35,19 @@ The optional [frametime graph](display-and-overlay.md#reading-the-graph) records
 
 My earlier Hunter's Dream capture showed extreme object vectors while the real scene and DLSS output looked normal. I preserved depth before UI passes could reuse it, added ordered world-batch identity and kept each scene's inputs alive through presentation. The later cemetery recurrence needed another correction: Revision 34 checks every pose binding behind shared meshes and avoids positional history for unidentified instance slots. My cemetery test on Windows 11 / RTX 5070 Ti now confirms that the flashing is resolved. Those protections remain in place while I work on smoother FG delivery.
 
-**FG presets A/B remain pending.** I need a supported model-selection path and evidence that it changes the FG model before offering the choice. This is separate from Streamline's UI recomposition option, which needs genuine HUDless color and matching UI color/alpha buffers that this revision does not yet supply. DLSS super-resolution presets E/F/J/K/M/L remain available as before.
+## NVIDIA FG presets A / B / C
+
+I added a separate **NVIDIA FG preset** selector under **Frames** in both interfaces. It offers Default, A, B and C (Performance / beta). These are FG models, separate from DLSS Super Resolution's E/F/J/K/M/L presets. Changing the FG model takes effect on the next launch; the in-game menu saves the choice and offers Apply and restart.
+
+The launcher uses NVIDIA's public NVAPI to set the two FG override values in a dedicated profile for this installation's `bin/bb-probe.exe`, before the renderer starts. Default restores the settings saved before my override. Other NVIDIA settings and global profiles stay outside this control. If the executable already belongs to another application's profile, or the FG values have changed outside the launcher, it keeps them and explains the conflict in the session log.
+
+I also query NVIDIA's process feedback. **NVIDIA driver reports FG preset** appears only when the driver reports preset selection, feature creation and evaluation without an override error. A saved profile value alone does not produce that message. If the driver cannot confirm the model, the menu says so. The feedback and startup result are included in the existing session log.
+
+NVIDIA released C as a beta performance option on 13 October 2026. It needs the updated NVIDIA beta runtime/driver support. This package still ships the latest public Streamline SDK, 2.14.1, with its signed DLSS-G 310.9.1 runtime; selecting C does not download or replace that DLL. NVIDIA App's beta override must supply a compatible newer runtime for C. I cannot claim a successful C gameplay result from this build until NVIDIA's feedback and a Windows/RTX gameplay comparison confirm it. The profile, restore, interruption and UI tests cover the integration rather than claiming GPU model execution.
+
+References: [NVIDIA's C announcement](https://www.nvidia.com/en-us/geforce/news/dlss-5-faster-ai-model-hogwarts-legacy-rtx-spark-laptops/), [public NVAPI profile settings](https://github.com/NVIDIA/nvapi/blob/70d337db9186e968eab622f7e786de7e437faf3d/NvApiDriverSettings.h), [process override feedback](https://docs.nvidia.com/nvapi/struct__NV__NGX__DLSS__OVERRIDE__GET__STATE__PARAMS__V1.html).
+
+UI recomposition is another feature: it needs genuine HUDless color and matching UI color/alpha buffers. It is not the FG model B switch.
 
 ## Testing and further work
 

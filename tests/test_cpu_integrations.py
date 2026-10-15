@@ -12,6 +12,7 @@ CASES = {
     'temporal_history': [], 'motion_history': [],
     'background_pause': ['gpu/shim/bbport_background.cpp'],
     'real_fps': [SETTINGS], 'overlay_settings': [SETTINGS],
+    'nvidia_preset_state': [SETTINGS],
     'upscaler_support': [SETTINGS], 'xess_presets': [SETTINGS],
     'amd_antilag': [SETTINGS, 'gpu/shim/bbport_amd.cpp'],
     'xess': [SETTINGS, 'gpu/shadps4/video_core/renderer_vulkan/vk_xess.cpp'],

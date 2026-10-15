@@ -544,6 +544,25 @@ void FrameSettings() {
         ImGui::EndCombo();
     }
     if (s.frame_generation==BbSettings::FrameGenerationNvidia) {
+        const int fg_preset=std::clamp(s.nvidia_fg_preset.load(),0,3);
+        if (ImGui::BeginCombo(Text("NVIDIA FG preset###nvidia_fg_preset","Пресет NVIDIA FG###nvidia_fg_preset"),
+                              BbSettings::NvidiaFgPresetName(fg_preset))) {
+            for (int i=0;i<4;++i)
+                if (ImGui::Selectable(BbSettings::NvidiaFgPresetName(i),i==fg_preset)) Store(s.nvidia_fg_preset,i,true);
+            ImGui::EndCombo();
+        }
+        if (s.nvidia_fg_preset!=s.startup_nvidia_fg_preset)
+            Hint(Text("FG preset saved. Apply and restart to change the NVIDIA driver profile.",
+                      "Пресет FG сохранён. Примените и перезапустите игру для изменения профиля NVIDIA."));
+        if (s.nvidia_fg_preset_status==1)
+            ImGui::Text(Text("NVIDIA driver reports FG preset: %s","Драйвер NVIDIA сообщает пресет FG: %s"),
+                        BbSettings::NvidiaFgPresetName(s.nvidia_fg_reported_preset));
+        else if (s.nvidia_fg_preset_status==2)
+            Hint(Text("NVIDIA reports an FG override error. The selected preset is not confirmed.",
+                      "NVIDIA сообщает об ошибке переопределения FG. Выбранный пресет не подтверждён."));
+        else
+            Hint(Text("FG preset not confirmed by NVIDIA. C needs the updated NVIDIA beta runtime; choosing it does not install that runtime.",
+                      "Пресет FG не подтверждён NVIDIA. Для C нужна новая бета-среда NVIDIA; выбор C не устанавливает её."));
         const int selected=s.nvidia_generated_frames;
         const std::string preview=std::to_string(selected+1)+"x";
         if (ImGui::BeginCombo(Text("NVIDIA FG multiplier###nvidia_generated_frames","Множитель NVIDIA FG###nvidia_generated_frames"),preview.c_str())) {
@@ -959,6 +978,7 @@ void Menu() {
     }
     ImGui::Separator();
     bool restart = s.object_motion != s.startup_object_motion ||
+                   s.nvidia_fg_preset != s.startup_nvidia_fg_preset ||
                    s.model_lod != s.startup_model_lod ||
                    s.live_resolution != s.startup_live_resolution ||
                    BbSettings::ResolutionNeedsRestart();

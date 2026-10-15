@@ -152,6 +152,7 @@ void Load() {
     v.limit_generated_fps = false;
     v.generated_fps_limit = 144;
     v.reflex=0;v.nvidia_generated_frames=1;
+    v.nvidia_fg_preset=0;
     v.amd_antilag = false;
     v.real_fps_limit = -1;
     const char* fps = std::getenv("BB_FPS");
@@ -226,6 +227,8 @@ void Load() {
                     v.real_fps_limit = limit;
             } else if (key == "nvidia_generated_frames") {
                 v.nvidia_generated_frames=std::clamp(std::atoi(value.c_str()),1,5);
+            } else if (key == "nvidia_fg_preset") {
+                v.nvidia_fg_preset=ParseNvidiaFgPreset(value);
             } else if (key == "limit_generated_fps") {
                 v.limit_generated_fps = value == "1";
             } else if (key == "generated_fps_limit") {
@@ -289,6 +292,7 @@ void Load() {
     v.startup_model_lod = v.model_lod;
     v.startup_output_res = v.output_res;
     v.startup_live_resolution = v.live_resolution;
+    v.startup_nvidia_fg_preset = v.nvidia_fg_preset;
     UpdateCheatMask();
 }
 
@@ -377,6 +381,7 @@ void Save() {
                      background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
         std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : "off");
         std::fprintf(file,"reflex=%s\nnvidia_generated_frames=%d\n",v.reflex==2 ? "boost" : v.reflex==1 ? "on" : "off",v.nvidia_generated_frames.load());
+        std::fprintf(file,"nvidia_fg_preset=%s\n",NvidiaFgPresetKey(v.nvidia_fg_preset));
         std::fprintf(file,"amd_antilag=%d\nreal_fps_limit=%d\n",int(v.amd_antilag.load()),v.real_fps_limit.load());
         std::fprintf(file,"limit_generated_fps=%d\ngenerated_fps_limit=%d\n",
                      int(v.limit_generated_fps.load()),v.generated_fps_limit.load());
@@ -429,6 +434,21 @@ void Save() {
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");
     std::fclose(file);
+}
+
+int ParseNvidiaFgPreset(std::string_view value) {
+    if (value=="a" || value=="A") return 1;
+    if (value=="b" || value=="B") return 2;
+    if (value=="c" || value=="C") return 3;
+    return 0;
+}
+const char* NvidiaFgPresetKey(int preset) {
+    constexpr const char* keys[]={"default","a","b","c"};
+    return keys[std::clamp(preset,0,3)];
+}
+const char* NvidiaFgPresetName(int preset) {
+    constexpr const char* names[]={"Default (NVIDIA settings)","A","B","C (Performance / beta)"};
+    return names[std::clamp(preset,0,3)];
 }
 
 int ParseDlssPreset(std::string_view value) {

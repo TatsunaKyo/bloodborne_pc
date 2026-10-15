@@ -223,6 +223,8 @@ def main():
         if backup['snapshot']:
             print('Save Manager: pre-launch snapshot created and verified')
         env.setdefault('BB_GPU_USER_DIR', str(user_dir))
+        from nvidia_fg_preset import configure_launch
+        print(configure_launch(config, probe, env))
         if env.get('BB_ONLINE') == '1':
             online_overrides(env, user_dir)
         this = ['--run'] if getattr(sys, 'frozen', False) else [str(Path(__file__).resolve())]

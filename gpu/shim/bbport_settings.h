@@ -76,6 +76,10 @@ struct Values {
     std::atomic<bool> limit_generated_fps{false};
     std::atomic<int> generated_fps_limit{144};
     std::atomic<int> reflex{0}, nvidia_generated_frames{1}, nvidia_max_generated{0};
+    // Driver profile choice, applied by run.py before the next renderer process starts.
+    std::atomic<int> nvidia_fg_preset{0}, nvidia_fg_reported_preset{-1};
+    std::atomic<int> nvidia_fg_preset_status{0}; // 0 unknown, 1 driver confirms, 2 driver error
+    int startup_nvidia_fg_preset = 0;
     std::atomic<bool> amd_antilag{false}, amd_antilag_supported{false};
     // -1 keeps the startup/display policy, 0 removes the real-frame cap.
     std::atomic<int> real_fps_limit{-1};
@@ -182,6 +186,9 @@ int ParseDlssPreset(std::string_view value);
 const char* DlssPresetKey(int preset);
 const char* DlssPresetName(int preset);
 const char* DlssPresetShortName(int preset);
+int ParseNvidiaFgPreset(std::string_view value);
+const char* NvidiaFgPresetKey(int preset);
+const char* NvidiaFgPresetName(int preset);
 const char* UpscalerName(int upscaler);
 
 } // namespace BbSettings
