@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include "bbport_threads.h"
 #include "bbport_copy.h"
+#include "bbport_hitch.h"
 
 #include <array>
 #include <atomic>
@@ -107,6 +108,7 @@ public:
         if (consumed.load(std::memory_order_acquire) == head) {
             return;
         }
+        BbHitch::Scope hitch{"draw pipe drain"};
         ++drains;
         const u32 slot = reason < NumReasons ? reason : ReasonRasterizer;
         ++drains_by_reason[slot];

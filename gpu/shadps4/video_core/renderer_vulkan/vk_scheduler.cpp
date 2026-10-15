@@ -27,8 +27,9 @@ namespace Vulkan {
 
 std::mutex Scheduler::submit_mutex;
 
-Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
-    : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
+Scheduler::Scheduler(const Instance& instance, bool threaded_recording, vk::Queue queue)
+    : instance{instance}, submission_queue{queue ? queue : instance.GetGraphicsQueue()},
+      work_semaphore{instance}, command_pool{instance, &work_semaphore} {
     // bbport: BB_VK_RECORD_THREAD=0 records on the calling thread.
     const char* env = std::getenv("BB_VK_RECORD_THREAD");
     if (threaded_recording && !(env && env[0] == '0')) {
@@ -204,6 +205,7 @@ void Scheduler::WaitDeferredSignals() {
         BbToggle::Disabled(BbToggle::OrderedGuestWrites)) {
         return;
     }
+    BbHitch::Scope hitch{"deferred guest signals"};
     BbStats::WaitTimer timer{BbStats::host_copies_wait_ns};
     KickRecording(true);
     while (deferred_signals_done->load(std::memory_order_acquire) < issued) {
@@ -214,6 +216,7 @@ void Scheduler::WaitDeferredSignals() {
 }
 
 void Scheduler::WaitHostCopies() {
+    BbHitch::Scope hitch{"host copies drain"};
     if (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
         BbStats::WaitTimer timer{BbStats::host_copies_wait_ns};
         BbStats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
@@ -463,7 +466,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         std::scoped_lock lk{submit_mutex};
         BbHitch::Record("Vulkan queue lock",lock_started);
         BbHitch::Scope hitch{"Vulkan queue submit"};
-        const auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+        const auto submit_result = submission_queue.submit(submit_info, info.fence);
         ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
     }
 

@@ -5,6 +5,7 @@
 #include "bbport_amd.h"
 #include "bbport_nvidia.h"
 #include "bbport_copy.h"
+#include "bbport_hitch.h"
 #ifndef _WIN32
 #include <sys/resource.h>
 #endif
@@ -108,6 +109,7 @@ u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     return runtime_memory_clamp(virtual_addr, size);
 }
 static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
+    BbHitch::Scope hitch{"guest sparse copy / VMA lookup"};
     while (size) {
         uintptr_t start = 0, end = 0;
         int mapped = 0;
@@ -136,6 +138,7 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
     return runtime_memory_write_backing(reinterpret_cast<uintptr_t>(address), data, size) != 0;
 }
 void AddressSpace::Protect(VAddr virtual_addr, u64 size, MemoryPermission perms) {
+    BbHitch::Scope hitch{"guest page protection"};
     BbStats::Timer timer{BbStats::t_protect};
     const u64 pages = (size + 4095) / 4096;
     BbStats::protect_calls.fetch_add(1, std::memory_order_relaxed);

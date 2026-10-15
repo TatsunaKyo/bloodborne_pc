@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.42'
+VERSION = '1.6-tatsunakyo.43'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -705,6 +705,13 @@ def read_game_output(process, settings, diagnostic, emit):
         log_dir = Path(settings.get('user_dir') or DATA_DIR / 'user')
         log_dir.mkdir(parents=True, exist_ok=True)
         log = open(log_dir / 'last_run.log', 'w', encoding='utf-8', buffering=1)
+        # Keep current-run identity/settings in the ordinary log as well. An
+        # older opt-in diagnostics folder must not be mistaken for this run.
+        log.write(f'Bloodborne launcher {VERSION} | {time.strftime("%Y-%m-%dT%H:%M:%S%z")}\n')
+        keys = ('window_mode', 'hdr', 'present_mode', 'fps_mode', 'frame_cap',
+                'frames_ahead', 'draw_pipe', 'readbacks')
+        log.write('Launch settings: ' + json.dumps({k: settings.get(k) for k in keys}) + '\n')
+        log.write('Requested graphics: ' + json.dumps(menu_values(settings), ensure_ascii=False) + '\n')
     except OSError:
         pass
     try:

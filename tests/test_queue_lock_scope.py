@@ -107,6 +107,7 @@ public:
     static std::mutex submit_mutex;
     Semaphore work_semaphore;
     Instance instance;
+    vk::Queue submission_queue{instance.GetGraphicsQueue()};
     std::function<void(SubmitInfo&)> on_submit;
     vk::CommandBuffer current_cmdbuf{reinterpret_cast<VkCommandBuffer>(1)};
     void EndRendering() {}

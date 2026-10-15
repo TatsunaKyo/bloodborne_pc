@@ -1221,7 +1221,7 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
     info.PhysicalDevice = instance.GetPhysicalDevice();
     info.Device = instance.GetDevice();
     info.QueueFamily = instance.GetGraphicsQueueFamilyIndex();
-    info.Queue = instance.GetGraphicsQueue();
+    info.Queue = instance.GetPresentQueue();
     info.DescriptorPoolSize = 16;
     info.MinImageCount = std::max(image_count, 2u);
     info.ImageCount = std::max(image_count, 2u);
@@ -1431,7 +1431,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
         .pColorAttachments = &attachment,
     });
     {
-        // Font atlas uploads submit to the graphics queue themselves.
+        // Font atlas uploads use the same queue as this presentation pass.
         std::scoped_lock submit_lock{Vulkan::Scheduler::submit_mutex};
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
     }

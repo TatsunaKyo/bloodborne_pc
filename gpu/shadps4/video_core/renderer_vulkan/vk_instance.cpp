@@ -16,6 +16,7 @@
 #include "video_core/renderer_vulkan/vk_dlss.h"
 #include "video_core/renderer_vulkan/vk_xess.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/queue_plan.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 
 #include <vk_mem_alloc.h>
@@ -416,10 +417,12 @@ bool Instance::CreateDevice() {
         return false;
     }
 
-    static constexpr std::array queue_priorities = {1.0f};
+    static constexpr std::array queue_priorities = {1.0f,1.0f};
+    const u32 present_queue_index=QueuePlan::PresentIndex(properties.vendorID,
+        family_properties[queue_family_index].queueCount);
     const vk::DeviceQueueCreateInfo queue_info = {
         .queueFamilyIndex = queue_family_index,
-        .queueCount = static_cast<u32>(queue_priorities.size()),
+        .queueCount = present_queue_index+1,
         .pQueuePriorities = queue_priorities.data(),
     };
 
@@ -671,7 +674,9 @@ bool Instance::CreateDevice() {
     if (Xess* xess=Xess::Get()) xess->Initialize(*instance,physical_device,*device);
 
     graphics_queue = device->getQueue(queue_family_index, 0);
-    present_queue = device->getQueue(queue_family_index, 0);
+    present_queue = device->getQueue(queue_family_index, present_queue_index);
+    std::printf("Vulkan queues: graphics=0, present=%u (same family %u)\n",
+                present_queue_index,queue_family_index);
 
     if (calibrated_timestamps) {
         const auto [time_domains_result, time_domains] =

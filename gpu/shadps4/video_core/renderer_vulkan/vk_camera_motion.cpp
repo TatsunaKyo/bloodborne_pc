@@ -178,6 +178,16 @@ vk::Image CameraMotion::ObjectMotionImage(u32 width, u32 height) const noexcept 
 
 void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
                                 vk::ImageView motion_view, u32 width, u32 height) {
+    // Log the camera actually used for reconstruction, rather than every
+    // preliminary pass (which can alternate depth/viewport each frame).
+    static std::array<float,4> logged{};
+    const std::array<float,4> configuration{float(width),float(height),
+        std::copysign(1.f,current.proj[0]),std::copysign(1.f,current.proj[1])};
+    if (configuration!=logged) {
+        std::printf("Camera motion: scene %ux%u, viewport scales %.1f, %.1f; screen projection %.6f, %.6f\n",
+                    width,height,viewport_scale[0],viewport_scale[1],current.proj[0],current.proj[1]);
+        logged=configuration;
+    }
     if (HistoryReset() && object_motion) object_motion->DiscardPreviousHistory();
     bool object_valid = false;
     const vk::ImageView object_view = object_motion && object_motion->Enabled()
@@ -228,10 +238,7 @@ void CameraMotion::OnConstants(const float* data) {
     if (HistoryReset()) {
         previous_jitter = jitter;
     }
-    if (size != render_size) {
-        std::printf("Camera motion: scene render size %ux%u\n", size[0], size[1]);
-        render_size = size;
-    }
+    render_size = size;
 }
 
 void CameraMotion::OnGBufferPass(VideoCore::ImageId depth, float viewport_x, float viewport_y) {

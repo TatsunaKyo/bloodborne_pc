@@ -34,5 +34,9 @@ with tempfile.TemporaryDirectory(prefix='bbport-diagnostics-') as temp:
         assert 'DO NOT RECORD THIS' not in json.dumps(metadata) and 'SECRET' not in json.dumps(metadata)
         folders.append(session.directory)
     assert folders[0]!=folders[1] and all((p/'session.log').exists() for p in folders)
-    assert 'Process exited with code 3' in (Path(temp)/'user/last_run.log').read_text()
+    last=(Path(temp)/'user/last_run.log').read_text()
+    assert 'Process exited with code 3' in last
+    assert f'Bloodborne launcher {launcher.VERSION}' in last
+    assert 'Launch settings: ' in last and 'Requested graphics: ' in last
+    assert 'DO NOT RECORD THIS' not in last and 'SECRET' not in last
 print('PASS: diagnostics disabled by default; separate retained runs, real normal/crash subprocess output, timings/settings/exit code, credential omission and last-run compatibility.')

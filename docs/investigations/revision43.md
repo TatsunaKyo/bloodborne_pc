@@ -1,4 +1,4 @@
-# R43 investigation — work in progress
+# R43 investigation and reproduced defects
 
 Baseline: `2fe3a67fc3c2930352bb88af57f881b9b0829494` (R42).
 
@@ -53,6 +53,24 @@ The newer upstream memory-layer page-table rewrite is absent from this fork;
 its measured fix must not be represented as a fix to this fork's different
 memory path. Camera coordinates here retain +y-up screen clip coordinates for
 the existing TAA and NVIDIA matrices, with viewport signs included in projection.
+
+## Queue separation and attribution
+
+NVIDIA devices with at least two queues in the selected graphics family now
+request a second same-family queue for presentation. `present_scheduler` submits
+to that queue; guest rendering and sparse binds remain on queue zero. The existing
+frame-ready/acquisition semaphores and SDK input-retirement fences are retained.
+Font uploads run on the presentation queue. One-queue devices and other vendors
+retain queue zero. Dispatch fixtures reproduce R42 routing every submission to
+the graphics queue, then verify independent routing with the required waits.
+These checks do not measure target NVIDIA scheduling or display timing.
+
+The automatic journal now includes draw-pipe drain, host-copy drain, deferred
+guest signals, shader registry publication, sparse guest copying/VMA lookups and
+page protection. The ordinary last-run log records its version and requested
+settings, so a stale optional session cannot silently supply another revision's
+configuration. The CPU path retains the distinction between guest submission,
+GPU-thread processing and actual hardware execution.
 
 ## Outstanding validation
 
