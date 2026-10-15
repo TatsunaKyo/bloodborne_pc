@@ -98,6 +98,10 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tests/test_nvidia_fg_preset.py 2>&1 | Tee-Object out/verification/nvidia-fg-presets-windows.log
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cl /nologo /O2 /EHsc /std:c++20 /I gpu/shim tests/test_nvidia_preset_state.cpp gpu/shim/bbport_settings.cpp /Fe:out/verification/nvidia-preset-state.exe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & ./out/verification/nvidia-preset-state.exe 2>&1 | Tee-Object out/verification/nvidia-preset-state-windows.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tests/test_launcher_fg_presets_ui.py 2>&1 | Tee-Object out/verification/nvidia-fg-preset-ui-windows.log
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Execute production presentation lock regression
