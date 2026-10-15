@@ -10,6 +10,6 @@ I also added **NVIDIA FG preset: Default / A / B / C** under **Frames** in the l
 
 The in-game menu reports the preset only when NVIDIA's process feedback confirms an evaluated override without an error. Otherwise it says the model is unconfirmed. **C needs NVIDIA's updated beta runtime**: selecting it does not install that runtime. The package retains the signed runtime from the latest public Streamline SDK. [Requirements and implementation](../frame-generation.md#nvidia-fg-presets-a--b--c).
 
-The regression checks cover parallel asset reads, exact bytes, offsets above 4 GiB, EOF, pending-read closure, profile restoration, failed/interrupted changes and all four menu selections. Windows execution and compiled launcher/layout results are included with the package. These checks do not substitute for a GPU gameplay comparison of C or the cemetery route.
+I rebuilt the Windows launcher and native components and ran the local regression and compiled UI checks. The Windows streaming fixture covers concurrent reads, exact bytes, offsets above 4 GiB, EOF and pending-read closure. Profile tests cover restoration and failed/interrupted changes; both menus exercise all four choices. GitHub has not started the hosted run for this source, so I am keeping Windows fixture execution pending. The package records that distinction, along with the open gameplay comparison for C and the cemetery route.
 
 Extract the full Windows ZIP into a new folder and keep your existing game, saves, mods and settings paths. The Developer ZIP is optional for playing.

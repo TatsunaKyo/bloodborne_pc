@@ -31,6 +31,7 @@ HARNESS = r'''
 #include <thread>
 #include <vector>
 #include "bbport_nvidia_tokens.h"
+#include "bbport_nvidia_preset.h"
 #include "core/emulator_settings.h"
 using namespace std::chrono_literals;
 namespace sl {
@@ -50,6 +51,7 @@ enum { FrameGenerationOff=0,FrameGenerationNvidia=2,BackgroundRun=0,BackgroundPa
 struct Settings {
     std::atomic<int> reflex{1},frame_generation{FrameGenerationNvidia},background_mode{BackgroundRun};
     std::atomic<int> frame_generation_cap_multiplier{0};
+    std::atomic<int> nvidia_fg_reported_preset{-1},nvidia_fg_preset_status{0};
     std::atomic<bool> show_fps{true},show_latency{false},window_focused{true};
     std::atomic<bool> nvidia_api_error{false};
     bool variable_frame_time{true};
@@ -134,6 +136,7 @@ struct Flip {int index;int64_t argument;sl::FrameToken* token;};
 std::deque<Flip> flips;
 #if CURRENT
 auto shutdown_api=&ShutdownApi;
+Preset::Observer preset_observer;
 void* device{};
 void BeforeSwapchainChange() { token_pool.Notify();simulation_ready.notify_all(); }
 #endif
