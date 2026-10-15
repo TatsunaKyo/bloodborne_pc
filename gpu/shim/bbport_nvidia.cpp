@@ -55,6 +55,7 @@ std::condition_variable simulation_ready;
 Token simulation_token;
 uint32_t frame_index{};
 bool rendering{}, simulation_sleeping{}, simulation_pending{}, fg_on{}, failed{};
+bool input_queues_parallel{};
 // Publish the cap and multiplier together. VideoOut only yields its limiter
 // after the driver has accepted that exact foreground pacing policy.
 std::atomic<uint64_t> pacing_policy{};
@@ -237,7 +238,7 @@ void Off() {
         sl::DLSSGOptions options; options.mode=sl::DLSSGMode::eOff;
         fg_options(viewport,options);
     }
-    fg_on=false;
+    fg_on=false;input_queues_parallel=false;
     auto& s=BbSettings::Get();
     s.frame_generation_cap_multiplier=0;
     s.nvidia_real_fps=s.nvidia_output_fps=-1.0f;
@@ -561,7 +562,13 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
     options.numBackBuffers=buffers;options.mvecDepthWidth=source.render_width;options.mvecDepthHeight=source.render_height;
     options.colorWidth=snapshot->width;options.colorHeight=snapshot->height;options.colorBufferFormat=uint32_t(format);
     options.mvecBufferFormat=VK_FORMAT_R16G16_SFLOAT;options.depthBufferFormat=VK_FORMAT_R32_SFLOAT;
-    options.queueParallelismMode=sl::DLSSGQueueParallelismMode::eBlockPresentingClientQueue;options.onErrorCallback=Error;
+    // Scene snapshots are immutable until WaitForInputs retires their SDK fence.
+    // Avoid inserting FG's completion into the shared rendering/present queue.
+    // Bootstrap with automatic queue ordering until SL exposes its input fence.
+    options.queueParallelismMode=latest_fence && latest_value ?
+        sl::DLSSGQueueParallelismMode::eBlockNoClientQueues :
+        sl::DLSSGQueueParallelismMode::eBlockPresentingClientQueue;
+    options.onErrorCallback=Error;
     sl::Constants c;
     const auto p=Projection(source.projection),ip=Projection(source.projection,true);
     const auto pp=Projection(source.previous_projection),ipp=Projection(source.previous_projection,true);
@@ -607,7 +614,8 @@ void BeforePresent(Vulkan::Frame* frame,vk::CommandBuffer command,vk::Image imag
             command,*snapshot,image,format,output_width,output_height,uint32_t(*token),generated,
             diagnostic_camera);
         if (!fg_on) frame_metrics.Reset();
-        fg_on=true;s.frame_generation_problem=nullptr;
+        fg_on=true;input_queues_parallel=options.queueParallelismMode==sl::DLSSGQueueParallelismMode::eBlockNoClientQueues;
+        s.frame_generation_problem=nullptr;
         s.frame_generation_cap_multiplier=int(generated+1);
         configured_generated=generated;configured_width=snapshot->width;
         configured_height=snapshot->height;configured_format=uint32_t(format);
@@ -624,7 +632,9 @@ bool Present(Vulkan::Frame* frame,const std::function<bool()>& present) {
     if (fg_state && fg_on) {
         sl::DLSSGState state;
         const auto result=fg_state(viewport,state,nullptr);
-        if (result==sl::Result::eOk) {
+        const bool owned=state.inputsProcessingCompletionFence &&
+                         state.lastPresentInputsProcessingCompletionFenceValue;
+        if (result==sl::Result::eOk && (!input_queues_parallel || owned)) {
             auto& s=BbSettings::Get();
             s.nvidia_max_generated=state.numFramesToGenerateMax;
             frame_metrics.Output(state.numFramesActuallyPresented);
@@ -650,7 +660,8 @@ bool Present(Vulkan::Frame* frame,const std::function<bool()>& present) {
                 std::scoped_lock queue_lock{Vulkan::Scheduler::submit_mutex};
                 return device.waitIdle();
             }();
-            std::printf("NVIDIA FG GetState failed (%u), GPU drain=%d\n",unsigned(result),int(idle));
+            std::printf("NVIDIA FG ownership unavailable: GetState=%u, fence=%d, GPU drain=%d\n",
+                        unsigned(result),int(owned),int(idle));
             ++input_epoch;latest_fence=nullptr;latest_value=0;
             Off();failed=true;
             BbSettings::Get().frame_generation_problem="NVIDIA FG ownership query failed. Real frames are kept; see last_run.log.";

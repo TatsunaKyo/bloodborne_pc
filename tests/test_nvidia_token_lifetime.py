@@ -124,7 +124,7 @@ bool rendering{};
 TokenPool<sl::MAX_FRAMES_IN_FLIGHT> token_pool;
 std::condition_variable simulation_ready;
 Token simulation_token;
-bool simulation_sleeping{},simulation_pending{},fg_on{};
+bool simulation_sleeping{},simulation_pending{},fg_on{},input_queues_parallel{};
 uint32_t configured_generated{};
 std::atomic<uint64_t> pacing_policy{};
 sl::ReflexOptions applied_reflex_options;

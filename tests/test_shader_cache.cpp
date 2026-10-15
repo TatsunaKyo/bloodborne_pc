@@ -4,6 +4,7 @@
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "common/serdes.h"
+#include "shader_recompiler/motion_address.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include <array>
@@ -139,7 +140,7 @@ void Blobs() {
   std::cout << "PASS checksummed records, legacy records and bounded SPIR-V "
                "structure\n";
 }
-void Shader() {
+void ShaderTest() {
   auto code = Spirv();
   vk::calls = 0;
   vk::next_result = vk::Result::eSuccess;
@@ -158,6 +159,43 @@ void Shader() {
   vk::next_result = vk::Result::eSuccess;
   std::cout << "PASS actual CompileSPV: malformed/rejected cache recovers; "
                "fresh shader errors stay strict\n";
+
+  namespace Motion = Shader::MotionAddress;
+  auto portable = Spirv();
+  portable.insert(portable.end(), {0x40015, 2, 64, 0});
+  for (const auto& [id, address] : std::array<std::pair<u32, u64>, 3>{{
+           {3, Motion::Params}, {4, Motion::ParamsTail}, {5, Motion::Positions}}}) {
+    portable.insert(portable.end(), {0x5002b, 2, id, u32(address), u32(address >> 32)});
+  }
+  const auto original = portable;
+  const auto before = vk::calls;
+  Motion::params_address = Motion::positions_address = 0;
+  Reject<Vulkan::CacheLoadError>([&] { Vulkan::CompileSPV(portable, vk::Device{}, true); });
+  Check(vk::calls == before, "unallocated motion buffers reached driver");
+  std::vector<u32> first;
+  for (unsigned session = 1; session <= 2; ++session) {
+    Motion::params_address = 0x100000000ull * session;
+    Motion::positions_address = Motion::params_address + 0x10000;
+    Vulkan::CompileSPV(portable, vk::Device{}, true);
+    Check(portable == original, "module creation changed persistent motion code");
+    const std::array<u64, 3> expected{Motion::params_address, Motion::params_address + 16,
+                                     Motion::positions_address};
+    for (size_t i = 0; i < expected.size(); ++i) {
+      const size_t at = Spirv().size() + 4 + i * 5;
+      Check((u64(vk::last_code[at + 3]) | u64(vk::last_code[at + 4]) << 32) == expected[i],
+            "driver received a stale or unlinked motion address");
+    }
+    if (session == 1) first = vk::last_code;
+    else Check(first != vk::last_code, "driver code did not follow session allocations");
+  }
+  auto partial = portable;
+  partial.resize(partial.size() - 5);
+  const auto linked_calls = vk::calls;
+  Reject<Vulkan::CacheLoadError>([&] { Vulkan::CompileSPV(partial, vk::Device{}, true); });
+  Reject<std::runtime_error>([&] { Vulkan::CompileSPV(partial, vk::Device{}); });
+  Check(vk::calls == linked_calls, "partial motion relocations reached driver");
+  std::cout << "PASS actual CompileSPV driver boundary: two live buffer allocations, "
+               "unchanged persistent code and rejection before driver IO\n";
 }
 void StorageTest() {
   auto &db = Storage::DataBase::Instance();
@@ -259,7 +297,7 @@ int main(int argc, char **argv) {
     std::filesystem::create_directories(root);
     Serdes();
     Blobs();
-    Shader();
+    ShaderTest();
     StorageTest();
     std::cout << "PASS shader cache production regressions\n";
     return 0;
