@@ -6,6 +6,7 @@
 #include <deque>
 #include "bbport_amd.h"
 #include "bbport_nvidia_tokens.h"
+#include "bbport_hitch.h"
 
 #include <condition_variable>
 
@@ -46,6 +47,7 @@ struct Frame {
     vk::Semaphore nvidia_fence{};
     u64 nvidia_fence_value{};
     u64 nvidia_fence_epoch{};
+    BbHitch::FramePath hitch_path;
 
 };
 

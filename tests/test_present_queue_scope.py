@@ -12,6 +12,7 @@ def block(source):
  a=source.index('        bool presented;');b=source.index('        BbOverlay::RecordPresent',a)
  return source[a:b]
 HARNESS=r'''
+#include "bbport_hitch.h"
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
@@ -26,7 +27,7 @@ struct Scheduler{static std::mutex submit_mutex;};std::mutex Scheduler::submit_m
 namespace Vulkan { using Scheduler=::Scheduler; }
 namespace BbAmd{void BeforePresent(int,bool){}}
 namespace BbNvidia{bool Present(void*,const std::function<bool()>& f){Hold(0);bool r=f();Hold(1);return r;}}
-struct Frame{int amd_token=1;};
+struct Frame{int amd_token=1;BbHitch::FramePath hitch_path;};
 struct Window{int GetWidth(){return 1920;}int GetHeight(){return 1080;}};
 struct Swapchain{bool Present(){Hold(2);return true;}void Recreate(int,int){assert(false);}};
 void Present(){Frame value;Frame* frame=&value;Window window;Swapchain swapchain;bool final=true,is_game_frame=true,is_reusing_frame=false;
@@ -70,5 +71,5 @@ with tempfile.TemporaryDirectory(prefix='crowned-present-') as folder:
   cpp=folder/(label+'.cpp');exe=folder/label
   cpp.write_text(HARNESS.replace('BLOCK',block(source)).replace('DRAIN',drain).replace('EXPECTED','true' if expected else 'false'))
   if args.prepare:continue
-  subprocess.run(['g++','-std=c++20','-pthread','-O1','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
+  subprocess.run(['g++','-std=c++20','-pthread','-O1','-Wall','-Wextra','-Werror','-I'+str(ROOT/'gpu/shim'),str(cpp),'-o',str(exe)],check=True)
   subprocess.run([str(exe)],check=True,timeout=20)

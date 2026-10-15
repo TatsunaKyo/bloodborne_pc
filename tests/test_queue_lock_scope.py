@@ -25,6 +25,7 @@ def extract(revision=None):
             method(read(bind_path), 'void BufferCache::SubmitPendingArenaBinds(', '} // namespace VideoCore'))
 
 HARNESS = r'''
+#include "bbport_hitch.h"
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #define VULKAN_HPP_NO_EXCEPTIONS
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
@@ -177,7 +178,7 @@ with tempfile.TemporaryDirectory(prefix='bb-queue-scope-') as directory:
         scheduler, bind = extract(revision)
         code = HARNESS.replace('SCHEDULER_METHOD', scheduler).replace('BIND_METHOD', bind).replace('EXPECTED_PROGRESS', str(progress).lower())
         (temp / 'queue.cpp').write_text(code)
-        subprocess.run(['g++', '-std=c++20', '-O1', '-g', '-pthread', '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-I' + str(temp), str(temp / 'queue.cpp'), '-o', str(temp / 'queue-test')], check=True)
+        subprocess.run(['g++', '-std=c++20', '-O1', '-g', '-pthread', '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-I' + str(temp), '-I'+str(ROOT/'gpu/shim'), str(temp / 'queue.cpp'), '-o', str(temp / 'queue-test')], check=True)
         print(label, flush=True)
         subprocess.run([str(temp / 'queue-test')], check=True, timeout=30)
 print('PASS: production Vulkan submission methods preserve queue synchronization without holding it through CPU waits.')

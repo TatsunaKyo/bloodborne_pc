@@ -378,6 +378,7 @@ void Scheduler::PopPendingOperations() {
 }
 
 void Scheduler::AllocateWorkerCommandBuffers() {
+    BbHitch::Scope hitch{"command buffer reuse/begin"};
     const vk::CommandBufferBeginInfo begin_info = {
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
     };
@@ -455,7 +456,10 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         // QueueSubmit/QueuePresent share a VkQueue and need external synchronization.
         // Recorder/copy waits and command-pool retirement are local to this scheduler;
         // holding the queue lock through those waits delays an already-ready present.
+        const auto lock_started=BbHitch::Clock::now();
         std::scoped_lock lk{submit_mutex};
+        BbHitch::Record("Vulkan queue lock",lock_started);
+        BbHitch::Scope hitch{"Vulkan queue submit"};
         const auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
         ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
     }

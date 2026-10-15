@@ -581,6 +581,7 @@ Frame* Presenter::PrepareBlankFrame(bool present_thread) {
 
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
     BbBackground::Wait();
+    if(frame && is_game_frame && !is_reusing_frame)frame->hitch_path.present_enter=BbHitch::Clock::now();
     if (is_game_frame && frame) {
         BbSettings::Get().active_output_width = frame->width;
         BbSettings::Get().active_output_height = frame->height;
@@ -633,6 +634,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     }
 
     BbHitch::Record("swapchain acquire",acquire_started);
+    if(is_game_frame && !is_reusing_frame)frame->hitch_path.acquired=BbHitch::Clock::now();
 
     // Reset fence for queue submission. Do it here instead of GetRenderFrame() because we may
     // skip frame because of slow swapchain recreation. If a frame skip occurs, we skip signal
@@ -767,6 +769,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         scheduler.Flush(info);
 
         // Present to swapchain.
+        if(final && is_game_frame && !is_reusing_frame)frame->hitch_path.enqueued=BbHitch::Clock::now();
         bool presented;
         // Serialize the queue call itself. SDK state/latency queries after it must
         // not stop the renderer from submitting the next frame on the same queue.
@@ -781,6 +784,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             // Recreation retires NVIDIA input ownership before taking the queue
             // lock for its GPU drain. Never reverse that lock order here.
             swapchain.Recreate(window.GetWidth(), window.GetHeight());
+        }
+        if(final && is_game_frame && !is_reusing_frame) {
+            frame->hitch_path.returned=BbHitch::Clock::now();
+            BbHitch::CompletePath(frame->hitch_path);
         }
         BbOverlay::RecordPresent(final && is_game_frame && !is_reusing_frame,presented);
     };

@@ -1,4 +1,5 @@
 #include "bbport_nvidia.h"
+#include "bbport_hitch.h"
 #include "bbport_amd.h"
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -88,6 +89,7 @@ static void ResetSubmissionLock(Platform::InterruptId irq) {
 }
 
 static void WaitGpuIdle() {
+    BbHitch::Scope hitch{"GNM previous submit retirement"};
     HLE_TRACE;
     std::unique_lock lock{m_wait_idle};
     cv_lock.wait(lock, [] { return submission_lock == 0; });
@@ -2308,11 +2310,13 @@ s32 PS4_SYSV_ABI sceGnmSubmitAndFlipCommandBuffersForWorkload(
         return patch_result;
     }
 
+    const auto hitch_submission=BbHitch::submissions.Queue(buf_idx,flip_arg);
     BbNvidia::QueueFlip(buf_idx,flip_arg);
     BbAmd::QueueFlip(buf_idx,flip_arg);
     const s32 result=PerformSubmit(count,const_cast<const u32**>(dcb_gpu_addrs),dcb_sizes_in_bytes,
                                   const_cast<const u32**>(ccb_gpu_addrs),ccb_sizes_in_bytes);
     if (result!=ORBIS_OK) {
+        BbHitch::submissions.Cancel(hitch_submission);
         BbNvidia::CancelFlip(buf_idx,flip_arg);
         BbAmd::CancelFlip(buf_idx,flip_arg);
     }

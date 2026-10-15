@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "bbport_toggles.h"
+#include "bbport_hitch.h"
 #include <ranges>
 #include "common/assert.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -100,6 +101,7 @@ void UniqueImage::Destroy() {
 }
 
 void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
+    BbHitch::Scope hitch{"Vulkan image allocation"};
     this->image_ci = image_ci;
     ASSERT(!image);
     const VmaAllocationCreateInfo alloc_ci = {

@@ -81,5 +81,5 @@ if __name__=='__main__':
             folder=Path(temporary);prepare(folder)
             for name in ['revision29','current']:
                 binary=folder/name
-                subprocess.run(['g++','-std=c++23','-pthread','-UNDEBUG','-Iout/test-headers',str(folder/(name+'.cpp')),'-o',str(binary)],cwd=ROOT,check=True)
+                subprocess.run(['g++','-std=c++23','-pthread','-UNDEBUG','-Iout/test-headers','-Igpu/shim',str(folder/(name+'.cpp')),'-o',str(binary)],cwd=ROOT,check=True)
                 subprocess.run([str(binary)],cwd=ROOT,check=True,timeout=30)

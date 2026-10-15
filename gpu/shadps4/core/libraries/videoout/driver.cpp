@@ -1,5 +1,6 @@
 #include "bbport_nvidia.h"
 #include "bbport_amd.h"
+#include "bbport_hitch.h"
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -564,6 +565,7 @@ bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
 }
 
 void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_arg, bool is_eop) {
+    auto path=BbHitch::submissions.Take(index,flip_arg);
     Vulkan::Frame* frame;
     if (index == -1) {
         frame = presenter->PrepareBlankFrame(false);
@@ -574,6 +576,7 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
         frame = presenter->PrepareFrame(group, buffer.address_left);
     }
 
+    path.prepared=BbHitch::Clock::now();frame->hitch_path=path;
     BbNvidia::FinishRender(frame,index,flip_arg);
     frame->amd_token = BbAmd::FinishRender(index,flip_arg);
     {

@@ -23,4 +23,6 @@ To compare image-quality modes during play, enable Live resolution changes befor
 
 Settings that affect generation or reconstruction may briefly rebuild resources or reset history. An active/pending indication in the menu or overlay distinguishes the requested setting from the mode already running.
 
+Temporal upscalers use their own anti-aliasing. From R42 the game's original AA is disabled automatically for a temporal-upscaler launch; its saved preference is retained for an upscaler-off launch. Switching between Off and a temporal upscaler requires a restart to apply that startup patch. Switching temporal providers or quality settings keeps its existing live behavior.
+
 [Settings tour](launcher-and-menu.md) · [Upscaling details](upscaling.md) · [Both FPS caps](display-and-overlay.md#fps-limits)

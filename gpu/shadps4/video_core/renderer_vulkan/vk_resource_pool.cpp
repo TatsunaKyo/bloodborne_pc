@@ -16,6 +16,8 @@ ResourcePool::ResourcePool(Semaphore* work_semaphore_, std::size_t grow_step_)
 
 std::size_t ResourcePool::CommitResource() {
     u64 gpu_tick = work_semaphore->KnownGpuTick();
+    // Refresh below updates this value. Capturing its old copy missed newly
+    // retired buffers and grew the pool despite free command buffers.
     const auto search = [this, &gpu_tick](std::size_t begin,
                                          std::size_t end) -> std::optional<std::size_t> {
         for (std::size_t iterator = begin; iterator < end; ++iterator) {

@@ -210,7 +210,8 @@ struct {void Reset(){}} frame_metrics;
         code=code.replace('__HELPERS__',fg_stub+helpers+off)
         code=code.replace('__HANDOFF__',tokens.section(source,'void BeginRender()','void BeforePresent('))
         code=code.replace('__SHUTDOWN__','')
-        gnm=at(GNM,revision);start=gnm.index('    BbNvidia::QueueFlip(buf_idx,flip_arg);')
+        gnm=at(GNM,revision)
+        start=gnm.index('    const auto hitch_submission=') if not revision else gnm.index('    BbNvidia::QueueFlip(buf_idx,flip_arg);')
         tail=gnm[start:gnm.index('\n}',start)]
         schedule=SCHEDULE.replace('__GNM_TAIL__',tail)
         driver=at('gpu/shadps4/core/libraries/videoout/driver.cpp',revision)

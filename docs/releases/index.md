@@ -2,6 +2,11 @@
 
 Revision 23 is the latest published stable release, with Support Report and Save Manager. Revision 24 begins the next renderer work with safer shader-cache loading and complete cache-write draining at shutdown. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
 
+- [Revision 42 — reusable motion shaders and FG queue ownership (preview)](windows-v1.6-tatsunakyo.42.md)
+- [Revision 41 — streaming invalidation and frame path waits (preview)](windows-v1.6-tatsunakyo.41.md)
+- [Revision 40 — restore DLSS dynamic search paths (preview)](windows-v1.6-tatsunakyo.40.md)
+- [Revision 39 — batched readbacks and isolated legacy-GPU provider (preview)](windows-v1.6-tatsunakyo.39.md)
+- [Revision 38 — streaming write preparation and NVIDIA feedback (preview)](windows-v1.6-tatsunakyo.38.md)
 - [Revision 37 — parallel asset reads and NVIDIA FG presets (preview)](windows-v1.6-tatsunakyo.37.md)
 - [Revision 36 — background audio and lighter cache preparation (preview)](windows-v1.6-tatsunakyo.36.md)
 - [Revision 35 — NVIDIA FG pacing and frame handoff (preview)](windows-v1.6-tatsunakyo.35.md)
