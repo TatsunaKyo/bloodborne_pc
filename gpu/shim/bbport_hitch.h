@@ -65,7 +65,39 @@ inline SubmissionTracker submissions;
 // Written and reported only by the presentation thread, after its frame completes.
 inline FramePath completed_path;
 inline void CompletePath(const FramePath& path){completed_path=path;}
-struct Event {const char* stage{}; Clock::time_point end{}; double ms{};};
+struct Event {const char* stage{}; Clock::time_point end{}; double ms{}; Clock::time_point start{};};
+inline double Overlap(const Event& event,Clock::time_point begin,Clock::time_point end) {
+    if (!event.stage || event.start==Clock::time_point{} || event.end<event.start || end<=begin) return 0;
+    const auto first=std::max(event.start,begin),last=std::min(event.end,end);
+    return last>first ? std::chrono::duration<double,std::milli>(last-first).count() : 0;
+}
+struct WindowSpan {const Event* event{};double overlap{};};
+inline std::array<WindowSpan,4> SelectWindow(const std::array<Event,128>& events,unsigned count,
+                                           Clock::time_point begin,Clock::time_point end) {
+    std::array<WindowSpan,4> selected{};
+    for(unsigned i=0;i<count;++i) {
+        const auto& event=events[i];const double overlap=Overlap(event,begin,end);
+        if(overlap<=0)continue;
+        auto* slot=&selected.back();
+        for(auto& entry:selected)if(entry.event && entry.event->stage==event.stage){slot=&entry;break;}
+        if(overlap<=slot->overlap)continue;
+        *slot={&event,overlap};
+        std::sort(selected.begin(),selected.end(),[](const auto& a,const auto& b){return a.overlap>b.overlap;});
+    }
+    return selected;
+}
+inline void ReportWindow(const char* label,const std::array<Event,128>& events,unsigned count,
+                         Clock::time_point begin,Clock::time_point end) {
+    if(SubmissionTracker::Milliseconds(begin,end)<1.0)return;
+    const auto selected=SelectWindow(events,count,begin,end);
+    if(!selected[0].event)return;
+    std::printf("Frame hitch %s CPU overlaps (concurrent/nested, not additive):",label);
+    for(const auto& span:selected)if(span.event) {
+        const auto& e=*span.event;
+        std::printf(" %s span=%.2fms overlap=%.2fms;",e.stage,e.ms,span.overlap);
+    }
+    std::printf("\n");
+}
 struct Slot {std::atomic_flag busy=ATOMIC_FLAG_INIT; Event event;};
 inline std::array<Slot,128> journal;
 inline std::atomic<unsigned> next{};
@@ -97,7 +129,7 @@ inline void Record(const char* stage, Clock::time_point start, Clock::time_point
     if (ms<1.0) return;
     auto& slot=journal[next.fetch_add(1,std::memory_order_relaxed)%journal.size()];
     if (slot.busy.test_and_set(std::memory_order_acquire)) return;
-    slot.event={stage,end,ms};
+    slot.event={stage,end,ms,start};
     slot.busy.clear(std::memory_order_release);
 }
 struct Scope {
@@ -165,6 +197,8 @@ inline void Present(bool real, bool presented, bool focused) {
             static_cast<unsigned long long>(p.id),p.submit_interval,p.gpu_interval,
             ms(p.submitted,p.gpu_flip),ms(p.gpu_flip,p.prepared),ms(p.prepared,p.present_enter),
             ms(p.present_enter,p.acquired),ms(p.acquired,p.enqueued),ms(p.enqueued,p.returned));
+        ReportWindow("before flip",events,count,p.submitted,p.gpu_flip);
+        ReportWindow("preparation",events,count,p.gpu_flip,p.prepared);
     }
 }
 }

@@ -52,8 +52,9 @@ struct Program {
     ModuleList modules{};
     size_t last_used = 0; ///< bbport: permutation of the previous lookup, compared first
     /// bbport: `info` as translated, for draw-preparation workers (they must not read `info`,
-    /// whose user data the GPU thread rewrites every draw). Guarded by programs_mutex.
-    std::unique_ptr<Shader::Info> info_template;
+    /// whose user data the GPU thread rewrites every draw). Published once under
+    /// programs_mutex, then immutable until workers have joined at destruction.
+    std::unique_ptr<const Shader::Info> info_template;
 
     Program() = default;
     Program(Shader::HwStage stage, Shader::SwStage l_stage, Shader::ShaderParams params)

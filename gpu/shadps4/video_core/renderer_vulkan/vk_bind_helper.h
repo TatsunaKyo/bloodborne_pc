@@ -11,6 +11,7 @@
 #include <thread>
 #include <x86intrin.h>
 
+#include "bbport_hitch.h"
 #include "common/thread.h"
 #include "common/types.h"
 
@@ -70,9 +71,19 @@ public:
         }
         const u64 target = posted.load(std::memory_order_relaxed);
         if (done.load(std::memory_order_acquire) != target) {
+            BbHitch::Scope hitch{"texture helper wait"};
             const u64 start = __rdtsc();
-            while (done.load(std::memory_order_acquire) != target) {
-                __builtin_ia32_pause();
+            for (u32 spins = 0; done.load(std::memory_order_acquire) != target; ++spins) {
+                if (spins < 4096) {
+                    __builtin_ia32_pause();
+                    continue;
+                }
+                join_sleeping.store(true, std::memory_order_seq_cst);
+                const u64 seen = done.load(std::memory_order_seq_cst);
+                if (seen != target) {
+                    done.wait(seen, std::memory_order_seq_cst);
+                }
+                join_sleeping.store(false, std::memory_order_seq_cst);
             }
             wait_cycles += __rdtsc() - start;
         }
@@ -109,7 +120,10 @@ private:
             const u64 start = __rdtsc();
             task(context);
             task_cycles.fetch_add(__rdtsc() - start, std::memory_order_relaxed);
-            done.store(seen, std::memory_order_release);
+            done.store(seen, std::memory_order_seq_cst);
+            if (join_sleeping.load(std::memory_order_seq_cst)) {
+                done.notify_one();
+            }
         }
     }
 
@@ -119,6 +133,7 @@ private:
     bool active = false;
     alignas(64) std::atomic<u64> posted{0};
     alignas(64) std::atomic<u64> done{0};
+    std::atomic<bool> join_sleeping{false};
     alignas(64) std::atomic<bool> sleeping{false};
     std::jthread thread;
 };

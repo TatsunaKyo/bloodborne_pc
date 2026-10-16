@@ -6,6 +6,20 @@
 int main(){
  using namespace std::chrono_literals;
  const auto beginning=BbHitch::Clock::time_point{}+1s;
+ const auto event=[](const char* stage,auto begin,auto end){return BbHitch::Event{stage,end,BbHitch::SubmissionTracker::Milliseconds(begin,end),begin};};
+ const auto old_event=event("old frame",beginning,beginning+20ms);
+ assert(BbHitch::Overlap(old_event,beginning+30ms,beginning+50ms)==0);
+ const auto crossing=event("crossing",beginning+20ms,beginning+70ms);
+ assert(BbHitch::Overlap(crossing,beginning+30ms,beginning+50ms)==20);
+ assert(BbHitch::Overlap(crossing,beginning+30ms,beginning+30ms)==0);
+ std::array<BbHitch::Event,128> events{};
+ events[0]=old_event;events[1]=crossing;
+ events[2]=event("inside",beginning+35ms,beginning+45ms);
+ events[3]=event("next frame",beginning+50ms,beginning+70ms);
+ events[4]=event(crossing.stage,beginning+25ms,beginning+40ms);
+ const auto selected=BbHitch::SelectWindow(events,5,beginning+30ms,beginning+50ms);
+ assert(selected[0].event==&events[1] && selected[0].overlap==20);
+ assert(selected[1].event==&events[2] && selected[1].overlap==10 && !selected[2].event);
  BbHitch::SubmissionTracker submissions;
  const auto first=submissions.Queue(1,0,beginning);
  const auto second=submissions.Queue(1,0,beginning+16ms);

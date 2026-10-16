@@ -92,6 +92,8 @@ jobs:
           Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
           python tests/test_texture_helper_snapshots.py --compiler cl
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_draw_pipe_wait.py --compiler cl
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Execute production Windows asset streaming and NVIDIA preset tests
         shell: pwsh
         run: |

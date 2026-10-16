@@ -851,7 +851,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         // bbport: draw-preparation worker: look up only, with the worker's own Info copy.
         auto& worker = *sel.worker;
         const Program* program;
-        Shader::Info* worker_info;
+        const Shader::Info* info_template;
         {
             // Speculation must never keep the GPU thread behind a background
             // worker's guest page fault, resource walk or fetch-shader parse.
@@ -863,10 +863,12 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                 return {};
             }
             program = found_program->second.get();
-            worker_info = &worker.infos.try_emplace(program,*program->info_template).first->second;
+            info_template = program->info_template.get();
         }
-        // Programs live until after DrawPreparation joins all its workers.
-        auto& info = *worker_info;
+        // Deep copies allocate and may be preempted at background priority.
+        // Never retain the publication lock through that work. Published
+        // templates are immutable; programs live until all workers have joined.
+        auto& info = worker.infos.try_emplace(program,*info_template).first->second;
         info.pgm_base = params.Base();
         info.user_data = params.user_data;
         // The walk of resource tables and the fetch shader parse read guest memory through

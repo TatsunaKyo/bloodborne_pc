@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
-"""Pause the actual preparation branch inside a guest read and publish a shader.
+"""Pause production preparation during template cloning and guest-memory reads.
 
-The R42 control blocks publication behind the speculative guest read. Current
-code releases the registry, then safely rechecks a grown module list.
+R42 blocks publication through both operations; R43 still blocks during the
+template deep copy. Current releases the registry before both operations.
 """
 from pathlib import Path
 import subprocess
@@ -12,6 +12,7 @@ import tempfile
 ROOT=Path(__file__).resolve().parents[1]
 PATH='gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
 BASE='2fe3a67fc3c2930352bb88af57f881b9b0829494'
+R43='cbb4acbc71372f20b7291ebe9e50baf8c7e4a3b7'
 PREFIX=r'''
 #include <atomic>
 #include <cassert>
@@ -29,10 +30,16 @@ PREFIX=r'''
 #include <algorithm>
 using u64=unsigned long long;
 std::latch reading(1),resume_read(1);
+std::latch copying(1),resume_copy(1);
+std::atomic<bool> pause_copy{true};
 thread_local sigjmp_buf* runtime_fault_recover{};
 namespace Shader {
 struct Info {
     unsigned pgm_base{},user_data{};std::vector<unsigned> flattened_ud_buf;
+    Info()=default;
+    Info(const Info& rhs):pgm_base(rhs.pgm_base),user_data(rhs.user_data),flattened_ud_buf(rhs.flattened_ud_buf){
+        if(pause_copy.exchange(false)){copying.count_down();resume_copy.wait();}
+    }
     void RefreshFlatBuf(){if(user_data==99)siglongjmp(*runtime_fault_recover,1);reading.count_down();resume_read.wait();flattened_ud_buf={user_data};}
     void AddBindings(unsigned& b){++b;}
 };
@@ -68,8 +75,16 @@ int main(){
     auto* original=p.get();program_cache.emplace(1,std::move(p));
     Worker worker;Selection selection{&worker};Parameters params;unsigned binding=0;Result result;
     std::jthread background([&]{result=Prepare(selection,params,binding);});
-    reading.wait();const bool can_publish=programs_mutex.try_lock();
+    copying.wait();const bool clone_can_publish=programs_mutex.try_lock();
 #if CONTROL
+    assert(!clone_can_publish);
+    std::puts("CONTROL: speculative template deep copy holds the shader registry; GPU publication waits for the background worker.");
+#else
+    assert(clone_can_publish);programs_mutex.unlock();
+#endif
+    resume_copy.count_down();
+    reading.wait();const bool can_publish=programs_mutex.try_lock();
+#if CONTROL==1
     assert(!can_publish);std::puts("R42 CONTROL: speculative guest read holds the shader registry; GPU publication is blocked until the read returns.");
 #else
     assert(can_publish);
@@ -91,7 +106,7 @@ int main(){
     Worker faulted;Selection fault_selection{&faulted};params.user_data=99;
     Prepare(fault_selection,params,binding);
     assert(faulted.failed && faulted.stages.empty() && runtime_fault_recover==nullptr);
-    std::puts("PASS: GPU publication completes while the actual worker guest read is paused; current modules are rechecked after reallocation; busy-registry speculation yields.");
+    std::puts("PASS: GPU publication completes during both template cloning and guest reads; current modules are rechecked after reallocation; busy-registry speculation yields.");
 #endif
 }
 '''
@@ -100,8 +115,9 @@ int main(){
 def main():
     with tempfile.TemporaryDirectory(prefix='prep-lock-') as temporary:
         folder=Path(temporary)
-        for name,control in [('r42',True),('current',False)]:
-            text=(subprocess.check_output(['git','show',BASE+':'+PATH],cwd=ROOT,text=True)
+        for name,control in [('r42',1),('r43',2),('current',0)]:
+            base=BASE if control==1 else R43
+            text=(subprocess.check_output(['git','show',base+':'+PATH],cwd=ROOT,text=True)
                   if control else (ROOT/PATH).read_text())
             start=text.index('    if (sel.worker) {',text.index('PipelineCache::GetProgram('))
             branch=text[start:text.index('\n    auto it_pgm =',start)]
