@@ -67,6 +67,15 @@ with tempfile.TemporaryDirectory(prefix='cpu-timeline-') as directory:
  assert stages['page protection installed']['end_ns']<=stages['snapshot protection dependency']['end_ns']
  warnings=[];data,info=cpu_timeline(path,Redactor(),warnings)
  assert info['status']=='captured' and info['windows']==1 and info['events']==len(events) and not warnings
+ # A normal support report caps lists at 100. A bounded timeline must retain
+ # every validated event and report the number actually present in the ZIP.
+ records[-1]['events'] = records[-1]['events'] * 101
+ path.write_text('\n'.join(json.dumps(r) for r in records)+'\n')
+ data,info=cpu_timeline(path,Redactor(),[])
+ retained=[json.loads(line) for line in data.splitlines()]
+ assert len(retained[-1]['events'])==len(events)*101
+ assert info['events']==sum(len(r.get('events',[])) for r in retained)
+ records=retained
  records[0]['private_path']='D:\\secret\\password';records[-1]['password']='not exported'
  records[-1]['events'][0]['private_path']='secret'
  path.write_text('\n'.join(json.dumps(r) for r in records)+'\n{"record":')

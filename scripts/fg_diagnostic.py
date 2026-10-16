@@ -134,7 +134,14 @@ def cpu_timeline(path, redactor, warnings):
                         partial = True
                     else:
                         raise ValueError('Unknown timeline record')
-                    encoded = (json.dumps(redactor.value(safe), ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf-8')
+                    # Generic support-report redaction intentionally caps lists
+                    # at 100 items. Timeline events have their own strict bound;
+                    # redact each whitelisted event without silently dropping it.
+                    events = safe.pop('events', None)
+                    sanitized = redactor.value(safe)
+                    if events is not None:
+                        sanitized['events'] = [redactor.value(event) for event in events]
+                    encoded = (json.dumps(sanitized, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf-8')
                     if size + len(encoded) > TIMELINE_BUDGET:
                         partial = True
                         break

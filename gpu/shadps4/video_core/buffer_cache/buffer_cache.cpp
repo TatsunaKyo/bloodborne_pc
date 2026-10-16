@@ -527,6 +527,28 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     runtime.CopyBuffer(staging.buffer, bda_pagetable_buffer.get(), copies);
 }
 
+std::pair<const Buffer*, u64> BufferCache::ObtainVertexBuffer(
+    VAddr device_addr, u32 size, std::span<const VertexFetch::Range> reads) {
+    if (reads.empty() || size <= STREAM_THRESHOLD) return ObtainBuffer(device_addr, size, false);
+    for (const auto& read : reads) {
+        if (!read.size || read.offset >= size || read.size > size - read.offset)
+            return ObtainBuffer(device_addr, size, false);
+    }
+    if (reads.size() == 1 && reads[0].offset == 0 && reads[0].size == size)
+        return ObtainBuffer(device_addr, size, false);
+    // The VkBuffer still spans the original descriptor. Only pages that the
+    // immutable direct-draw indices can fetch need residency and an upload.
+    const auto* arena = GetArena(device_addr >> block_shift, (device_addr + size - 1) >> block_shift);
+    BbHitch::Trace::Point("vertex descriptor extent", device_addr, size);
+    for (const auto& read : reads) {
+        const VAddr address = device_addr + read.offset;
+        EnsureResident(arena, address >> block_shift, (address + read.size - 1) >> block_shift);
+        BbHitch::Trace::Point("vertex fetch upload range", address, read.size);
+        SynchronizeMemory(arena, address, read.size, false, false);
+    }
+    return {arena, arena->Offset(device_addr)};
+}
+
 bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size,
                                     bool is_written, bool is_texel_buffer) {
     const auto upload_started = BbHitch::Trace::Enabled() ? BbHitch::Trace::Clock::now()

@@ -14,6 +14,7 @@
 #include "video_core/buffer_cache/fault_manager.h"
 #include "video_core/buffer_cache/range_set.h"
 #include "video_core/buffer_cache/sparse_memory_pool.h"
+#include "video_core/buffer_cache/vertex_fetch_range.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
 
 namespace AmdGpu {
@@ -96,6 +97,10 @@ public:
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(VAddr device_addr, u32 size,
                                                              bool is_written,
                                                              bool is_texel_buffer = false);
+    /// Direct hardware vertex fetch: preserve full binding bounds and offsets,
+    /// but synchronize only the proven byte ranges referenced by this draw.
+    [[nodiscard]] std::pair<const Buffer*, u64> ObtainVertexBuffer(
+        VAddr device_addr, u32 size, std::span<const VertexFetch::Range> reads);
 
     /// Attempts to obtain a buffer without modifying the cache contents.
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBufferForImage(VAddr device_addr, u32 size);

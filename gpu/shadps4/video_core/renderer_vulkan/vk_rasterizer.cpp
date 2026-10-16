@@ -997,6 +997,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                          UiComposition::NativeViewport(viewport.xscale * 2, viewport.yscale * 2));
     }
     const PreparedDraw* draw_prepared = bind_prepared;
+    PrepareVertexFetch(pipeline, is_indexed, index_offset);
     // bbport: vertex and index buffers are resolved while the helper binds textures (their
     // commands are recorded after BeginRendering, as before).
     draw_inputs = {pipeline, draw_prepared, index_offset, is_indexed, true, false};
@@ -1123,7 +1124,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                     !buffer_cache.IsRegionGpuModified(index_address, bytes)) {
                     const bool restart = regs.enable_primitive_restart != 0;
                     const u32 count = regs.num_indices;
-                    const auto* data = reinterpret_cast<const void*>(index_address);
+                    const auto* data = vertex_fetch.indices_ready && vertex_fetch.index_address == index_address
+                        ? static_cast<const void*>(vertex_fetch.indices.data())
+                        : reinterpret_cast<const void*>(index_address);
                     const u64 content = [&] {
                         BbHitch::Trace::Scope trace{"motion index hash"};
                         return XXH3_64bits(data,bytes);
@@ -1254,6 +1257,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
 void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_indexed,
                                     const IndirectDraw& indirect) {
+    vertex_fetch.direct = false;
+    vertex_fetch.indices_ready = false;
     if (DrawPipe::OnStageB()) {
         FrameCapture::Poll();
         scheduler.PopPendingOperations();
@@ -1787,6 +1792,56 @@ void Rasterizer::EmitVertexBuffers() {
     });
 }
 
+void Rasterizer::PrepareVertexFetch(const GraphicsPipeline* pipeline, bool indexed, u32 index_offset) {
+    vertex_fetch.direct = false;
+    vertex_fetch.indices_ready = false;
+    vertex_fetch.records = {};
+    static const bool enabled = [] {
+        const char* value = std::getenv("BB_VERTEX_FETCH_RANGES");
+        const bool on = !value || value[0] != '0';
+        std::puts(on ? "GPU: direct vertex uploads follow immutable draw index ranges"
+                     : "GPU: direct vertex upload range control disabled");
+        return on;
+    }();
+    const auto& fetch = pipeline->GetFetchShader();
+    if (!enabled || !fetch || fetch->attributes.empty()) return;
+    const auto& regs = Regs();
+    const auto [base_vertex, first_instance] =
+        GetDrawOffsets(regs, pipeline->GetStage(Shader::SwStage::Vertex), fetch);
+    (void)first_instance;
+    if (!indexed) {
+        if (uint64_t(base_vertex) + regs.num_indices > uint64_t(UINT32_MAX)) return;
+        vertex_fetch.records = {base_vertex, regs.num_indices};
+        vertex_fetch.direct = vertex_fetch.records.count != 0;
+        return;
+    }
+    const u32 index_size = regs.index_buffer_type.index_type == AmdGpu::IndexType::Index16 ? 2u : 4u;
+    const u64 bytes = u64(regs.num_indices) * index_size;
+    const VAddr address = regs.index_base_address.Address<VAddr>() + u64(index_offset) * index_size;
+    // Small read-only indices already take the per-draw stream path. Keep
+    // cached large/GPU-authored index bindings on their original path rather
+    // than introducing repeated uploads merely to calculate a footprint.
+    if (!bytes || bytes > VideoCore::BufferCache::STREAM_THRESHOLD || !memory->CanReadAhead(address, bytes) ||
+        buffer_cache.IsRegionGpuModified(address, bytes)) return;
+    const bool restart = regs.enable_primitive_restart != 0;
+    if (restart && regs.primitive_restart_index != (index_size == 2 ? 0xffffu : 0xffffffffu)) return;
+    // Bind exactly the snapshot whose indices determine the vertex footprint.
+    // Never scan one guest version and asynchronously upload another version.
+    vertex_fetch.indices.resize(bytes);
+    memory->CopySparseMemory(address, vertex_fetch.indices.data(), bytes);
+    const auto* data = vertex_fetch.indices.data();
+    vertex_fetch.records = index_size == 2
+        ? Motion::IndexedRange(std::span(reinterpret_cast<const u16*>(data), regs.num_indices), s32(base_vertex), restart)
+        : Motion::IndexedRange(std::span(reinterpret_cast<const u32*>(data), regs.num_indices), s32(base_vertex), restart);
+    auto& stream = buffer_cache.GetStreamBuffer();
+    const u64 offset = stream.Copy(data, bytes, index_size);
+    index_bind = {stream.Handle(), offset, index_size == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32};
+    needs_barrier |= runtime.IsBufferAccessed(&stream, offset, bytes);
+    vertex_fetch.index_address = address;
+    vertex_fetch.indices_ready = true;
+    vertex_fetch.direct = vertex_fetch.records.count != 0;
+}
+
 void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
                                       const PreparedDraw* prepared) {
     BbHitch::Scope hitch{"vertex input preparation"};
@@ -1895,10 +1950,43 @@ void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
     }
 
     // Map buffers for merged ranges
+    VertexInputs<BufferRange> demanded;
+    for (u32 i = 0; i < guest_buffers.size(); ++i) {
+        const auto& buffer = guest_buffers[i];
+        if (!buffer.base_address || !buffer.GetSize()) continue;
+        VideoCore::VertexFetch::Range bytes{0, u32(buffer.GetSize())};
+        if (vertex_fetch.direct && i < bindings.size() &&
+            bindings[i].inputRate == vk::VertexInputRate::eVertex) {
+            u64 attribute_end = 0;
+            for (const auto& attribute : attributes) {
+                if (attribute.binding == bindings[i].binding)
+                    // Core vertex formats occupy at most 32 bytes. Deliberately
+                    // overestimate formats here; offsets can exceed the stride.
+                    attribute_end = std::max(attribute_end, u64(attribute.offset) + 32);
+            }
+            bytes = VideoCore::VertexFetch::Bytes(u32(buffer.GetSize()), buffer.GetStride(),
+                vertex_fetch.records.first, vertex_fetch.records.count, attribute_end);
+        }
+        demanded.emplace_back(buffer.base_address + bytes.offset,
+                              buffer.base_address + bytes.offset + bytes.size);
+    }
+    std::ranges::sort(demanded, [](const auto& a, const auto& b) { return a.base_address < b.base_address; });
     for (auto& range : ranges_merged) {
         const u64 size = memory->ClampRangeSize(range.base_address, range.GetSize());
-        std::tie(range.buffer, range.offset) =
-            buffer_cache.ObtainBuffer(range.base_address, size, false);
+        VertexInputs<VideoCore::VertexFetch::Range> reads;
+        for (const auto& demand : demanded) {
+            const VAddr begin = std::max(range.base_address, demand.base_address);
+            const VAddr end = std::min(range.base_address + size, demand.end_address);
+            if (end <= begin) continue;
+            const u32 offset = u32(begin - range.base_address), bytes = u32(end - begin);
+            if (!reads.empty() && u64(reads.back().offset) + reads.back().size >= offset) {
+                auto& last = reads.back();
+                last.size = u32(std::max(u64(last.offset) + last.size, u64(offset) + bytes) - last.offset);
+            } else reads.push_back({offset, bytes});
+        }
+        std::tie(range.buffer, range.offset) = vertex_fetch.direct
+            ? buffer_cache.ObtainVertexBuffer(range.base_address, size, reads)
+            : buffer_cache.ObtainBuffer(range.base_address, size, false);
         needs_barrier |= runtime.IsBufferAccessed(range.buffer, range.offset, size);
     }
 
@@ -1944,6 +2032,7 @@ void Rasterizer::EmitIndexBuffer() {
 }
 
 void Rasterizer::ResolveIndexBuffer(u32 index_offset) {
+    if (vertex_fetch.indices_ready) return;
     const auto& regs = Regs();
 
     // Figure out index type and size.

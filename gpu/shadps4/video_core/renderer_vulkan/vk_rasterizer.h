@@ -301,6 +301,7 @@ private:
     /// bbport: BindVertexBuffers/BindIndexBuffer in two halves: obtaining the buffers
     /// (vertex_binds, index_bind) and recording the binds.
     void ResolveVertexBuffers(const GraphicsPipeline* pipeline, const PreparedDraw* prepared);
+    void PrepareVertexFetch(const GraphicsPipeline* pipeline, bool indexed, u32 index_offset);
     void EmitVertexBuffers();
     void ResolveIndexBuffer(u32 index_offset);
     void EmitIndexBuffer();
@@ -444,6 +445,12 @@ private:
         bool pending;
         bool resolved;
     } draw_inputs{};
+    struct VertexFetchState {
+        Motion::VertexRange records{};
+        bool direct{}, indices_ready{};
+        VAddr index_address{};
+        std::vector<u8> indices;
+    } vertex_fetch;
     // bbport: textures of a draw bound on the helper thread while this thread binds buffers.
     static bool BindHelperWanted();
     BindHelper bind_helper{BindHelperWanted()};
