@@ -351,7 +351,6 @@ struct TaskPacket {
     PacketKind kind;
     u32 size;
     Rasterizer::OrderedTask task;
-    const char* caller;
 };
 struct DrawPacket {
     PacketKind kind;
@@ -694,17 +693,15 @@ void Rasterizer::RetireSubmission() {
     }
 }
 
-bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle,
-                            const char* caller) {
+bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle) {
     if (!UseDrawPipe() || BbToggle::Disabled(toggle)) {
         DrainDrawPipe(DrawPipe::ReasonRasterizer);
-        BbHitch::Trace::Scope scope{caller};
         task(*this, static_cast<const u8*>(data));
         return false;
     }
     const u32 total = sizeof(TaskPacket) + AlignPacket(size);
     u8* out = draw_pipe->Begin(total);
-    *reinterpret_cast<TaskPacket*>(out) = {PacketKind::Task, size, task, caller};
+    *reinterpret_cast<TaskPacket*>(out) = {PacketKind::Task, size, task};
     std::memcpy(out + sizeof(TaskPacket), data, size);
     draw_pipe->Commit(total);
     return true;
@@ -714,7 +711,6 @@ void Rasterizer::RunDrawPacket(void* context, const u8* data, u32 size) {
     auto& self = *static_cast<Rasterizer*>(context);
     if (*reinterpret_cast<const PacketKind*>(data) == PacketKind::Task) {
         const auto& task = *reinterpret_cast<const TaskPacket*>(data);
-        BbHitch::Trace::Scope scope{task.caller};
         task.task(self, data + sizeof(TaskPacket));
         return;
     }
