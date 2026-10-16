@@ -120,3 +120,30 @@ handoff fixture establishes that this defect causes the cemetery stall, player
 halo or foreground geometry flash. Windows compilation and target-game/NVIDIA
 validation must be reported separately; do not label this a verified gameplay
 fix or prepare a new release based only on this fixture.
+
+## Local snapshot regression, 16 October 2026
+
+The execution environment is accessible again and the complete owner R43 log
+has been read locally. Its header identifies launcher 1.6-tatsunakyo.43; Vulkan
+reports graphics queue 0 and present queue 1 in the same family. The queue
+separation was therefore active in this run and did not eliminate the reported
+hitch. The run uses the original NVIDIA FG runtime with the optional mod off.
+
+`python3 tests/test_texture_helper_snapshots.py --compiler g++` now executes
+successfully: the unchanged R43 control reads the wrong draw's descriptors in
+144 of 576 cases, while the proposed handoff passes all 576. The same negative
+control and all 576 corrected cases also pass their expected assertions with
+AddressSanitizer and UndefinedBehaviorSanitizer enabled. Leak detection was
+disabled for the container run. These tests execute the production handoff
+fragment, helper body and Info snapshot accessors with Vulkan binding stubbed.
+
+The native bounded hitch-journal test also passes. This establishes the
+snapshot correctness regression and its cleanup paths; it is not a Windows
+renderer build, NVIDIA execution, display-cadence measurement or verification
+that the owner's cemetery/halo/foreground-artifact symptoms are resolved.
+
+After restoring the checksum-pinned test headers, the complete native
+`test_cpu_integrations.py` runner passes. The production-source NVIDIA pacing
+fixture also passes, including Reflex cap translation, VideoOut limiter
+ownership and consecutive GNM simulation tokens. These remain CPU/dispatch
+fixtures, not measurements of the owner's displayed frames.
