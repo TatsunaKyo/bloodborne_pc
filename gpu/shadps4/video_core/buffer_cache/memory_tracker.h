@@ -112,9 +112,9 @@ public:
 
     /// Call 'func' for each CPU modified range and unmark those pages as CPU modified
     void ForEachUploadRange(VAddr query_cpu_range, u64 query_size, bool is_written, auto&& func,
-                            auto&& on_upload) {
+                            auto&& on_upload, u64 read_ahead = 0) {
         IteratePages<true>(query_cpu_range, query_size,
-                           [&func, is_written](RegionManager* manager, u64 offset, size_t size) {
+                           [&func, is_written, read_ahead](RegionManager* manager, u64 offset, size_t size) {
                                // bbport: read-only bindings skip the region lock when no page
                                // in range is CPU-modified. A guest write sets its bit in the
                                // fault handler before the store, and the draw that uses the
@@ -126,7 +126,8 @@ public:
                                }
                                manager->lock.lock();
                                manager->template ForEachModifiedRange<Type::CPU, true>(
-                                   manager->GetCpuAddr() + offset, size, func);
+                                   manager->GetCpuAddr() + offset, size, func,
+                                   is_written ? 0 : read_ahead);
                                if (!is_written) {
                                    manager->lock.unlock();
                                }

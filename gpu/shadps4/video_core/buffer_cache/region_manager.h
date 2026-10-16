@@ -94,10 +94,15 @@ public:
         }
 
         RegionBits& bits = GetRegionBits<type>();
-        cold.UnsetRange(start_page, end_page);
         if constexpr (type == Type::CPU && enable) {
+            // A bulk write notification is also issued for never-uploaded data.
+            // Only an existing watch establishes a writer; untouched pending
+            // neighbours must retain first-use batching eligibility.
+            cold &= ~RegionBits(~writeable, start_page, end_page);
             CountWriteFaults(start_page, end_page);
             protected_dirty.UnsetRange(start_page, end_page);
+        } else {
+            cold.UnsetRange(start_page, end_page);
         }
         if constexpr (enable) {
             bits.SetRange(start_page, end_page);
@@ -140,7 +145,7 @@ public:
      * @param func            Function to call for each turned off region
      */
     template <Type type, bool clear>
-    void ForEachModifiedRange(VAddr query_cpu_range, s64 size, auto&& func) {
+    void ForEachModifiedRange(VAddr query_cpu_range, s64 size, auto&& func, u64 read_ahead = 0) {
         RENDERER_TRACE;
         const size_t offset = query_cpu_range - cpu_addr;
         const size_t start_page = SanitizeAddress(offset) / TRACKER_BYTES_PER_PAGE;
@@ -162,13 +167,23 @@ public:
         RegionBits mask(bits, start_page, end_page);
 
         if constexpr (clear) {
-            bits.UnsetRange(start_page, end_page);
             if constexpr (type == Type::CPU) {
-                cold.UnsetRange(start_page, end_page);
+                if (read_ahead && !mask.None()) {
+                    // Coalesce actual pending uploads, including recycled addresses.
+                    // GPU-written/hot neighbours are never read ahead. Every added
+                    // page is copied before submission, with the original fences.
+                    mask |= tracker->ExpandUploadRange(cpu_addr, mask, cpu & ~gpu & ~hot & ~mask,
+                                                       read_ahead);
+                }
+                bits &= ~mask;
+                cold &= ~mask;
                 KeepHotPagesModified(start_page, end_page);
                 UpdateProtection<true, false>();
-            } else if (EmulatorSettings.GetReadbacksMode() != GpuReadbacksMode::Disabled) {
-                UpdateProtection<false, true>();
+            } else {
+                bits.UnsetRange(start_page, end_page);
+                if (EmulatorSettings.GetReadbacksMode() != GpuReadbacksMode::Disabled) {
+                    UpdateProtection<false, true>();
+                }
             }
         }
 

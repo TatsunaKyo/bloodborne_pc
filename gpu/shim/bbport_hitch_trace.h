@@ -29,12 +29,14 @@ struct Event {
     const char* role{};
     Clock::time_point start{}, end{};
     uint32_t thread{};
+    uint64_t address{}, bytes{}; // optional resource metadata; no memory contents
 };
 struct Slot { std::atomic_flag busy = ATOMIC_FLAG_INIT; Event event; };
 inline constexpr size_t Capacity = 65536;
 inline std::array<Slot, Capacity> journal;
 inline std::atomic<uint64_t> writes{}, lost{};
-inline void Record(const char* stage, Clock::time_point start, Clock::time_point end) {
+inline void Record(const char* stage, Clock::time_point start, Clock::time_point end,
+                   uint64_t address = 0, uint64_t bytes = 0) {
     if (!Enabled()) return;
     if (!thread_id) thread_id = next_thread.fetch_add(1, std::memory_order_relaxed);
     auto& slot = journal[writes.fetch_add(1, std::memory_order_relaxed) % Capacity];
@@ -42,15 +44,17 @@ inline void Record(const char* stage, Clock::time_point start, Clock::time_point
         lost.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    slot.event = {stage, role, start, end, thread_id};
+    slot.event = {stage, role, start, end, thread_id, address, bytes};
     slot.busy.clear(std::memory_order_release);
 }
 struct Scope {
     const char* stage;
     Clock::time_point start;
-    explicit Scope(const char* name) : stage{Enabled() ? name : nullptr},
-        start{stage ? Clock::now() : Clock::time_point{}} {}
-    ~Scope() { if (stage) Record(stage, start, Clock::now()); }
+    uint64_t address, bytes;
+    explicit Scope(const char* name, uint64_t address_ = 0, uint64_t bytes_ = 0)
+        : stage{Enabled() ? name : nullptr},
+          start{stage ? Clock::now() : Clock::time_point{}}, address{address_}, bytes{bytes_} {}
+    ~Scope() { if (stage) Record(stage, start, Clock::now(), address, bytes); }
 };
 struct Summary {
     const char* stage{};
@@ -58,6 +62,7 @@ struct Summary {
     uint32_t thread{};
     uint64_t count{};
     double total{}, peak{};
+    uint64_t bytes{}, min_address{UINT64_MAX}, max_address{};
 };
 inline double Overlap(const Event& e, Clock::time_point begin, Clock::time_point end) {
     if (!e.stage || e.start == Clock::time_point{} || e.end < e.start || end <= begin) return 0;
@@ -73,6 +78,11 @@ inline bool Accumulate(std::array<Summary, N>& rows, const Event& event,
         if (!row.stage || (row.stage == event.stage && row.thread == event.thread)) {
             if (!row.stage) row = {event.stage, event.role, event.thread};
             ++row.count; row.total += ms; row.peak = std::max(row.peak, ms);
+            row.bytes += event.bytes;
+            if (event.bytes) {
+                row.min_address = std::min(row.min_address, event.address);
+                row.max_address = std::max(row.max_address, event.address);
+            }
             return true;
         }
     }
@@ -105,6 +115,16 @@ inline void Report(const char* phase, Clock::time_point begin, Clock::time_point
         const auto& row = rows[i];
         std::printf("  CPU thread %u (%s): %s calls=%llu total=%.3f ms peak=%.3f ms\n",
             row.thread, row.role, row.stage, static_cast<unsigned long long>(row.count), row.total, row.peak);
+    }
+    for (const auto& row : rows) {
+        if (!row.stage || !row.bytes) continue;
+        std::printf("  Resource trace thread %u (%s): %s calls=%llu bytes=%llu "
+                    "total=%.3f ms peak=%.3f ms start-addresses=%#llx..%#llx "
+                    "(whole-operation bytes for spans touching this window)\n",
+            row.thread, row.role, row.stage, static_cast<unsigned long long>(row.count),
+            static_cast<unsigned long long>(row.bytes), row.total, row.peak,
+            static_cast<unsigned long long>(row.min_address),
+            static_cast<unsigned long long>(row.max_address));
     }
 }
 }

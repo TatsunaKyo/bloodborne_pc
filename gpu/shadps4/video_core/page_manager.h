@@ -50,6 +50,10 @@ public:
     RegionBits ExpandColdWriteWatch(VAddr base_addr, const RegionBits& newly_protected,
                                    const RegionBits& eligible) const;
 
+    /// Read ahead only within an already-resident sparse block and readable GPU mapping.
+    RegionBits ExpandUploadRange(VAddr base_addr, const RegionBits& requested,
+                                 const RegionBits& eligible, u64 granularity) const;
+
     /// Returns page aligned address.
     static constexpr VAddr GetPageAddr(VAddr addr) {
         return Common::AlignDown(addr, PM_PAGE_SIZE);

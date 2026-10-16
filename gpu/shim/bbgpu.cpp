@@ -37,6 +37,7 @@
 extern "C" {
 // runtime_memory.c
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
+int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size);
 int runtime_memory_write_backing(uintptr_t address, const void* data, uint64_t size);
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size);
 int runtime_memory_region(uintptr_t address, uintptr_t* start, uintptr_t* end, int* mapped);
@@ -108,6 +109,9 @@ void MemoryManager::InvalidateMemory(VAddr address, u64 size) {
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     return runtime_memory_clamp(virtual_addr, size);
 }
+bool MemoryManager::CanReadAhead(VAddr address, u64 size) {
+    return runtime_memory_can_read_ahead(address, size) != 0;
+}
 static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
     BbHitch::Scope hitch{"guest sparse copy / VMA lookup"};
     while (size) {
@@ -139,6 +143,9 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
 }
 void AddressSpace::Protect(VAddr virtual_addr, u64 size, MemoryPermission perms) {
     BbHitch::Scope hitch{"guest page protection"};
+    BbHitch::Trace::Scope resource{True(perms & MemoryPermission::Write) ? "page watch writable"
+        : True(perms & MemoryPermission::Read) ? "page watch read-only" : "page watch no-access",
+        virtual_addr, size};
     BbStats::Timer timer{BbStats::t_protect};
     const u64 pages = (size + 4095) / 4096;
     BbStats::protect_calls.fetch_add(1, std::memory_order_relaxed);

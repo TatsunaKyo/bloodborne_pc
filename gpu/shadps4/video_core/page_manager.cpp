@@ -470,6 +470,29 @@ RegionBits PageManager::ExpandColdWriteWatch(VAddr base_addr, const RegionBits& 
     return {};
 }
 
+RegionBits PageManager::ExpandUploadRange(VAddr base_addr, const RegionBits& requested,
+                                         const RegionBits& eligible, u64 granularity) const {
+#ifdef _WIN32
+    if (granularity >= TRACKER_BYTES_PER_PAGE && granularity <= 64_KB &&
+        !(granularity & (granularity - 1))) {
+        return ColdWriteWatch::Expand(base_addr, requested, eligible,
+            [](VAddr address, u64 bytes) {
+                const auto started = BbHitch::Trace::Enabled() ? BbHitch::Trace::Clock::now()
+                    : BbHitch::Trace::Clock::time_point{};
+                const bool mapped = Impl::rasterizer->IsMapped(address, bytes);
+                const bool safe = mapped && Core::Memory::Instance()->CanReadAhead(address, bytes);
+                if (started != BbHitch::Trace::Clock::time_point{}) {
+                    BbHitch::Trace::Record(safe ? "upload window eligible"
+                        : mapped ? "upload window VMA guard rejected" : "upload window unmapped",
+                        started, BbHitch::Trace::Clock::now(), address, bytes);
+                }
+                return safe;
+            }, granularity / TRACKER_BYTES_PER_PAGE);
+    }
+#endif
+    return {};
+}
+
 void PageManager::OnGpuMap(VAddr address, size_t size) {
     impl->OnMap(address, size);
 }

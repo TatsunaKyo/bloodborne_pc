@@ -80,6 +80,7 @@ public:
  Impl* impl{};bool batch=true;
  template<bool track,bool is_read=false>void UpdatePageWatchersForRegion(VAddr,RegionBits&)const;
  RegionBits ExpandColdWriteWatch(VAddr,const RegionBits&,const RegionBits&)const;
+ RegionBits ExpandUploadRange(VAddr,const RegionBits&,const RegionBits&,u64)const{return {};}
 };
 __IMPL__
 template<bool track,bool is_read>void PageManager::UpdatePageWatchersForRegion(VAddr base,RegionBits& bits)const{
@@ -182,6 +183,20 @@ int main(){
   std::printf("Sequential 788 first-use pages: %llu protection calls, %llu pages uploaded\n",(unsigned long long)protect_calls,(unsigned long long)upload_pages);
  }
  {
+  Session s;
+  assert(s.Dirty(0)); // create the tracker before a later streaming read fills this region
+  s.r.InvalidateMemory(Base,788*4096); // production streaming preparation notification
+  for(u64 p=0;p<788;++p)s.Write(p,u8(p+1));
+  protect_calls=0;
+  for(u64 p=0;p<788;++p){s.Upload(p);assert(gpu[p*4096]==u8(p+1));}
+#ifdef R46_CONTROL
+  assert(protect_calls==788);
+#else
+  assert(protect_calls==50);
+#endif
+  std::printf("Streaming notification before 788 first-use pages: %llu protection calls, %llu pages uploaded\n",(unsigned long long)protect_calls,(unsigned long long)upload_pages);
+ }
+ {
   Session s;s.Write(0,11);s.Write(1,22);s.Upload(0);auto before=faults.load();s.Write(1,33);s.Write(2,44);
   assert(!s.Dirty(0) && s.Dirty(1) && s.Dirty(2));
 #ifdef R46_CONTROL
@@ -245,12 +260,13 @@ def extract(control):
     for key,value in values.items():text=text.replace(key,value)
     return text
 
-with tempfile.TemporaryDirectory(prefix='bb-cold-watch-') as temp:
-    root=Path(temp)
-    for control in (True,False):
-        name='r46-control' if control else 'grouped'
-        cpp=root/(name+'.cpp');cpp.write_text(extract(control));exe=root/name
-        cmd=[os.environ.get('CXX','g++'),'-std=c++20','-O2','-pthread',
-             '-I'+str(ROOT/'gpu/shim'),'-I'+str(ROOT/'gpu/shadps4'),str(cpp),'-o',str(exe)]
-        if control:cmd.insert(1,'-DR46_CONTROL')
-        subprocess.run(cmd,check=True);subprocess.run([str(exe)],check=True)
+if __name__ == '__main__':
+    with tempfile.TemporaryDirectory(prefix='bb-cold-watch-') as temp:
+        root=Path(temp)
+        for control in (True,False):
+            name='r46-control' if control else 'grouped'
+            cpp=root/(name+'.cpp');cpp.write_text(extract(control));exe=root/name
+            cmd=[os.environ.get('CXX','g++'),'-std=c++20','-O2','-pthread',
+                 '-I'+str(ROOT/'gpu/shim'),'-I'+str(ROOT/'gpu/shadps4'),str(cpp),'-o',str(exe)]
+            if control:cmd.insert(1,'-DR46_CONTROL')
+            subprocess.run(cmd,check=True);subprocess.run([str(exe)],check=True)

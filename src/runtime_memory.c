@@ -774,7 +774,7 @@ int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t s
 }
 /* Per-thread cache of recently found regions for the GPU's per-draw queries:
  * entries hold for as long as the table generation they were read at. */
-typedef struct { uint64_t generation; uintptr_t start, end; int kind; } CachedRegion;
+typedef struct { uint64_t generation; uintptr_t start, end; int kind, prot, read_ahead_safe; } CachedRegion;
 static __thread CachedRegion region_cache[8];
 static __thread unsigned region_cache_next;
 static const CachedRegion *cached_region(uintptr_t address) {
@@ -790,7 +790,7 @@ static const CachedRegion *cached_region(uintptr_t address) {
 static void cache_region(size_t i) {
     uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
     if (i==vma_count || (generation & 1)) return;
-    region_cache[region_cache_next++ % 8]=(CachedRegion){generation,vmas[i].start,vmas[i].end,vmas[i].kind};
+    region_cache[region_cache_next++ % 8]=(CachedRegion){generation,vmas[i].start,vmas[i].end,vmas[i].kind,vmas[i].prot,-1};
 }
 /* Mapped length from address, up to size, across adjacent mappings. */
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size) {
@@ -821,6 +821,41 @@ int runtime_memory_region(uintptr_t address, uintptr_t *start, uintptr_t *end, i
     }
     read_unlock();
     return found;
+}
+/* A second guest alias can write without faulting the first address's watcher.
+ * Restrict speculative uploads to unaliased direct mappings. Cache the VMA-wide
+ * conservative result for this table generation, not just the virtual address. */
+static int direct_range_unaliased(size_t index) {
+    const Vma *v=&vmas[index];
+    if (v->kind!=KIND_DIRECT) return 0;
+    uint64_t end=v->phys+v->end-v->start;
+    for (size_t j=0;j<vma_count;++j) {
+        if (j==index || vmas[j].kind==KIND_RESERVED) continue;
+        uint64_t other_end=vmas[j].phys+vmas[j].end-vmas[j].start;
+        if (v->phys<other_end && vmas[j].phys<end) return 0;
+    }
+    return 1;
+}
+/* Reject inaccessible padding and guest aliases. Temporary OS write/read
+ * restrictions imposed by the GPU tracker are handled by its dirty masks. */
+int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size) {
+    if (!size || address > UINTPTR_MAX-size) return 0;
+    const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
+    if (c && size<=c->end-address && c->read_ahead_safe>=0)
+        return c->read_ahead_safe && (host_prot(c->prot)&PROT_READ)!=0;
+    read_lock();
+    uintptr_t at=address, end=address+size;
+    for (size_t i=vma_index(address); at<end && i<vma_count; ++i) {
+        if (vmas[i].start>at || !(host_prot(vmas[i].prot)&PROT_READ)) break;
+        const int safe=direct_range_unaliased(i);
+        const unsigned before=region_cache_next;
+        cache_region(i);
+        if (region_cache_next!=before) region_cache[(region_cache_next-1)%8].read_ahead_safe=safe;
+        if (!safe) break;
+        at=vmas[i].end<end ? vmas[i].end : end;
+    }
+    read_unlock();
+    return at==end;
 }
 /* GPU page tracking: restrict host access, never beyond the guest's own protection. */
 void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write) {

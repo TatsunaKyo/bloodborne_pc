@@ -27,6 +27,11 @@ int main() {
     std::array<Summary,1> bounded{};
     assert(Accumulate(bounded,{operation,"draw",begin,end,1},begin,end));
     assert(!Accumulate(bounded,{"another stage","draw",begin,end,1},begin,end));
+    std::array<Summary,4> resources{};
+    Accumulate(resources,{operation,"draw",begin-1ms,begin+1ms,7,0x20000,4096},begin,end);
+    Accumulate(resources,{operation,"draw",begin+1ms,begin+2ms,7,0x10000,8192},begin,end);
+    assert(resources[0].bytes==12288 && resources[0].count==2 && resources[0].total==2.0);
+    assert(resources[0].min_address==0x10000 && resources[0].max_address==0x20000);
     const auto tiny_start=Clock::now();
     BbHitch::Record(operation,tiny_start,tiny_start+200us);
     assert(BbHitch::next.load()==0); // Ordinary hitch journal remains unchanged.

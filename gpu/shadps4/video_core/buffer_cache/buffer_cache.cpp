@@ -528,19 +528,38 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
 
 bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size,
                                     bool is_written, bool is_texel_buffer) {
+    const auto upload_started = BbHitch::Trace::Enabled() ? BbHitch::Trace::Clock::now()
+                                                       : BbHitch::Trace::Clock::time_point{};
     boost::container::small_vector<vk::BufferCopy, 4> copies;
     size_t total_size_bytes{};
     const Buffer* src_buffer{};
+    // Existing residency covers the entire sparse block. Read ahead at most
+    // 64 KiB of CPU-dirty neighbours once, instead of protecting, staging and
+    // recording one tiny upload for every newly visible/recycled mesh. No new
+    // residency is allocated and GPU-written pages are excluded by the tracker.
+    static const bool read_ahead = [] {
+        const char* env = std::getenv("BB_PREFETCH_BUFFER_UPLOADS");
+        const bool enabled = !env || env[0] != '0';
+        std::puts(enabled ? "GPU: resident-block upload batching enabled (at most 64 KiB)"
+                          : "GPU: resident-block upload batching disabled");
+        return enabled;
+    }();
+    const u64 granularity = read_ahead && !is_written && !is_texel_buffer
+                                ? std::min<u64>(block_size, 64_KB) : 0;
     memory_tracker->ForEachUploadRange(
         device_addr, size, is_written,
         [&](u64 addr, u64 size) {
             copies.emplace_back(total_size_bytes, addr, size);
             total_size_bytes += size;
         },
-        [&] { src_buffer = UploadCopies(arena, copies, total_size_bytes); });
+        [&] { src_buffer = UploadCopies(arena, copies, total_size_bytes); }, granularity);
 
     if (src_buffer) {
         runtime.CopyBuffer(src_buffer, arena, copies);
+        if (upload_started != BbHitch::Trace::Clock::time_point{}) {
+            BbHitch::Trace::Record("buffer upload batch", upload_started, BbHitch::Trace::Clock::now(),
+                                   arena->cpu_addr + copies.front().dstOffset, total_size_bytes);
+        }
     }
     if (is_texel_buffer && !is_written) {
         return SynchronizeMemoryFromImage(arena, device_addr, size);
