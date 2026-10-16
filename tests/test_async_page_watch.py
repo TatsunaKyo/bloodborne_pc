@@ -1,8 +1,8 @@
 """Execute the actual worker, C mapping contract, trackers and protected snapshots."""
 from pathlib import Path
 import os,subprocess,tempfile
-import test_cold_write_watch as watch
-ROOT=watch.ROOT
+import test_renderer_memory_refresh as refresh
+ROOT=refresh.ROOT
 C=r'''
 #include "runtime_memory.c"
 #include <assert.h>
@@ -25,7 +25,8 @@ void fixture_alias(int add) {
 '''
 
 def source():
- s=watch.extract(False);s=s[:s.index('int main(){')]
+ s=refresh.fixture();s=s[:s.index('int main(){')]
+ s=s.replace('Bytes=32_MB','Bytes=8_MB')
  s=s.replace('extern "C" {uint64_t runtime_disabled_optimizations=0;}',
              'extern "C" {extern uint64_t runtime_disabled_optimizations;}')
  s=s.replace('#include "bbport_toggles.h"',r'''
@@ -54,32 +55,34 @@ namespace Core {struct MemoryManager {void CopySparseMemory(VAddr,u8*,u64);void 
 ''')
  bbgpu=(ROOT/'gpu/shim/bbgpu.cpp').read_text()
  serial=bbgpu[bbgpu.index('static void CopySparseSerial('):bbgpu.index('bool MemoryManager::TryWriteBacking(')]
- # This region includes the actual protected snapshot method and WaitForPageProtection.
  pos=s.index('namespace VideoCore {class BufferCache;}')
- s=s[:pos]+'namespace Core {\n'+serial+'\n}\nCore::MemoryManager snapshots;\n'+s[pos:]
- a=s.index('struct Driver:PageManager::Impl {');b=s.index('\nVulkan::Rasterizer* raster;',a)
+ s=s[:pos]+'\nnamespace Core {\n'+serial+'\nMemoryManager snapshots;\n}\nusing Core::snapshots;\n'+s[pos:]
+ a=s.index('struct Driver:PageManager::Impl {');b=s.index('\nbool Vulkan::Rasterizer::IsMapped',a)
  s=s[:a]+r'''
 struct Driver:PageManager::Impl {
  void Protect(VAddr a,size_t n,MemoryPermission p)override{
-  ++protect_calls;runtime_memory_gpu_protect(a,n,(u8(p)&1)!=0,(u8(p)&2)!=0);
+  ++protects;runtime_memory_gpu_protect(a,n,(u8(p)&1)!=0,(u8(p)&2)!=0);
  }
  void ProtectReadOnlyDeferred(VAddr a,size_t n)override{
-  ++protect_calls;runtime_memory_gpu_protect_deferred(a,n);
+  ++protects;runtime_memory_gpu_protect_deferred(a,n);
  }
 };
-''' +s[b:]
- s=s.replace('''std::memcpy(gpu.data()+start-Base,reinterpret_cast<void*>(start),size);''','''snapshots.CopySparseMemory(start,gpu.data()+start-Base,size);''')
- pos=s.index(' bool Dirty(')
- s=s[:pos]+r'''
+'''+s[b:]
+ a=s.index(' void Upload(u64 page,');b=s.index(' bool Dirty(',a)
+ s=s[:a]+r'''
+ void Upload(u64 page,u64 count=1,bool written=false){
+  std::vector<std::pair<VAddr,u64>> ranges;
+  cache.memory_tracker->ForEachUploadRange(Base+page*4096,count*4096,written,[&](VAddr a,u64 n){ranges.emplace_back(a,n);},[&]{Snapshot(ranges);});
+ }
  std::vector<std::pair<VAddr,u64>> PendingUpload(u64 page,u64 count=1){
   std::vector<std::pair<VAddr,u64>> ranges;
-  cache.memory_tracker->ForEachUploadRange(Base+page*4096,count*4096,false,[&](VAddr a,u64 n){ranges.emplace_back(a,n);},[]{});
+  cache.memory_tracker->ForEachUploadRange(Base+page*4096,count*4096,false,[&](VAddr a,u64 n){ranges.emplace_back(a,n);});
   return ranges;
  }
  void Snapshot(const std::vector<std::pair<VAddr,u64>>& ranges){
   for(auto [a,n]:ranges)snapshots.CopySparseMemory(a,gpu.data()+a-Base,n);
  }
-''' +s[pos:]
+'''+s[b:]
  return s+MAIN
 
 MAIN=r'''
@@ -137,7 +140,7 @@ int main(int argc,char**){
   {
    Session s;hold=true;entered=false;s.PendingUpload(0);WaitFor(entered);
    std::atomic<bool> granted{};
-   std::thread grant([&]{s.r.InvalidateMemory(Base,4096);granted=true;});
+   std::thread grant([&]{s.raster.InvalidateMemory(Base,4096);granted=true;});
    std::this_thread::sleep_for(15ms);assert(!granted.load());hold=false;grant.join();
    const auto before=faults.load();s.Write(0,77);assert(faults==before);
    queue->Wait();s.Write(0,88);assert(faults==before); // no late stale RO after the grant
@@ -213,7 +216,7 @@ if __name__=='__main__':
   subprocess.run([os.environ.get('CC','gcc'),'-std=gnu11','-O2','-ffunction-sections','-fdata-sections','-I'+str(ROOT/'src'),'-c',str(c),'-o',str(obj)],check=True)
   for name,body in [('integration',source()),('queue',QUEUE)]:
    cpp=root/(name+'.cpp');cpp.write_text(body);exe=root/name
-   cmd=[os.environ.get('CXX','g++'),'-std=c++20','-O2','-pthread','-ffunction-sections','-fdata-sections','-I'+str(ROOT/'gpu/shim'),'-I'+str(ROOT/'gpu/shadps4'),str(cpp)]
+   cmd=[os.environ.get('CXX','g++'),'-std=c++23','-O2','-pthread','-ffunction-sections','-fdata-sections','-I'+str(ROOT/'gpu/shim'),'-I'+str(ROOT/'gpu/shadps4'),str(cpp)]
    if name=='integration':cmd.append(str(obj))
    cmd+=['-Wl,--gc-sections','-o',str(exe)]
    subprocess.run(cmd,check=True);subprocess.run([str(exe)],check=True,timeout=60)

@@ -11,6 +11,7 @@ HEADER = 'gpu/shadps4/common/serdes.h'
 
 PREFIX = r'''
 #include "common/serdes.h"
+#include "common/small_vector.h"
 #include <cassert>
 #include <cstdio>
 namespace AmdGpu { struct Buffer {u64 base_address{}; u8 data_format{},num_format{};}; }

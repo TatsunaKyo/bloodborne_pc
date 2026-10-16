@@ -33,7 +33,7 @@ resource = source(base + 'video_core/amdgpu/resource.h')
 buffer = section(resource, 'struct Buffer {', '    CompMapping DstSelect()') + '};\n'
 info = source(base + 'shader_recompiler/info.h')
 snapshot = section(info, '    struct UdSnapshot {', '    std::span<const u32> FlatUserData()')
-read_ud = section(info, '    template <typename T>\n    T ReadUdReg(', '    void PushUd(')
+read_ud = section(info, '    template <typename T>\n    T ReadUdReg(', '    void AddBindings(')
 fetch = section(source(base + 'shader_recompiler/frontend/fetch_shader.h'),
                 'struct VertexAttribute {', 'const u32* GetFetchShaderCode(')
 
@@ -49,6 +49,7 @@ fixture = r'''
 #include <optional>
 #include <span>
 #include <vector>
+template<class T,size_t N>using SmallVector=std::vector<T>;
 using u8=std::uint8_t;using u32=std::uint32_t;using u64=std::uint64_t;
 using s8=std::int8_t;using VAddr=std::uintptr_t;
 namespace Serialization { struct Archive; }
@@ -102,9 +103,15 @@ struct Params {
 };
 Params GetParams(const GuestProgram& p) { return {789,p.info->user_data}; }
 }
+struct FetchHandle:Shader::Gcn::FetchShaderData {
+    FetchHandle(Shader::Gcn::FetchShaderData data):Shader::Gcn::FetchShaderData(std::move(data)){size=1;}
+    explicit operator bool()const{return !Empty();}
+    const Shader::Gcn::FetchShaderData* operator->()const{return this;}
+    const Shader::Gcn::FetchShaderData& operator*()const{return *this;}
+};
 struct GraphicsPipeline {
     Shader::Info* info;
-    std::optional<const Shader::Gcn::FetchShaderData> fetch;
+    FetchHandle fetch;
     const auto& GetFetchShader() const { return fetch; }
     const Shader::Info& GetStage(Shader::SwStage) const { return *info; }
 };
@@ -148,8 +155,8 @@ int main() {
         std::memcpy(words.data()+8,&table[0],sizeof(table[0]));
         Program p;p.info.user_data=words;p.info.RefreshFlatBuf();
         Shader::Gcn::FetchShaderData fs;
-        fs.attributes={{0,0,4,0,0,0,0},{1,0,4,0,4,0,8,14,7},
-                       {2,0,4,2,0,3,0},{3,0,4,u8(Shader::IR::NumScalarRegs),8,0,0}};
+        fs.attributes={{0,4,0,0,0,0,0,0},{1,4,0,4,0,8,14,7},
+                       {2,4,2,0,3,0,0,0},{3,4,u8(Shader::IR::NumScalarRegs),8,0,0,0,0}};
         GraphicsPipeline pipeline{&p.info,fs};
         std::array<AmdGpu::Buffer,4> captured;
         for(unsigned i=0;i<captured.size();++i)captured[i]=fs.attributes[i].GetSharp(p.info);
@@ -182,7 +189,7 @@ int main() {
     std::array<AmdGpu::Buffer,1> table{};table[0].base_address=0x100000;
     std::array<u32,16> ud{};const void* ptr=table.data();std::memcpy(ud.data(),&ptr,sizeof(ptr));
     Program p;p.info.user_data=ud;
-    Shader::Gcn::FetchShaderData fs;fs.attributes={{0,0,4,0,0,0,0}};
+    Shader::Gcn::FetchShaderData fs;fs.attributes={{0,4,0,0,0,0,0,0}};
     auto saved=ud;
     Shader::Info::ud_snapshots[0]={&p.info,saved.data(),16,nullptr,0,123};
     Shader::Info::num_ud_snapshots=1;

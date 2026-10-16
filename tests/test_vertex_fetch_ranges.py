@@ -19,19 +19,19 @@ namespace Motion=Vulkan::Motion;
 namespace AmdGpu{enum class IndexType{Index16,Index32};}
 namespace Shader{enum class SwStage{Vertex};}
 namespace vk{enum class IndexType{eUint16,eUint32};}
-struct Fetch{std::vector<unsigned> attributes{0};};
+struct Fetch{std::vector<unsigned> attributes{0};bool Empty()const{return attributes.empty();}};
 struct GraphicsPipeline{
- std::optional<Fetch> fetch=Fetch{};
+ Fetch fetch;
  const auto& GetFetchShader()const{return fetch;}
  int GetStage(Shader::SwStage)const{return 0;}
 };
 struct RegisterAddress{VAddr value{};template<class T>T Address()const{return T(value);}};
 struct Registers{
- u32 index_offset{},num_indices{};RegisterAddress index_base_address;
+ u32 index_offset{},num_indices{},max_index_size=UINT32_MAX;RegisterAddress index_base_address;
  struct{AmdGpu::IndexType index_type=AmdGpu::IndexType::Index16;}index_buffer_type;
  u32 enable_primitive_restart{},primitive_restart_index=0xffff;
 } regs;
-std::pair<u32,u32> GetDrawOffsets(const Registers& r,int,const std::optional<Fetch>&){return {r.index_offset,0};}
+std::pair<u32,u32> GetDrawOffsets(const Registers& r,int,const Fetch&){return {r.index_offset,0};}
 struct Memory{
  bool safe=true;unsigned copies{};
  bool CanReadAhead(VAddr,u64){return safe;}
@@ -51,7 +51,7 @@ namespace VideoCore{struct BufferCache{
 struct Rasterizer{
  Memory* memory;VideoCore::BufferCache buffer_cache;
  struct{Vulkan::Motion::VertexRange records{};bool direct{},indices_ready{};VAddr index_address{};std::vector<u8> indices;}vertex_fetch;
- struct{int handle;u64 offset;vk::IndexType type;}index_bind{};
+ struct{int handle;u64 offset,size;vk::IndexType type;}index_bind{};
  struct{bool IsBufferAccessed(Stream*,u64,u64){return false;}}runtime;
  bool needs_barrier{};
  const Registers& Regs()const{return regs;}
@@ -91,7 +91,9 @@ int main(int argc,char**){
  std::vector<u32> wide={2,9,0xffffffffu};regs.index_base_address.value=reinterpret_cast<VAddr>(wide.data());
  regs.index_buffer_type.index_type=AmdGpu::IndexType::Index32;regs.primitive_restart_index=0xffffffffu;regs.num_indices=3;regs.index_offset=0;
  r.PrepareVertexFetch(&pipeline,true,0);assert(r.vertex_fetch.records==Vulkan::Motion::VertexRange(2,8) && r.index_bind.type==vk::IndexType::eUint32);
- pipeline.fetch.reset();r.PrepareVertexFetch(&pipeline,true,0);assert(!r.vertex_fetch.direct && !r.vertex_fetch.indices_ready);
+ regs.max_index_size=2;r.PrepareVertexFetch(&pipeline,true,0);assert(!r.vertex_fetch.direct);
+ regs.max_index_size=UINT32_MAX;regs.index_base_address.value=0;r.PrepareVertexFetch(&pipeline,true,0);assert(!r.vertex_fetch.direct);
+ pipeline.fetch.attributes.clear();r.PrepareVertexFetch(&pipeline,true,0);assert(!r.vertex_fetch.direct && !r.vertex_fetch.indices_ready);
  puts("PASS: 30000 byte-coverage cases and actual PrepareVertexFetch: bound index snapshot equals scanned data, 16/32-bit/restart/signed base/nonindexed ranges, mutable-source isolation, GPU-written/unsafe/large/custom-restart/no-fetch fallbacks.");
 }
 '''.replace('@METHOD@',method)

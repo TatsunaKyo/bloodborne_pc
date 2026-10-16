@@ -19,7 +19,7 @@ using u32=uint32_t;using u64=uint64_t;using VAddr=uintptr_t;
 template<class T>using VertexInputs=std::vector<T>;
 #define ASSERT(x) assert(x)
 #define VK_NULL_HANDLE 0
-namespace vk{enum class VertexInputRate{eVertex,eInstance};}
+namespace vk{enum class VertexInputRate{eVertex,eInstance};enum class AccessFlagBits2{eVertexAttributeRead};}
 struct GuestBuffer{VAddr base_address;u32 bytes,stride;u32 GetSize()const{return bytes;}u32 GetStride()const{return stride;}};
 struct Binding{u32 binding;vk::VertexInputRate inputRate;};
 struct Attribute{u32 binding,offset;};
@@ -29,7 +29,7 @@ struct BufferRange{VAddr base_address,end_address;const GpuBuffer* buffer{};u64 
 struct Memory{u64 ClampRangeSize(VAddr,u64 n){return n;}}mem;
 struct Cache{
  std::array<uint8_t,256*1024> source{},gpu{};u64 bytes{};
- std::pair<const GpuBuffer*,u64> ObtainBuffer(VAddr a,u32 n,bool){
+ std::pair<const GpuBuffer*,u64> ObtainBuffer(VAddr a,u32 n){
   std::memcpy(gpu.data()+a-Base,source.data()+a-Base,n);bytes+=n;return {&gpu_buffer,a-Base};
  }
  std::pair<const GpuBuffer*,u64> ObtainVertexBuffer(VAddr a,u32,std::span<const VideoCore::VertexFetch::Range> reads){
@@ -42,6 +42,7 @@ struct Prepared{std::array<uint8_t,3> range_index{0,0,1};};
 struct BindState{std::vector<int> host_buffers;std::vector<u64> host_offsets,host_sizes,host_strides;u32 num_buffers{};};
 void Run(bool limited,bool prepared){
  auto* memory=&mem;bool needs_barrier=false;
+ std::vector<std::tuple<const GpuBuffer*,u64,u64,vk::AccessFlagBits2>> bound_buffers;
  struct{struct{u32 first,count;}records{100,10};bool direct;}vertex_fetch{{100,10},limited};
  BindState v;Prepared p;const Prepared* ready=prepared?&p:nullptr;
  std::vector<GuestBuffer> guest_buffers={{Base,65536,32},{Base+16,65520,32},{Base+131072,32768,64}};
