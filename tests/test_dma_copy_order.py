@@ -47,6 +47,7 @@ fixture = r'''
 #include <utility>
 #include <vector>
 #include "bbport_copy.h"
+#include "bbport_page_watch_queue.h"
 #include "vk_draw_pipe.h"
 using VAddr=std::uintptr_t;
 extern "C" { std::uint64_t runtime_disabled_optimizations=0; }

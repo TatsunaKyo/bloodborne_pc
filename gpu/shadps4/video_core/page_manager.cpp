@@ -109,6 +109,21 @@ struct PageManager::Impl {
     }
 
     virtual void Protect(VAddr address, size_t size, Core::MemoryPermission perms) = 0;
+    virtual void ProtectReadOnlyDeferred(VAddr address, size_t size) {
+        Protect(address, size, Core::MemoryPermission::Read);
+    }
+
+    template <bool track, bool is_read>
+    void ApplyProtection(VAddr address, size_t size, Core::MemoryPermission perms,
+                         bool deferred) {
+        if constexpr (track && !is_read) {
+            if (deferred && perms == Core::MemoryPermission::Read) {
+                ProtectReadOnlyDeferred(address, size);
+                return;
+            }
+        }
+        Protect(address, size, perms);
+    }
 
     static bool GuestFaultSignalHandler(void* context, void* fault_address) {
         const auto addr = reinterpret_cast<VAddr>(fault_address);
@@ -129,7 +144,7 @@ struct PageManager::Impl {
     }
 
     template <bool track, bool is_read>
-    void UpdatePageWatchers(VAddr addr, u64 size) {
+    void UpdatePageWatchers(VAddr addr, u64 size, bool deferred = false) {
         RENDERER_TRACE;
 
         size_t page = addr >> PM_PAGE_BITS;
@@ -149,7 +164,7 @@ struct PageManager::Impl {
             if (range_bytes > 0) {
                 RENDERER_TRACE;
                 // Perform pending (un)protect action
-                Protect(range_begin << PM_PAGE_BITS, range_bytes, perms);
+                ApplyProtection<track, is_read>(range_begin << PM_PAGE_BITS, range_bytes, perms, deferred);
                 range_bytes = 0;
                 potential_range_bytes = 0;
             }
@@ -205,7 +220,7 @@ struct PageManager::Impl {
             // if all pages are contiguous, use the regular UpdatePageWatchers
             const VAddr start_addr = base_addr + (start_range.first << PM_PAGE_BITS);
             const u64 size = (start_range.second - start_range.first) << PM_PAGE_BITS;
-            return UpdatePageWatchers<track, is_read>(start_addr, size);
+            return UpdatePageWatchers<track, is_read>(start_addr, size, true);
         }
 
         size_t base_page = (base_addr >> PM_PAGE_BITS);
@@ -220,7 +235,7 @@ struct PageManager::Impl {
             if (range_bytes > 0) {
                 RENDERER_TRACE;
                 // Perform pending (un)protect action
-                Protect((range_begin << PM_PAGE_BITS), range_bytes, perms);
+                ApplyProtection<track, is_read>((range_begin << PM_PAGE_BITS), range_bytes, perms, true);
                 range_bytes = 0;
                 potential_range_bytes = 0;
             }
@@ -431,6 +446,9 @@ struct SignalImpl : public PageManager::Impl {
                    "Attempted to protect region as write-only which is not a valid permission");
         impl.Protect(address, size, perms);
     }
+    void ProtectReadOnlyDeferred(VAddr address, size_t size) override {
+        Core::Memory::Instance()->GetAddressSpace().ProtectReadOnlyDeferred(address, size);
+    }
 
 };
 
@@ -491,6 +509,10 @@ RegionBits PageManager::ExpandUploadRange(VAddr base_addr, const RegionBits& req
     }
 #endif
     return {};
+}
+
+void PageManager::UpdateReadOnlyWatchDeferred(VAddr address, u64 size) const {
+    impl->UpdatePageWatchers<true, false>(address, size, true);
 }
 
 void PageManager::OnGpuMap(VAddr address, size_t size) {

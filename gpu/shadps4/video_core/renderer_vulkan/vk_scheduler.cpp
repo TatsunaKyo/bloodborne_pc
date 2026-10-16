@@ -13,6 +13,7 @@
 #include <functional>
 
 #include "bbport_copy.h"
+#include "bbport_page_watch_queue.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "bbport_toggles.h"
 #include "common/assert.h"
@@ -191,8 +192,10 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
     }
     BbCopy::FlushBatch();
     deferred_signals_issued.fetch_add(1, std::memory_order_relaxed);
-    Record([signal = std::move(signal), done = deferred_signals_done](vk::CommandBuffer) mutable {
-        BbCopy::AfterCopies([signal = std::move(signal), done = std::move(done)] {
+    const auto protection = BbPageWatch::Capture();
+    Record([signal = std::move(signal), done = deferred_signals_done, protection](vk::CommandBuffer) mutable {
+        BbCopy::AfterCopies([signal = std::move(signal), done = std::move(done), protection] {
+            protection.Wait();
             signal();
             done->fetch_add(1, std::memory_order_release);
         });
@@ -218,6 +221,7 @@ void Scheduler::WaitDeferredSignals() {
 
 void Scheduler::WaitHostCopies() {
     BbHitch::Scope hitch{"host copies drain"};
+    const auto protection = BbPageWatch::Capture();
     if (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
         BbStats::WaitTimer timer{BbStats::host_copies_wait_ns};
         BbStats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
@@ -228,6 +232,7 @@ void Scheduler::WaitHostCopies() {
     }
     BbStats::WaitTimer timer{BbStats::copy_threads_wait_ns};
     BbCopy::WaitAsync();
+    protection.Wait();
 }
 
 void Scheduler::KickRecording(bool force) {

@@ -42,6 +42,9 @@ public:
     template <bool track>
     void UpdatePageWatchers(VAddr addr, u64 size) const;
 
+    /// A CPU-dirty image will acquire a protected snapshot or hash before it is clean.
+    void UpdateReadOnlyWatchDeferred(VAddr address, u64 size) const;
+
     /// Updates watches in the pages touching the specified region using a mask.
     template <bool track, bool is_read = false>
     void UpdatePageWatchersForRegion(VAddr base_addr, RegionBits& mask) const;

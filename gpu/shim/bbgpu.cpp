@@ -5,6 +5,7 @@
 #include "bbport_amd.h"
 #include "bbport_nvidia.h"
 #include "bbport_copy.h"
+#include "bbport_page_watch_queue.h"
 #include "bbport_hitch.h"
 #ifndef _WIN32
 #include <sys/resource.h>
@@ -42,6 +43,8 @@ int runtime_memory_write_backing(uintptr_t address, const void* data, uint64_t s
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size);
 int runtime_memory_region(uintptr_t address, uintptr_t* start, uintptr_t* end, int* mapped);
 void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write);
+void runtime_memory_gpu_protect_deferred(uintptr_t address, uint64_t size);
+void runtime_memory_wait_page_protection(void);
 typedef void (*RuntimeGpuRange)(uintptr_t address, uint64_t size);
 // runtime_kernel.c: one clock for guest and GPU timestamps
 uint64_t runtime_process_time_us(void);
@@ -91,6 +94,7 @@ public:
 
 void MemoryManager::SetRasterizer(Vulkan::Rasterizer* rasterizer_) {
     rasterizer = rasterizer_;
+    BbPageWatch::Install();
     // Existing guest mappings are replayed by the runtime when hooks are installed.
     runtime_memory_set_gpu_hooks(
         [](uintptr_t address, uint64_t size) {
@@ -126,7 +130,13 @@ static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
         source += n; dest += n; size -= n;
     }
 }
+void MemoryManager::WaitForPageProtection() {
+    runtime_memory_wait_page_protection();
+}
 void MemoryManager::CopySparseMemory(VAddr source, u8* dest, u64 size) {
+    // A snapshot cannot precede the queued write revocation. Later guest
+    // stores then fault, or are included in this snapshot before retirement.
+    runtime_memory_wait_page_protection();
     // bbport: large uploads (streaming) are split across the copy threads.
     constexpr u64 Chunk = 512 * 1024;
     if (size < 4 * Chunk || !BbCopy::Enabled()) {
@@ -156,6 +166,15 @@ void AddressSpace::Protect(VAddr virtual_addr, u64 size, MemoryPermission perms)
     }
     runtime_memory_gpu_protect(virtual_addr, size, True(perms & MemoryPermission::Read),
                                True(perms & MemoryPermission::Write));
+}
+void AddressSpace::ProtectReadOnlyDeferred(VAddr virtual_addr, u64 size) {
+    BbHitch::Trace::Scope resource{"read-only protection request", virtual_addr, size};
+    const u64 pages = (size + 4095) / 4096;
+    BbStats::protect_calls.fetch_add(1, std::memory_order_relaxed);
+    BbStats::protect_pages.fetch_add(pages, std::memory_order_relaxed);
+    BbStats::protect_revoke_calls.fetch_add(1, std::memory_order_relaxed);
+    BbStats::protect_revoke_pages.fetch_add(pages, std::memory_order_relaxed);
+    runtime_memory_gpu_protect_deferred(virtual_addr, size);
 }
 boost::icl::interval_set<VAddr> AddressSpace::GetUsableRegions() {
     boost::icl::interval_set<VAddr> set;

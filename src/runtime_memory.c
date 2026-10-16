@@ -75,6 +75,17 @@ static void write_unlock(void) {
 }
 static void read_lock(void) { if (!exclusive_depth) pthread_rwlock_rdlock(&lock); }
 static void read_unlock(void) { if (!exclusive_depth) pthread_rwlock_unlock(&lock); }
+/* Installed once before GPU tracking starts. The worker applies captured native
+ * protection segments without taking this module's VMA lock. */
+typedef void (*ProtectionEnqueue)(uintptr_t,uint64_t,uint32_t,uintptr_t);
+static ProtectionEnqueue protection_enqueue;
+static void (*protection_wait)(void);
+void runtime_memory_set_protection_hooks(ProtectionEnqueue enqueue, void (*wait)(void)) {
+    protection_enqueue=enqueue; protection_wait=wait;
+}
+void runtime_memory_wait_page_protection(void) {
+    if (protection_wait) protection_wait();
+}
 static Block blocks[LIMIT];
 static Vma *vmas; static size_t vma_count, vma_capacity;
 #ifndef _WIN32
@@ -163,6 +174,7 @@ static size_t save_protections(uintptr_t start, uintptr_t end, ProtRun **runs, s
 }
 /* Leaves [a,b) as exactly one unmapped placeholder; returns its region index. */
 static size_t carve_host(uintptr_t a, uintptr_t b) {
+    runtime_memory_wait_page_protection();
     size_t first=region_index(a), last=first;
     if (first==region_count || regions[first].start>a) win_fail("guest range outside the reservation",a,b-a);
     while (last<region_count && regions[last].start<b) ++last;
@@ -220,12 +232,32 @@ static int host_map(uintptr_t address, uint64_t size, int prot, int reserved, ui
 }
 static int host_unmap(uintptr_t address, uint64_t size) { carve_host(address,address+size); return 0; }
 static int host_protect(uintptr_t address, uint64_t size, int prot) {
+    runtime_memory_wait_page_protection();
     DWORD protect=win_prot(prot), old;
     uintptr_t end=address+size;
     for (size_t i=region_index(address); i<region_count && regions[i].start<end; ++i) {
         if (!regions[i].mapped) continue;
         uintptr_t a=regions[i].start>address ? regions[i].start : address, b=regions[i].end<end ? regions[i].end : end;
         if (!VirtualProtect((void *)a,b-a,protect,&old)) return -1;
+    }
+    return 0;
+}
+/* Already split into committed views and clipped to guest permissions under
+ * the VMA reader lock. No metadata access or lock is permitted on the worker. */
+void runtime_memory_apply_page_protection(uintptr_t address, uint64_t size, uint32_t native) {
+    DWORD old;
+    if (!VirtualProtect((void *)address,size,native,&old)) win_fail("queued VirtualProtect",address,size);
+}
+static int host_protect_deferred(uintptr_t address, uint64_t size, int prot) {
+    const DWORD native=win_prot(prot);
+    if (!protection_enqueue || (native!=PAGE_READONLY && native!=PAGE_EXECUTE_READ))
+        return host_protect(address,size,prot);
+    const uintptr_t end=address+size;
+    for (size_t i=region_index(address); i<region_count && regions[i].start<end; ++i) {
+        if (!regions[i].mapped) continue;
+        const uintptr_t a=regions[i].start>address ? regions[i].start : address;
+        const uintptr_t b=regions[i].end<end ? regions[i].end : end;
+        protection_enqueue(a,b-a,native,regions[i].start);
     }
     return 0;
 }
@@ -254,13 +286,25 @@ static int pool(void) {
 }
 void runtime_memory_reserve(void) {}
 static int host_map(uintptr_t address, uint64_t size, int prot, int reserved, uint64_t phys) {
+    runtime_memory_wait_page_protection();
     void *mapped = !reserved
         ? mmap((void *)address,size,prot,MAP_SHARED|MAP_FIXED,pool_fd,(off_t)phys)
         : mmap((void *)address,size,PROT_NONE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_FIXED,-1,0);
     return mapped==MAP_FAILED ? -1 : 0;
 }
-static int host_unmap(uintptr_t address, uint64_t size) { return munmap((void *)address,size); }
-static int host_protect(uintptr_t address, uint64_t size, int prot) { return mprotect((void *)address,size,prot); }
+static int host_unmap(uintptr_t address, uint64_t size) {
+    runtime_memory_wait_page_protection(); return munmap((void *)address,size);
+}
+static int host_protect(uintptr_t address, uint64_t size, int prot) {
+    runtime_memory_wait_page_protection(); return mprotect((void *)address,size,prot);
+}
+void runtime_memory_apply_page_protection(uintptr_t address, uint64_t size, uint32_t native) {
+    if (mprotect((void *)address,size,native)) { perror("queued mprotect"); abort(); }
+}
+static int host_protect_deferred(uintptr_t address, uint64_t size, int prot) {
+    if (!protection_enqueue || prot!=PROT_READ) return host_protect(address,size,prot);
+    protection_enqueue(address,size,prot,0); return 0;
+}
 static void host_discard(uint64_t phys, uint64_t size) {
     fallocate(pool_fd,FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,(off_t)phys,(off_t)size);
 }
@@ -858,7 +902,7 @@ int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size) {
     return at==end;
 }
 /* GPU page tracking: restrict host access, never beyond the guest's own protection. */
-void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write) {
+static void gpu_protect(uintptr_t address, uint64_t size, int read, int write, int deferred) {
     read_lock();
     for (size_t i=vma_index(address); i<vma_count && vmas[i].start<address+size; ++i) {
         if (vmas[i].kind==KIND_RESERVED) continue;
@@ -866,9 +910,18 @@ void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int 
         uintptr_t b=vmas[i].end<address+size ? vmas[i].end : address+size;
         int guest=host_prot(vmas[i].prot);
         int want=(read ? PROT_READ : 0)|(write ? PROT_WRITE|PROT_READ : 0)|(guest & PROT_EXEC);
-        host_protect(a,b-a,guest & want);
+        const int result=deferred ? host_protect_deferred(a,b-a,guest & want)
+                                  : host_protect(a,b-a,guest & want);
+        if (result) { fputs("STOP: GPU page protection failed\n",stderr); abort(); }
     }
     read_unlock();
+}
+void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write) {
+    gpu_protect(address,size,read,write,0);
+}
+/* Caller is installing a new write watcher, not granting access after a readback. */
+void runtime_memory_gpu_protect_deferred(uintptr_t address, uint64_t size) {
+    gpu_protect(address,size,1,0,1);
 }
 /* Host view of a guest range, for the GPU backend: the range must be mapped. */
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size) {

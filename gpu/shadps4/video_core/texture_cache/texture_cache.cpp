@@ -126,6 +126,7 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync, BbReadback::
 
 void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
     if (image.hash == 0) {
+        Core::Memory::Instance()->WaitForPageProtection();
         // Initialize hash
         const u8* addr = std::bit_cast<u8*>(image.info.guest_address);
         image.hash = XXH3_64bits(addr, image.info.guest_size);
@@ -781,6 +782,14 @@ void TextureCache::RefreshImage(Image& image) {
     RENDERER_TRACE;
     TRACE_HINT(fmt::format("{:x}:{:x}", image.info.guest_address, image.info.guest_size));
 
+    if ((True(image.flags & ImageFlagBits::MaybeCpuDirty) &&
+         False(image.flags & ImageFlagBits::CpuDirty)) ||
+        (True(image.flags & ImageFlagBits::GpuModified) &&
+         False(image.flags & ImageFlagBits::GpuDirty))) {
+        // A hash can skip an upload. Its snapshot needs the same installed
+        // watcher as a staging copy, otherwise an unnoticed write could be lost.
+        Core::Memory::Instance()->WaitForPageProtection();
+    }
     if (True(image.flags & ImageFlagBits::MaybeCpuDirty) &&
         False(image.flags & ImageFlagBits::CpuDirty)) {
         // The image size should be less than page size to be considered MaybeCpuDirty
@@ -916,6 +925,16 @@ void TextureCache::UnregisterImage(ImageId image_id) {
     });
 }
 
+static void AddImageWriteWatch(PageManager& tracker, const Image& image, VAddr address, u64 size) {
+    if (True(image.flags & ImageFlagBits::CpuDirty) && image.info.num_samples <= 1) {
+        tracker.UpdateReadOnlyWatchDeferred(address, size);
+    } else {
+        // An already-current image has no mandatory new snapshot: its watch
+        // must be installed before allowing an unobserved guest store.
+        tracker.UpdatePageWatchers<true>(address, size);
+    }
+}
+
 void TextureCache::TrackImage(ImageId image_id) {
     auto& image = slot_images[image_id];
     if (!(image.flags & ImageFlagBits::Registered)) {
@@ -931,7 +950,7 @@ void TextureCache::TrackImage(ImageId image_id) {
         // Re-track the whole image
         image.track_addr = image_begin;
         image.track_addr_end = image_end;
-        tracker.UpdatePageWatchers<1>(image_begin, image.info.guest_size);
+        AddImageWriteWatch(tracker, image, image_begin, image.info.guest_size);
     } else {
         if (image_begin < image.track_addr) {
             TrackImageHead(image_id);
@@ -954,7 +973,7 @@ void TextureCache::TrackImageHead(ImageId image_id) {
     ASSERT(image.track_addr != 0 && image_begin < image.track_addr);
     const auto size = image.track_addr - image_begin;
     image.track_addr = image_begin;
-    tracker.UpdatePageWatchers<1>(image_begin, size);
+    AddImageWriteWatch(tracker, image, image_begin, size);
 }
 
 void TextureCache::TrackImageTail(ImageId image_id) {
@@ -970,7 +989,7 @@ void TextureCache::TrackImageTail(ImageId image_id) {
     const auto addr = image.track_addr_end;
     const auto size = image_end - image.track_addr_end;
     image.track_addr_end = image_end;
-    tracker.UpdatePageWatchers<1>(addr, size);
+    AddImageWriteWatch(tracker, image, addr, size);
 }
 
 void TextureCache::UntrackImage(ImageId image_id) {
