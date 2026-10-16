@@ -46,6 +46,10 @@ public:
     template <bool track, bool is_read = false>
     void UpdatePageWatchersForRegion(VAddr base_addr, RegionBits& mask) const;
 
+    /// Windows: group first-touch write watches without marking neighbouring data uploaded.
+    RegionBits ExpandColdWriteWatch(VAddr base_addr, const RegionBits& newly_protected,
+                                   const RegionBits& eligible) const;
+
     /// Returns page aligned address.
     static constexpr VAddr GetPageAddr(VAddr addr) {
         return Common::AlignDown(addr, PM_PAGE_SIZE);

@@ -18,6 +18,7 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/memory_tracker.h"
+#include "video_core/buffer_cache/cold_write_watch.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -141,7 +142,16 @@ void BufferCache::SmallGuestCopy(const BbCopy::Item& item) {
     BbCopy::QueueCopy(item);
 }
 
-void BufferCache::ExtendWriteFault(VAddr device_addr) {
+bool BufferCache::HasPendingCpuUpload(VAddr device_addr) {
+    return memory_tracker->HasPendingCpuUpload(device_addr);
+}
+
+void BufferCache::ExtendWriteFault(VAddr device_addr, bool cold_watch) {
+    if (cold_watch) {
+        constexpr u64 bytes = ColdWriteWatch::Pages * TRACKER_BYTES_PER_PAGE;
+        memory_tracker->ReleaseColdWriteWatch(Common::AlignDown(device_addr, bytes), bytes);
+        return;
+    }
     static const u64 window = [] {
         const char* env = std::getenv("BB_FAULT_WINDOW");
         const u64 kib = env ? std::strtoull(env, nullptr, 10) : 256;

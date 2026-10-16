@@ -62,6 +62,20 @@ public:
                             });
     }
 
+    bool HasPendingCpuUpload(VAddr address) {
+        return IteratePages<false>(address, 1, [](RegionManager* manager, u64 offset, size_t) {
+            std::scoped_lock lk{manager->lock};
+            return manager->HasPendingCpuUpload(offset);
+        });
+    }
+
+    void ReleaseColdWriteWatch(VAddr address, u64 size) {
+        IteratePages<false>(address, size, [](RegionManager* manager, u64 offset, size_t bytes) {
+            std::scoped_lock lk{manager->lock};
+            manager->ReleaseColdWriteWatch(manager->GetCpuAddr() + offset, bytes);
+        });
+    }
+
     /// Unmark region as modified from the host GPU
     void UnmarkRegionAsGpuModified(VAddr dirty_cpu_addr, u64 query_size) noexcept {
         IteratePages<false>(dirty_cpu_addr, query_size,

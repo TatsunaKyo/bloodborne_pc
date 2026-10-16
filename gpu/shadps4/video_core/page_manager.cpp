@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
+#include <cstdio>
+#include <cstdlib>
 #include "bbport_toggles.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -13,6 +15,7 @@
 #include "core/memory.h"
 #include "core/signals.h"
 #include "video_core/page_manager.h"
+#include "video_core/buffer_cache/cold_write_watch.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 #ifndef _WIN64
@@ -448,6 +451,24 @@ PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 }
 
 PageManager::~PageManager() = default;
+
+RegionBits PageManager::ExpandColdWriteWatch(VAddr base_addr, const RegionBits& newly_protected,
+                                           const RegionBits& eligible) const {
+#ifdef _WIN32
+    static const bool enabled = [] {
+        const char* value = std::getenv("BB_BATCH_COLD_WATCH");
+        const bool on = !value || value[0] != '0';
+        std::puts(on ? "GPU: cold resource write watches grouped in 64 KiB; pending uploads retained"
+                     : "GPU: cold resource write-watch grouping disabled");
+        return on;
+    }();
+    if (enabled) {
+        return ColdWriteWatch::Expand(base_addr, newly_protected, eligible,
+            [](VAddr address, u64 bytes) { return Impl::rasterizer->IsMapped(address, bytes); });
+    }
+#endif
+    return {};
+}
 
 void PageManager::OnGpuMap(VAddr address, size_t size) {
     impl->OnMap(address, size);

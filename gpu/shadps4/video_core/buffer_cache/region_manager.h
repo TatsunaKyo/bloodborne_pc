@@ -42,6 +42,7 @@ public:
         gpu.Clear();
         writeable.Fill();
         readable.Fill();
+        cold.Fill();
     }
     explicit RegionManager() = default;
 
@@ -93,8 +94,10 @@ public:
         }
 
         RegionBits& bits = GetRegionBits<type>();
+        cold.UnsetRange(start_page, end_page);
         if constexpr (type == Type::CPU && enable) {
             CountWriteFaults(start_page, end_page);
+            protected_dirty.UnsetRange(start_page, end_page);
         }
         if constexpr (enable) {
             bits.SetRange(start_page, end_page);
@@ -123,6 +126,8 @@ public:
             return;
         }
         cpu |= add;
+        cold &= ~add;
+        protected_dirty &= ~add;
         UpdateProtection<false, false>();
     }
 
@@ -147,8 +152,9 @@ public:
 
         RegionBits& bits = GetRegionBits<type>();
         // bbport: nothing modified in the range means nothing to clear or re-protect (CPU bits
-        // always match `writeable` after a change); this runs for every buffer binding, so
-        // it is checked before building the range mask.
+        // that are clean are write-protected); this runs for every buffer binding, so
+        // it is checked before building the range mask. Cold neighbours protected
+        // in advance remain CPU-modified and still reach their first upload.
         if (type == Type::CPU && !bits.AnyInRange(start_page, end_page) &&
             !BbToggle::Disabled(BbToggle::PageTrackingEarlyExit)) {
             return;
@@ -158,6 +164,7 @@ public:
         if constexpr (clear) {
             bits.UnsetRange(start_page, end_page);
             if constexpr (type == Type::CPU) {
+                cold.UnsetRange(start_page, end_page);
                 KeepHotPagesModified(start_page, end_page);
                 UpdateProtection<true, false>();
             } else if (EmulatorSettings.GetReadbacksMode() != GpuReadbacksMode::Disabled) {
@@ -192,6 +199,22 @@ public:
 
     LockType lock;
 
+    /// Caller holds lock. A second fault may arrive after another writer already
+    /// released a cold group; pending data still needs no widened invalidation.
+    bool HasPendingCpuUpload(u64 offset) const {
+        return cpu.Get(offset / TRACKER_BYTES_PER_PAGE);
+    }
+
+    void ReleaseColdWriteWatch(VAddr address, u64 size) {
+        const size_t start = (address - cpu_addr) / TRACKER_BYTES_PER_PAGE;
+        const size_t end = Common::DivCeil(address - cpu_addr + size, TRACKER_BYTES_PER_PAGE);
+        const RegionBits release(protected_dirty, start, end);
+        cold &= ~release;
+        protected_dirty &= ~release;
+        // Releasing a speculative watch must not dirty neighbouring clean pages.
+        UpdateProtection<false, false>();
+    }
+
 private:
     /**
      * Notify tracker about changes in the CPU tracking state of a word in the buffer
@@ -205,14 +228,25 @@ private:
     template <bool track, bool is_read>
     void UpdateProtection() {
         RENDERER_TRACE;
-        RegionBits mask = is_read ? (~gpu ^ readable) : (cpu ^ writeable);
+        if constexpr (!is_read) {
+            protected_dirty &= cpu;
+            if constexpr (track) {
+                const RegionBits changed = writeable & ~cpu;
+                if (!changed.None()) {
+                    protected_dirty |= tracker->ExpandColdWriteWatch(
+                        cpu_addr, changed, cold & cpu & ~gpu & ~hot);
+                }
+            }
+        }
+        const RegionBits desired = is_read ? ~gpu : cpu & ~protected_dirty;
+        RegionBits mask = desired ^ (is_read ? readable : writeable);
         if (mask.None()) {
             return;
         }
         if constexpr (is_read) {
-            readable = ~gpu;
+            readable = desired;
         } else {
-            writeable = cpu;
+            writeable = desired;
         }
         tracker->UpdatePageWatchersForRegion<track, is_read>(cpu_addr, mask);
     }
@@ -288,6 +322,8 @@ private:
     RegionBits gpu;
     RegionBits writeable;
     RegionBits readable;
+    RegionBits cold;             // never uploaded or explicitly invalidated/written
+    RegionBits protected_dirty;  // protected early, still pending their first upload
 };
 
 } // namespace VideoCore

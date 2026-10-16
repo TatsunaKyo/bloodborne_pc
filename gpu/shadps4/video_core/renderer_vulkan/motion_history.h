@@ -65,21 +65,30 @@ inline bool HasModelBatch(uint64_t shader, uint32_t bytes) {
     return count >= 1 && count <= 32 && (count & (count - 1)) == 0;
 }
 
-inline std::optional<uint64_t> ModelBatchIdentity(std::span<const std::byte> data) {
+template <class Hash>
+std::optional<uint64_t> ModelBatchIdentity(std::span<const std::byte> data, Hash&& hash) {
     if (data.size() > 32 * 416 || !HasModelBatch(ModelBatchShader, uint32_t(data.size())))
         return std::nullopt;
-    uint64_t hash = 14695981039346656037ULL;
+    std::array<std::array<float, 12>, 32> transforms;
+    const size_t count = data.size() / 416;
     for (size_t offset = 0; offset < data.size(); offset += 416) {
-        std::array<float, 12> transform;
+        auto& transform = transforms[offset / 416];
         std::memcpy(transform.data(), data.data() + offset, sizeof(transform));
         if (!std::all_of(transform.begin(), transform.end(), [](float v) {
                 return std::isfinite(v);
             })) return std::nullopt;
-        for (const auto byte : data.subspan(offset, sizeof(transform))) {
-            hash = (hash ^ std::to_integer<uint8_t>(byte)) * 1099511628211ULL;
-        }
     }
-    return hash ? hash : 1;
+    const uint64_t identity = hash(std::span(
+        reinterpret_cast<const std::byte*>(transforms.data()), count * sizeof(transforms[0])));
+    return identity ? identity : 1;
+}
+
+inline std::optional<uint64_t> ModelBatchIdentity(std::span<const std::byte> data) {
+    return ModelBatchIdentity(data, [](std::span<const std::byte> bytes) {
+        uint64_t hash = 14695981039346656037ULL;
+        for (const auto byte : bytes) hash = (hash ^ std::to_integer<uint8_t>(byte)) * 1099511628211ULL;
+        return hash;
+    });
 }
 
 // Keep range scans cached, but verify the current index contents before reusing one.

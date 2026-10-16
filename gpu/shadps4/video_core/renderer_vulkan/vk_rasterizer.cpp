@@ -1060,16 +1060,19 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             const VAddr address = buffer.base_address;
             const RingBinding* ring = num_ring_stages ? FindRingBinding(vs,buffer_index) : nullptr;
             if (Motion::HasModelBatch(vs.pgm_hash, size)) {
+                BbHitch::Trace::Scope trace{"motion model identity"};
                 model_batch_seen = true;
                 std::optional<u64> identity;
                 if (ring && ring->size == size) {
                     identity = Motion::ModelBatchIdentity({
-                        reinterpret_cast<const std::byte*>(constant_ring->Data(ring->offset)), size});
+                        reinterpret_cast<const std::byte*>(constant_ring->Data(ring->offset)), size},
+                        [](auto bytes) { return XXH3_64bits(bytes.data(), bytes.size()); });
                 } else if (!ring && memory->IsValidGpuMapping(address, 0) &&
                            memory->ClampRangeSize(address, size) == size &&
                            !buffer_cache.IsRegionGpuModified(address, size)) {
                     identity = Motion::ModelBatchIdentity({
-                        reinterpret_cast<const std::byte*>(address), size});
+                        reinterpret_cast<const std::byte*>(address), size},
+                        [](auto bytes) { return XXH3_64bits(bytes.data(), bytes.size()); });
                 }
                 if (identity) model_batch = XXH3_64bits_withSeed(&*identity, sizeof(*identity), model_batch);
                 else model_batch_valid = false;
@@ -1121,7 +1124,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                     const bool restart = regs.enable_primitive_restart != 0;
                     const u32 count = regs.num_indices;
                     const auto* data = reinterpret_cast<const void*>(index_address);
-                    const u64 content = XXH3_64bits(data,bytes);
+                    const u64 content = [&] {
+                        BbHitch::Trace::Scope trace{"motion index hash"};
+                        return XXH3_64bits(data,bytes);
+                    }();
                     const auto scanned = object_motion->IndexRange(
                         {index_address, count, index_size, s32(base_vertex), restart}, content, [&] {
                             const auto scan_range =
@@ -3226,10 +3232,11 @@ bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
 
 bool Rasterizer::OnWriteFault(VAddr addr, bool assume_locks) {
     DrainDrawPipe();
+    const bool cold_watch = buffer_cache.HasPendingCpuUpload(addr);
     if (!InvalidateMemory(addr, 8, assume_locks)) {
         return false;
     }
-    buffer_cache.ExtendWriteFault(addr);
+    buffer_cache.ExtendWriteFault(addr, cold_watch);
     return true;
 }
 
