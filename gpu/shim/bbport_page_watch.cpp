@@ -9,6 +9,7 @@
 extern "C" {
 void runtime_memory_apply_page_protection(uintptr_t, uint64_t, uint32_t);
 void runtime_memory_set_protection_hooks(void (*)(uintptr_t,uint64_t,uint32_t,uintptr_t), void (*)());
+void runtime_memory_set_range_protection_hook(void (*)(uintptr_t,uint64_t));
 }
 #endif
 namespace BbPageWatch {
@@ -33,7 +34,9 @@ void Install() {
         runtime_memory_set_protection_hooks(
             [](uintptr_t a, uint64_t n, uint32_t p, uintptr_t domain) { queue->Push(a,n,p,domain); },
             [] { queue->Wait(); });
+        runtime_memory_set_range_protection_hook([](uintptr_t a, uint64_t n) { queue->WaitRange(a,n); });
         std::puts("GPU: ordered page protection worker active; snapshots and remaps wait for installation");
+        std::puts("GPU: snapshot protection dependencies restricted to unaliased source ranges");
         return true;
     }();
     (void)installed;

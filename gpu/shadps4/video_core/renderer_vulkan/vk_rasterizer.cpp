@@ -3231,6 +3231,7 @@ bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
 }
 
 bool Rasterizer::OnWriteFault(VAddr addr, bool assume_locks) {
+    BbHitch::Trace::Scope trace{"guest write fault", addr, 8};
     DrainDrawPipe();
     const bool cold_watch = buffer_cache.HasPendingCpuUpload(addr);
     if (!InvalidateMemory(addr, 8, assume_locks)) {

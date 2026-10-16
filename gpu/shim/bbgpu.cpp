@@ -45,6 +45,7 @@ int runtime_memory_region(uintptr_t address, uintptr_t* start, uintptr_t* end, i
 void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write);
 void runtime_memory_gpu_protect_deferred(uintptr_t address, uint64_t size);
 void runtime_memory_wait_page_protection(void);
+void runtime_memory_wait_page_protection_range(uintptr_t address, uint64_t size);
 typedef void (*RuntimeGpuRange)(uintptr_t address, uint64_t size);
 // runtime_kernel.c: one clock for guest and GPU timestamps
 uint64_t runtime_process_time_us(void);
@@ -94,20 +95,27 @@ public:
 
 void MemoryManager::SetRasterizer(Vulkan::Rasterizer* rasterizer_) {
     rasterizer = rasterizer_;
+    BbHitch::Trace::InstallExporter();
     BbPageWatch::Install();
     // Existing guest mappings are replayed by the runtime when hooks are installed.
     runtime_memory_set_gpu_hooks(
         [](uintptr_t address, uint64_t size) {
+            BbHitch::Trace::Scope trace{"guest GPU mapping", address, size};
             auto* r = Memory::Instance()->GetRasterizer();
             r->RegisterMemory(address, size);
             r->MapMemory(address, size);
         },
-        [](uintptr_t address, uint64_t size) { Memory::Instance()->GetRasterizer()->UnmapMemory(address, size); },
         [](uintptr_t address, uint64_t size) {
+            BbHitch::Trace::Scope trace{"guest GPU unmapping", address, size};
+            Memory::Instance()->GetRasterizer()->UnmapMemory(address, size);
+        },
+        [](uintptr_t address, uint64_t size) {
+            BbHitch::Trace::Scope trace{"runtime invalidation notification", address, size};
             Memory::Instance()->GetRasterizer()->InvalidateMemory(address, size);
         });
 }
 void MemoryManager::InvalidateMemory(VAddr address, u64 size) {
+    BbHitch::Trace::Scope trace{"host write notification", address, size};
     if (rasterizer) rasterizer->InvalidateMemory(address, size);
 }
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
@@ -130,13 +138,14 @@ static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
         source += n; dest += n; size -= n;
     }
 }
-void MemoryManager::WaitForPageProtection() {
-    runtime_memory_wait_page_protection();
+void MemoryManager::WaitForPageProtection(VAddr address, u64 size) {
+    runtime_memory_wait_page_protection_range(address, size);
 }
 void MemoryManager::CopySparseMemory(VAddr source, u8* dest, u64 size) {
+    BbHitch::Trace::Scope trace{"guest snapshot", source, size};
     // A snapshot cannot precede the queued write revocation. Later guest
     // stores then fault, or are included in this snapshot before retirement.
-    runtime_memory_wait_page_protection();
+    runtime_memory_wait_page_protection_range(source, size);
     // bbport: large uploads (streaming) are split across the copy threads.
     constexpr u64 Chunk = 512 * 1024;
     if (size < 4 * Chunk || !BbCopy::Enabled()) {
@@ -267,6 +276,7 @@ extern "C" int bbgpu_init(const BbGpuConfig* config) {
             SDL_Delay(BbSettings::Get().window_focused ? 2 : 20);
         }
         LOG_INFO(Frontend, "Window closed by user");
+        BbHitch::Trace::FlushExporter();
         std::fflush(stdout);
         std::_Exit(0);
     });

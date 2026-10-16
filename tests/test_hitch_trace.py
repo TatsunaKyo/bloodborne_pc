@@ -16,6 +16,7 @@ fixture=r'''
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <thread>
 #include <type_traits>
@@ -30,10 +31,13 @@ struct Scheduler {
  vk::CommandBuffer current_cmdbuf;
  std::unique_ptr<RecordChunk> record_chunk=std::make_unique<RecordChunk>();
  std::vector<std::unique_ptr<RecordChunk>> full_chunks;
- std::unique_ptr<RecordChunk> AcquireChunk(){return std::make_unique<RecordChunk>();}
+ std::vector<std::unique_ptr<RecordChunk>> free_chunks;
+ std::mutex recorder_mutex;
+ std::unique_ptr<RecordChunk> AcquireChunk();
  void SyncRecording(){assert(false);}
  @METHODS@
 };
+@ACQUIRE@
 void QueueFixture(Scheduler& scheduler,std::vector<unsigned>& values){
  for(unsigned i=0;i<400;++i){
   std::array<unsigned,512> payload{};payload[0]=i;payload.back()=i^0xcafe;
@@ -52,17 +56,22 @@ int main(){
  });thread.join();
  assert(values.size()==400);for(unsigned i=0;i<400;++i)assert(values[i]==i);
  const auto before=BbHitch::Trace::writes.load();
- assert(before==(BbHitch::Trace::Enabled()?400u:0u));
+ unsigned commands=0;
  for(auto& slot:BbHitch::Trace::journal)if(slot.event.stage){
-  assert(std::strcmp(slot.event.stage,"QueueFixture")==0);
-  assert(std::strcmp(slot.event.role,"Vulkan recording")==0);
+  if(std::strcmp(slot.event.stage,"QueueFixture")==0){
+   ++commands;assert(std::strcmp(slot.event.role,"Vulkan recording")==0);
+  }else assert(std::strcmp(slot.event.stage,"command chunk acquisition")==0 || std::strcmp(slot.event.stage,"command chunk allocation")==0);
  }
+ assert(commands==(BbHitch::Trace::Enabled()?400u:0u));
  scheduler.direct_mode=true;bool direct=false;
  scheduler.Record([&](vk::CommandBuffer){direct=true;});assert(direct);
  assert(BbHitch::Trace::writes.load()==before+(BbHitch::Trace::Enabled()?1u:0u));
  std::puts("PASS: actual Scheduler labels follow move-only captures across chunk overflow and worker execution; direct recording and disabled command layout preserve behavior.");
 }
 '''.replace('@CHUNK@',chunk).replace('@METHODS@',methods)
+scheduler=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp').read_text()
+start=scheduler.index('std::unique_ptr<RecordChunk> Scheduler::AcquireChunk()')
+fixture=fixture.replace('@ACQUIRE@',scheduler[start:scheduler.index('\nvoid Scheduler::SignalAfterHostCopies',start)])
 with tempfile.TemporaryDirectory(prefix='hitch-trace-') as directory:
     directory=Path(directory);cpp=directory/'scheduler.cpp';cpp.write_text(fixture)
     for name,source in [('journal',ROOT/'tests/test_hitch_trace.cpp'),('scheduler',cpp)]:

@@ -35,6 +35,7 @@ HARNESS=r'''
 #include <ucontext.h>
 #include <unistd.h>
 #include "bbport_toggles.h"
+#include "bbport_hitch_trace.h"
 extern "C" {uint64_t runtime_disabled_optimizations=0;}
 #include "common/bit_array.h"
 #include "video_core/buffer_cache/cold_write_watch.h"

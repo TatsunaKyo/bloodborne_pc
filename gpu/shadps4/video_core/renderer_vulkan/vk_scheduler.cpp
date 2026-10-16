@@ -13,7 +13,6 @@
 #include <functional>
 
 #include "bbport_copy.h"
-#include "bbport_page_watch_queue.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "bbport_toggles.h"
 #include "common/assert.h"
@@ -175,13 +174,16 @@ void Scheduler::TraceDirectRecording(void* caller) {
 
 std::unique_ptr<RecordChunk> Scheduler::AcquireChunk() {
     BbHitch::Trace::Scope trace{"command chunk acquisition"};
-    std::scoped_lock lk{recorder_mutex};
-    if (free_chunks.empty()) {
-        return std::make_unique<RecordChunk>();
+    {
+        std::scoped_lock lk{recorder_mutex};
+        if (!free_chunks.empty()) {
+            auto chunk = std::move(free_chunks.back());
+            free_chunks.pop_back();
+            return chunk;
+        }
     }
-    auto chunk = std::move(free_chunks.back());
-    free_chunks.pop_back();
-    return chunk;
+    BbHitch::Trace::Scope allocation{"command chunk allocation", 0, RecordChunk::Capacity};
+    return std::make_unique_for_overwrite<RecordChunk>();
 }
 
 void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
@@ -190,15 +192,30 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
         signal();
         return;
     }
-    BbCopy::FlushBatch();
-    deferred_signals_issued.fetch_add(1, std::memory_order_relaxed);
-    const auto protection = BbPageWatch::Capture();
-    Record([signal = std::move(signal), done = deferred_signals_done, protection](vk::CommandBuffer) mutable {
-        BbCopy::AfterCopies([signal = std::move(signal), done = std::move(done), protection] {
-            protection.Wait();
-            signal();
-            done->fetch_add(1, std::memory_order_release);
-        });
+    const u64 id = deferred_signals_issued.fetch_add(1, std::memory_order_relaxed) + 1;
+    struct Completion {
+        std::atomic<unsigned> remaining{2};
+        std::function<void()> signal;
+        std::shared_ptr<std::atomic<u64>> done;
+        u64 id;
+        Completion(std::function<void()> signal_, std::shared_ptr<std::atomic<u64>> done_, u64 id_)
+            : signal{std::move(signal_)}, done{std::move(done_)}, id{id_} {}
+        void Arrive(const char* stage) {
+            BbHitch::Trace::Point(stage, 0, 0, id);
+            if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                signal();
+                BbHitch::Trace::Point("guest copy fence retired", 0, 0, id);
+                done->fetch_add(1, std::memory_order_release);
+            }
+        }
+    };
+    auto completion = std::make_shared<Completion>(std::move(signal), deferred_signals_done, id);
+    BbHitch::Trace::Point("guest copy fence queued", 0, 0, id);
+    // Capture the asynchronous copy prefix now, before later draws add work.
+    // The recorder prefix also covers copies performed inline by recorded commands.
+    BbCopy::AfterCopies([completion] { completion->Arrive("guest copy fence async ready"); });
+    Record([completion](vk::CommandBuffer) {
+        completion->Arrive("guest copy fence recording ready");
     });
     KickRecording(true);
 }
@@ -221,7 +238,6 @@ void Scheduler::WaitDeferredSignals() {
 
 void Scheduler::WaitHostCopies() {
     BbHitch::Scope hitch{"host copies drain"};
-    const auto protection = BbPageWatch::Capture();
     if (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
         BbStats::WaitTimer timer{BbStats::host_copies_wait_ns};
         BbStats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
@@ -232,7 +248,6 @@ void Scheduler::WaitHostCopies() {
     }
     BbStats::WaitTimer timer{BbStats::copy_threads_wait_ns};
     BbCopy::WaitAsync();
-    protection.Wait();
 }
 
 void Scheduler::KickRecording(bool force) {

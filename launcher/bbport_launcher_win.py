@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.49'
+VERSION = '1.6-tatsunakyo.50'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -608,13 +608,15 @@ class DiagnosticSession:
                 # The old GPU profiler ends render passes and can wait for queries:
                 # keep that separate from this reproduction of traversal pacing.
                 env['BB_HITCH_TRACE'] = '1'
+                env['BB_HITCH_TRACE_PATH'] = str((self.directory / 'cpu-timeline.jsonl').resolve())
                 env.pop('BB_GPU_PROFILE', None)
                 self.metadata['cpu_hitch_trace'] = {
                     'enabled': True, 'ring_events': 65536,
                     'gpu_timestamp_profiler': False,
                     'normal_renderer_preserved': True,
+                    'causal_timeline': True, 'timeline_maximum_bytes': 16 * 1024 * 1024,
                     'interpretation': 'CPU spans are inclusive and may overlap; they are not GPU durations.'}
-                self.record('Traversal CPU trace active with your current FG setting. '
+                self.record('Traversal CPU trace and bounded dependency timeline active with your current FG setting. '
                     'Reproduce the hitch and close the game. No key press is required for the log archive.\n')
             if self.metadata.get('nvidia_diagnostic'):
                 captures = self.directory / 'fg-inputs'

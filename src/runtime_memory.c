@@ -80,8 +80,13 @@ static void read_unlock(void) { if (!exclusive_depth) pthread_rwlock_unlock(&loc
 typedef void (*ProtectionEnqueue)(uintptr_t,uint64_t,uint32_t,uintptr_t);
 static ProtectionEnqueue protection_enqueue;
 static void (*protection_wait)(void);
+static void (*protection_wait_range)(uintptr_t,uint64_t);
 void runtime_memory_set_protection_hooks(ProtectionEnqueue enqueue, void (*wait)(void)) {
     protection_enqueue=enqueue; protection_wait=wait;
+    if (!enqueue) protection_wait_range=NULL;
+}
+void runtime_memory_set_range_protection_hook(void (*wait)(uintptr_t,uint64_t)) {
+    protection_wait_range=wait;
 }
 void runtime_memory_wait_page_protection(void) {
     if (protection_wait) protection_wait();
@@ -882,12 +887,7 @@ static int direct_range_unaliased(size_t index) {
 }
 /* Reject inaccessible padding and guest aliases. Temporary OS write/read
  * restrictions imposed by the GPU tracker are handled by its dirty masks. */
-int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size) {
-    if (!size || address > UINTPTR_MAX-size) return 0;
-    const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
-    if (c && size<=c->end-address && c->read_ahead_safe>=0)
-        return c->read_ahead_safe && (host_prot(c->prot)&PROT_READ)!=0;
-    read_lock();
+static int can_read_ahead_locked(uintptr_t address, uint64_t size) {
     uintptr_t at=address, end=address+size;
     for (size_t i=vma_index(address); at<end && i<vma_count; ++i) {
         if (vmas[i].start>at || !(host_prot(vmas[i].prot)&PROT_READ)) break;
@@ -898,8 +898,33 @@ int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size) {
         if (!safe) break;
         at=vmas[i].end<end ? vmas[i].end : end;
     }
-    read_unlock();
     return at==end;
+}
+int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size) {
+    if (!size || address > UINTPTR_MAX-size) return 0;
+    const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
+    if (c && size<=c->end-address && c->read_ahead_safe>=0)
+        return c->read_ahead_safe && (host_prot(c->prot)&PROT_READ)!=0;
+    read_lock();
+    const int safe=can_read_ahead_locked(address,size);
+    read_unlock();
+    return safe;
+}
+/* A range wait is safe only while its direct, unaliased VMA identity is stable.
+ * Aliases and inaccessible/flexible spans retain the conservative full drain. */
+void runtime_memory_wait_page_protection_range(uintptr_t address, uint64_t size) {
+    if (!size) return;
+    if (!protection_wait_range || address>UINTPTR_MAX-size) {
+        runtime_memory_wait_page_protection(); return;
+    }
+    read_lock();
+    const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
+    const int safe=c && size<=c->end-address && c->read_ahead_safe>=0
+        ? c->read_ahead_safe && (host_prot(c->prot)&PROT_READ)!=0
+        : can_read_ahead_locked(address,size);
+    if (safe) protection_wait_range(address,size);
+    else runtime_memory_wait_page_protection();
+    read_unlock();
 }
 /* GPU page tracking: restrict host access, never beyond the guest's own protection. */
 static void gpu_protect(uintptr_t address, uint64_t size, int read, int write, int deferred) {

@@ -56,10 +56,12 @@ int main(){
 '''.replace('@APPLY@',body(memory,'void runtime_memory_apply_page_protection(')).replace('@DEFER@',body(memory,'static int host_protect_deferred('))
 
 scheduler=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp').read_text()
-fence=r'''
+fence_prefix=r'''
 #include "bbport_hitch.h"
 #include "bbport_toggles.h"
 #include "bbport_page_watch_queue.h"
+#include "bbport_copy.h"
+#include <array>
 #include <cassert>
 #include <functional>
 #include <memory>
@@ -68,12 +70,6 @@ fence=r'''
 using u64=uint64_t;
 extern "C" {uint64_t runtime_disabled_optimizations=0;}
 namespace vk{struct CommandBuffer{};}
-std::vector<std::function<void()>> callbacks;
-namespace BbCopy{
- void FlushBatch(){}
- void AfterCopies(std::function<void()> f){callbacks.push_back(std::move(f));}
- void WaitAsync(){}
-}
 struct Scheduler{
  std::atomic<u64> deferred_signals_issued{},host_copies_done{};
  u64 host_copies_issued{};
@@ -87,29 +83,79 @@ struct Scheduler{
 };
 @SIGNAL@
 @WAIT@
-std::atomic<unsigned> entered{},allow{};
-void Apply(uintptr_t a,uint64_t,uint32_t){entered=unsigned(a);while(allow<a)std::this_thread::yield();}
+using namespace std::chrono_literals;
+void Until(const std::atomic<bool>& flag){
+ const auto end=std::chrono::steady_clock::now()+2s;
+ while(!flag){assert(std::chrono::steady_clock::now()<end);std::this_thread::yield();}
+}
+'''
+fence_main=r'''
+std::atomic<bool> enteredA{},enteredB{},releaseA{},releaseB{};
+constexpr uintptr_t A=0x100000,B=0x200000;
+void Apply(uintptr_t a,uint64_t,uint32_t){
+ if(a==A){enteredA=true;Until(releaseA);}
+ if(a==B){enteredB=true;Until(releaseB);}
+}
 int main(){
  BbPageWatch::Queue<> queue{Apply};BbPageWatch::installed_queue.store(&queue);
- queue.Push(1,4096,2);while(entered<1)std::this_thread::yield();
- queue.Push(2,4096,2); // pending behind the held first job
- Scheduler scheduler;std::atomic<bool> signaled{};
- scheduler.SignalAfterHostCopies([&]{signaled=true;}); // seals dependency at seq 2
- queue.Push(3,4096,2); // future work must not become a dependency of this fence
- for(auto& f:scheduler.commands)f({});assert(callbacks.size()==1);
- std::thread retire([&]{callbacks[0]();});
- std::this_thread::sleep_for(std::chrono::milliseconds(15));assert(!signaled);
- allow=2;while(entered<3)std::this_thread::yield();retire.join();
- assert(signaled && scheduler.deferred_signals_done->load()==1 && queue.Complete()==2);
- allow=3;queue.Wait();
- queue.Push(4,4096,2);while(entered<4)std::this_thread::yield();
- std::atomic<bool> drained{};std::thread drain([&]{scheduler.WaitHostCopies();drained=true;});
- std::this_thread::sleep_for(std::chrono::milliseconds(15));assert(!drained);
- allow=4;drain.join();assert(drained);
- BbPageWatch::installed_queue.store(nullptr);
- puts("PASS: actual Scheduler deferred guest fence waits for its installed watches, preserves completion counters, excludes future epochs, and WaitHostCopies drains watch dependencies even when no copy is pending.");
+ queue.Push(A,4096,2);Until(enteredA);
+ unsigned guest=17,copied=0;std::atomic<bool> signaled{},future{},releaseFuture{};
+ BbCopy::Async([&]{queue.WaitRange(A,4096);copied=guest;});
+ Scheduler s;s.SignalAfterHostCopies([&]{signaled=true;});
+ BbCopy::Async([&]{future=true;Until(releaseFuture);});
+ queue.Push(B,4096,2);
+ for(auto& f:s.commands)f({});
+ std::this_thread::sleep_for(15ms);assert(!signaled);
+ releaseA=true;Until(enteredB);Until(signaled);
+ assert(copied==17 && !releaseB && !releaseFuture && s.deferred_signals_done->load()==1);
+ guest=29;releaseFuture=true;BbCopy::WaitAsync();
+ std::atomic<bool> drained{};std::thread empty([&]{s.WaitHostCopies();drained=true;});
+ Until(drained);empty.join();assert(!releaseB);
+ BbCopy::Async([&]{queue.WaitRange(B,4096);copied=guest;});
+ drained=false;std::thread relevant([&]{s.WaitHostCopies();drained=true;});
+ std::this_thread::sleep_for(15ms);assert(!drained);releaseB=true;relevant.join();assert(copied==29);
+ queue.Wait();BbPageWatch::installed_queue.store(nullptr);
+ Scheduler stress;
+ std::array<std::atomic<bool>,64> gates{},asyncReady{};
+ std::array<unsigned,64> input{},snapshot{};std::vector<unsigned> labels;
+ for(unsigned i=0;i<64;++i){
+  input[i]=100+i;
+  BbCopy::Async([&,i]{Until(gates[i]);snapshot[i]=input[i];});
+  stress.SignalAfterHostCopies([&,i]{assert(snapshot[i]==100+i);labels.push_back(i);});
+  BbCopy::AfterCopies([&,i]{asyncReady[i]=true;});
+ }
+ for(unsigned i=0;i<64;++i){
+  if(!(i&1))stress.commands[i]({});
+  gates[i]=true;Until(asyncReady[i]);
+  if(i&1)stress.commands[i]({});
+  const auto end=std::chrono::steady_clock::now()+2s;
+  while(stress.deferred_signals_done->load()<i+1){assert(std::chrono::steady_clock::now()<end);std::this_thread::yield();}
+  assert(labels.size()==i+1 && labels.back()==i);input[i]=9000+i;
+ }
+ BbCopy::WaitAsync();assert(labels.size()==64 && stress.deferred_signals_done->load()==64);
+ puts("PASS: actual Scheduler and copy pool join issue-time async/recording prefixes; disjoint watches and future copies do not delay retirement; relevant snapshots remain protected; 64 alternating arrivals preserve FIFO labels and copied values.");
 }
-'''.replace('@SIGNAL@',body(scheduler,'void Scheduler::SignalAfterHostCopies(')).replace('@WAIT@',body(scheduler,'void Scheduler::WaitHostCopies('))
+'''
+epoch_main=r'''
+int main(int argc,char**){
+ std::atomic<bool> oldStarted{},releaseOld{},oldCopied{},futureStarted{},releaseFuture{},signaled{};
+ BbCopy::Async([&]{oldStarted=true;Until(releaseOld);oldCopied=true;});Until(oldStarted);
+ Scheduler s;s.SignalAfterHostCopies([&]{assert(oldCopied);signaled=true;});
+ BbCopy::Async([&]{futureStarted=true;Until(releaseFuture);});
+ for(auto& f:s.commands)f({});assert(!signaled);
+ releaseOld=true;Until(oldCopied);Until(futureStarted);
+ if(argc>1){std::this_thread::sleep_for(15ms);assert(!signaled);}
+ else{Until(signaled);assert(!releaseFuture);}
+ releaseFuture=true;BbCopy::WaitAsync();Until(signaled);assert(s.deferred_signals_done->load()==1);
+ puts(argc>1?"PASS: actual R49 control incorrectly includes later copies in the fence epoch.":
+ "PASS: current actual Scheduler fence retires while a later copy remains deliberately held.");
+}
+'''
+def retirement(source,main):
+ return (fence_prefix+main).replace('@SIGNAL@',body(source,'void Scheduler::SignalAfterHostCopies(')).replace('@WAIT@',body(source,'void Scheduler::WaitHostCopies('))
+fence=retirement(scheduler,fence_main)
+legacy=subprocess.check_output(['git','show','82f0ce54634fbad2a3faeedf1befb2cb7272fe72:gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp'],cwd=ROOT,text=True)
+epochs=[('epoch-r49',retirement(legacy,epoch_main)),('epoch-current',retirement(scheduler,epoch_main))]
 
 BATCH=r'''
 #include "bbport_page_watch_queue.h"
@@ -154,7 +200,11 @@ int main(){
 
 with tempfile.TemporaryDirectory(prefix='page-watch-contract-') as temporary:
  root=Path(temporary)
- for name,text in [('windows',win),('fence',fence),('batch',BATCH)]:
+ (root/'common').mkdir()
+ (root/'common/thread.h').write_text('#pragma once\n#include <string>\nnamespace Common {inline void SetCurrentThreadName(const std::string&) {}}\n')
+ for name,text in [('windows',win),('fence',fence),('batch',BATCH)]+epochs:
   cpp=root/(name+'.cpp');cpp.write_text(text);exe=root/name
-  subprocess.run([os.environ.get('CXX','g++'),'-std=c++20','-O2','-pthread','-I'+str(ROOT/'gpu/shim'),str(cpp),'-o',str(exe)],check=True)
-  subprocess.run([str(exe)],check=True,timeout=30)
+  command=[os.environ.get('CXX','g++'),'-std=c++20','-O2','-pthread','-I'+str(root),'-I'+str(ROOT/'gpu/shim'),str(cpp)]
+  if name=='fence' or name.startswith('epoch-'):command.append(str(ROOT/'gpu/shim/bbport_copy.cpp'))
+  subprocess.run(command+['-o',str(exe)],check=True)
+  subprocess.run([str(exe)]+(['control'] if name=='epoch-r49' else []),check=True,timeout=30)

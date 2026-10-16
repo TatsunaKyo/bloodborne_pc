@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "bbport_toggles.h"
+#include "bbport_hitch_trace.h"
 #include "common/debug.h"
 #include "common/types.h"
 #include "core/emulator_settings.h"
@@ -203,6 +204,7 @@ private:
 
     void CreateRegion(std::size_t page_index) {
         const VAddr base_cpu_addr = page_index << TRACKER_HIGHER_PAGE_BITS;
+        BbHitch::Trace::Point("CPU tracker region created", base_cpu_addr, 4 * 1024 * 1024);
         if (free_managers.empty()) {
             manager_pool.emplace_back();
             auto& last_pool = manager_pool.back();

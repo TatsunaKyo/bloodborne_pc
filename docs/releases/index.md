@@ -2,6 +2,7 @@
 
 Revision 23 is the latest published stable release, with Support Report and Save Manager. Revision 24 begins the next renderer work with safer shader-cache loading and complete cache-write draining at shutdown. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
 
+- [Revision 50 — source-range dependencies and issue-time copy fences (preview)](windows-v1.6-tatsunakyo.50.md)
 - [Revision 49 — ordered Windows write-watch installation (preview)](windows-v1.6-tatsunakyo.49.md)
 - [Revision 48 — resident buffer upload batching (preview)](windows-v1.6-tatsunakyo.48.md)
 - [Revision 47 — first-use resource tracking and instance identity (preview)](windows-v1.6-tatsunakyo.47.md)

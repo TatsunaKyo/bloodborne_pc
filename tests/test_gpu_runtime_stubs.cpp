@@ -34,5 +34,7 @@ int runtime_memory_write_backing(uintptr_t, const void*, uint64_t) { std::abort(
 
 extern "C" void runtime_memory_gpu_protect_deferred(uintptr_t, uint64_t) { std::abort(); }
 extern "C" void runtime_memory_wait_page_protection() { std::abort(); }
+extern "C" void runtime_memory_wait_page_protection_range(uintptr_t, uint64_t) { std::abort(); }
+extern "C" void runtime_memory_set_range_protection_hook(void (*)(uintptr_t,uint64_t)) { std::abort(); }
 extern "C" void runtime_memory_apply_page_protection(uintptr_t, uint64_t, uint32_t) { std::abort(); }
 extern "C" void runtime_memory_set_protection_hooks(void (*)(uintptr_t,uint64_t,uint32_t,uintptr_t), void (*)()) { std::abort(); }

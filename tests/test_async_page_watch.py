@@ -16,6 +16,12 @@ void fixture_remap(void) {
 void fixture_grant_under_writer(void) {
  write_lock();assert(!host_protect(0x1000000,4096,PROT_READ|PROT_WRITE));write_unlock();
 }
+void fixture_alias(int add) {
+ write_lock();
+ if(add){assert(!host_map(0x2000000,65536,PROT_READ|PROT_WRITE,0,0));assert(!vma_insert(vma_count,(Vma){0x2000000,0x2010000,KIND_DIRECT,0x33,0,0}));}
+ else {assert(!host_unmap(0x2000000,65536));vma_erase(vma_index(0x2000000),1);}
+ write_unlock();
+}
 '''
 
 def source():
@@ -32,21 +38,23 @@ extern "C" {
  void runtime_memory_apply_page_protection(uintptr_t,uint64_t,uint32_t);
  void runtime_memory_set_protection_hooks(void (*)(uintptr_t,uint64_t,uint32_t,uintptr_t),void (*)());
  void runtime_memory_wait_page_protection();
+ void runtime_memory_wait_page_protection_range(uintptr_t,uint64_t);
+ void runtime_memory_set_range_protection_hook(void (*)(uintptr_t,uint64_t));
  void runtime_memory_gpu_protect(uintptr_t,uint64_t,int,int);
  void runtime_memory_gpu_protect_deferred(uintptr_t,uint64_t);
  int runtime_memory_region(uintptr_t,uintptr_t*,uintptr_t*,int*);
  void fixture_init(int,void*);void fixture_remap();void fixture_grant_under_writer();
+ void fixture_alias(int);
 }
 namespace BbCopy {
  bool Enabled(){return false;}
  template<class F>void ParallelFor(size_t n,F&& f){for(size_t i=0;i<n;++i)f(i);}
 }
-namespace Core {struct MemoryManager {void CopySparseMemory(VAddr,u8*,u64);};}
+namespace Core {struct MemoryManager {void CopySparseMemory(VAddr,u8*,u64);void WaitForPageProtection(VAddr,u64);};}
 ''')
  bbgpu=(ROOT/'gpu/shim/bbgpu.cpp').read_text()
  serial=bbgpu[bbgpu.index('static void CopySparseSerial('):bbgpu.index('bool MemoryManager::TryWriteBacking(')]
  # This region includes the actual protected snapshot method and WaitForPageProtection.
- serial=serial.replace('void MemoryManager::WaitForPageProtection() {\n    runtime_memory_wait_page_protection();\n}\n','')
  pos=s.index('namespace VideoCore {class BufferCache;}')
  s=s[:pos]+'namespace Core {\n'+serial+'\n}\nCore::MemoryManager snapshots;\n'+s[pos:]
  a=s.index('struct Driver:PageManager::Impl {');b=s.index('\nVulkan::Rasterizer* raster;',a)
@@ -101,6 +109,7 @@ int main(int argc,char**){
  if(async){
   BbPageWatch::installed_queue.store(queue);
   runtime_memory_set_protection_hooks([](uintptr_t a,uint64_t n,uint32_t p,uintptr_t domain){queue->Push(a,n,p,domain);},[]{queue->Wait();});
+  runtime_memory_set_range_protection_hook([](uintptr_t a,uint64_t n){queue->WaitRange(a,n);});
  }
  {
   Session s;
@@ -115,6 +124,16 @@ int main(int argc,char**){
   s.Write(0,99);assert(s.Dirty(0));s.Upload(0);assert(gpu[0]==99);
  }
  if(async){
+  {
+   Session s;s.Upload(0);queue->Wait();
+   hold=true;entered=false;s.PendingUpload(704);WaitFor(entered);
+   std::atomic<bool> copied{};std::thread copier([&]{snapshots.CopySparseMemory(Base,gpu.data(),4096);copied=true;});
+   WaitFor(copied);assert(hold);hold=false;copier.join();queue->Wait();
+   fixture_alias(1);
+   hold=true;entered=false;s.PendingUpload(736);WaitFor(entered);
+   copied=false;std::thread alias_copier([&]{snapshots.CopySparseMemory(Base,gpu.data(),4096);copied=true;});
+   std::this_thread::sleep_for(15ms);assert(!copied);hold=false;alias_copier.join();queue->Wait();fixture_alias(0);
+  }
   {
    Session s;hold=true;entered=false;s.PendingUpload(0);WaitFor(entered);
    std::atomic<bool> granted{};

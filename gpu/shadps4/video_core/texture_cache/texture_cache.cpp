@@ -126,7 +126,7 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync, BbReadback::
 
 void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
     if (image.hash == 0) {
-        Core::Memory::Instance()->WaitForPageProtection();
+        Core::Memory::Instance()->WaitForPageProtection(image.info.guest_address, image.info.guest_size);
         // Initialize hash
         const u8* addr = std::bit_cast<u8*>(image.info.guest_address);
         image.hash = XXH3_64bits(addr, image.info.guest_size);
@@ -136,6 +136,7 @@ void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
 }
 
 void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
+    BbHitch::Trace::Scope trace{"image CPU invalidation", addr, size};
     std::scoped_lock lock{mutex};
     const auto pages_start = PageManager::GetPageAddr(addr);
     const auto pages_end = PageManager::GetNextPageAddr(addr + size - 1);
@@ -146,6 +147,7 @@ void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
             // Modified region overlaps image, so the image was definitely accessed by this fault.
             // Untrack the image, so that the range is unprotected and the guest can write freely.
             image.flags |= ImageFlagBits::CpuDirty;
+            BbHitch::Trace::Point("image marked CPU dirty", image_begin, image.info.guest_size);
             UntrackImage(image_id);
         } else if (pages_end < image_end) {
             // This page access may or may not modify the image.
@@ -788,7 +790,7 @@ void TextureCache::RefreshImage(Image& image) {
          False(image.flags & ImageFlagBits::GpuDirty))) {
         // A hash can skip an upload. Its snapshot needs the same installed
         // watcher as a staging copy, otherwise an unnoticed write could be lost.
-        Core::Memory::Instance()->WaitForPageProtection();
+        Core::Memory::Instance()->WaitForPageProtection(image.info.guest_address, image.info.guest_size);
     }
     if (True(image.flags & ImageFlagBits::MaybeCpuDirty) &&
         False(image.flags & ImageFlagBits::CpuDirty)) {
