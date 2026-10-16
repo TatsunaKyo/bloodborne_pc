@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.44'
+VERSION = '1.6-tatsunakyo.45'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -596,6 +596,16 @@ class DiagnosticSession:
             env.update(BB_FRAME_STATS='1', BB_GPU_PROFILE='1',
                        BB_DIAGNOSTICS_DIR=str(self.directory.resolve()))
             if self.metadata.get('nvidia_diagnostic'):
+                # Observe short CPU operations and their actual execution thread.
+                # The old GPU profiler ends render passes and can wait for queries:
+                # keep that separate from this reproduction of traversal pacing.
+                env['BB_HITCH_TRACE'] = '1'
+                env.pop('BB_GPU_PROFILE', None)
+                self.metadata['cpu_hitch_trace'] = {
+                    'enabled': True, 'ring_events': 65536,
+                    'gpu_timestamp_profiler': False,
+                    'normal_renderer_preserved': True,
+                    'interpretation': 'CPU spans are inclusive and may overlap; they are not GPU durations.'}
                 captures = self.directory / 'fg-inputs'
                 captures.mkdir()
                 env.update(BB_FG_CAPTURE_TRIGGER=str((self.directory / 'fg-capture.trigger').resolve()),
@@ -606,7 +616,8 @@ class DiagnosticSession:
                 self.record('NVIDIA FG diagnostic: ' + self.metadata['nvidia_diagnostic'] + '\n'
                     'Keep NVIDIA FG enabled. Press F8 while the assets flash, then close the game. '
                     'The capture includes tagged depth/motion/constants and the real backbuffer; '
-                    'it does not capture NVIDIA\'s internal generated image. Readbacks can affect timing.\n')
+                    'it does not capture NVIDIA\'s internal generated image. Readbacks can affect timing. '
+                    'CPU flight recording is active; reproduce the traversal hitch before pressing F8.\n')
             if self.metadata.get('geometry_diagnostic') == 'capture':
                 captures = self.directory / 'frames'
                 captures.mkdir()
@@ -623,7 +634,7 @@ class DiagnosticSession:
             keys = ('BB_DRAW_PIPE', 'BB_PREP_WORKERS', 'BB_VK_RECORD_THREAD', 'BB_COPY_THREADS',
                     'BB_FRAME_STATS', 'BB_GPU_PROFILE', 'BB_PIPE_VERIFY', 'BB_GEOMETRY_CAPTURE',
                     'BB_DUMP_FRAMES', 'BB_DUMP_POLL_FRAMES', 'BB_PIPELINE_CACHE',
-                    'BB_OBJECT_MOTION', 'BB_UPSCALER', 'BB_READBACKS', 'BB_FG_GENERATED_ONLY')
+                    'BB_OBJECT_MOTION', 'BB_UPSCALER', 'BB_READBACKS', 'BB_FG_GENERATED_ONLY', 'BB_HITCH_TRACE')
             self.metadata['renderer_environment'] = {key: env[key] for key in keys if key in env}
             self.write_metadata()
             if self.metadata.get('geometry_diagnostic'):

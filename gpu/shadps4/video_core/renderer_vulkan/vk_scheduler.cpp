@@ -173,6 +173,7 @@ void Scheduler::TraceDirectRecording(void* caller) {
 }
 
 std::unique_ptr<RecordChunk> Scheduler::AcquireChunk() {
+    BbHitch::Trace::Scope trace{"command chunk acquisition"};
     std::scoped_lock lk{recorder_mutex};
     if (free_chunks.empty()) {
         return std::make_unique<RecordChunk>();
@@ -280,6 +281,7 @@ void Scheduler::SyncRecording() {
 
 void Scheduler::RecorderThread(std::stop_token stoken) {
     Common::SetCurrentThreadName("bb:VkRecorder");
+    BbHitch::Trace::SetRole("Vulkan recording");
     while (true) {
         // Spin briefly before sleeping: the next chunk usually follows within microseconds,
         // and a sleeping recorder costs the GPU thread a wake-up syscall per kick. With few
@@ -360,6 +362,7 @@ void Scheduler::Wait(u64 tick) {
 }
 
 void Scheduler::PopPendingOperations() {
+    BbHitch::Trace::Scope trace{"pending operations"};
     if (num_pending_ops.load(std::memory_order_acquire) == 0) {
         return; // every draw comes here
     }

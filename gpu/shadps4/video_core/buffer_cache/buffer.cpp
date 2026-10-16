@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <numeric>
+#include "bbport_hitch.h"
 
 #include "common/alignment.h"
 #include "common/assert.h"
@@ -83,6 +84,7 @@ void UniqueBuffer::Destroy() {
 
 void UniqueBuffer::Create(vk::BufferCreateInfo& buffer_ci, MemoryType mem_type,
                           VmaAllocationInfo* out_alloc_info) {
+    BbHitch::Scope hitch{"Vulkan buffer creation"};
     const bool with_bda = bool(buffer_ci.usage & vk::BufferUsageFlagBits::eShaderDeviceAddress);
     if (mem_type != MemoryType::Sparse) {
         const VmaAllocationCreateFlags bda_flag =

@@ -351,6 +351,7 @@ struct TaskPacket {
     PacketKind kind;
     u32 size;
     Rasterizer::OrderedTask task;
+    const char* caller;
 };
 struct DrawPacket {
     PacketKind kind;
@@ -420,6 +421,7 @@ void Rasterizer::DrainDrawPipe(u32 reason, u32 line, const char* function) {
     if (!draw_pipe || !OnStageA()) {
         return;
     }
+    BbHitch::Trace::Scope site{function};
     static const bool stats = std::getenv("BB_FRAME_STATS") != nullptr;
     if (!stats) {
         draw_pipe->Drain(reason);
@@ -692,15 +694,17 @@ void Rasterizer::RetireSubmission() {
     }
 }
 
-bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle) {
+bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle,
+                            const char* caller) {
     if (!UseDrawPipe() || BbToggle::Disabled(toggle)) {
         DrainDrawPipe(DrawPipe::ReasonRasterizer);
+        BbHitch::Trace::Scope scope{caller};
         task(*this, static_cast<const u8*>(data));
         return false;
     }
     const u32 total = sizeof(TaskPacket) + AlignPacket(size);
     u8* out = draw_pipe->Begin(total);
-    *reinterpret_cast<TaskPacket*>(out) = {PacketKind::Task, size, task};
+    *reinterpret_cast<TaskPacket*>(out) = {PacketKind::Task, size, task, caller};
     std::memcpy(out + sizeof(TaskPacket), data, size);
     draw_pipe->Commit(total);
     return true;
@@ -710,10 +714,15 @@ void Rasterizer::RunDrawPacket(void* context, const u8* data, u32 size) {
     auto& self = *static_cast<Rasterizer*>(context);
     if (*reinterpret_cast<const PacketKind*>(data) == PacketKind::Task) {
         const auto& task = *reinterpret_cast<const TaskPacket*>(data);
+        BbHitch::Trace::Scope scope{task.caller};
         task.task(self, data + sizeof(TaskPacket));
         return;
     }
     const auto& packet = *reinterpret_cast<const DrawPacket*>(data);
+    BbHitch::Trace::Scope scope{packet.kind == PacketKind::Draw ? "DrawRecord" :
+        packet.kind == PacketKind::Dispatch ? "DispatchRecord" :
+        packet.kind == PacketKind::Special ? "FilterDraw" :
+        packet.kind == PacketKind::Indirect ? "DrawIndirectRecord" : "DispatchIndirectRecord"};
     const u8* in = data + sizeof(DrawPacket);
     const auto* blocks = reinterpret_cast<const u16*>(in);
     in += AlignPacket(packet.num_blocks * sizeof(u16));
@@ -965,6 +974,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // target is that frame.
     if (camera_motion->Enabled() && regs.color_buffers[0] &&
         FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address())) {
+        BbHitch::Trace::Scope trace{"temporal frame advance"};
         scene_started = false;
         upscaler->CompleteFrame(regs.color_buffers[0].Address());
         camera_motion->OnDisplayPass(cb_descs[0].first);
@@ -1024,6 +1034,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     push_data.yscale *= target_scale[1];
     push_data.yoffset *= target_scale[1];
     if (motion_draw && motion_geometry) {
+        BbHitch::Trace::Scope scope{"object history and index scan"};
         const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
         const auto [base_vertex, first_instance] =
             GetDrawOffsets(regs, vs, pipeline->GetFetchShader());

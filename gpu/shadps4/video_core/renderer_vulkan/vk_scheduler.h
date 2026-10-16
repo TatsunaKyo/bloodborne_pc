@@ -18,6 +18,7 @@
 #include <queue>
 
 #include "bbport_toggles.h"
+#include "bbport_hitch_trace.h"
 #include "common/assert.h"
 #include "common/interval_set.h"
 #include "common/unique_function.h"
@@ -735,7 +736,21 @@ public:
     /// Records `func(vk::CommandBuffer)` in order with other commands. The closure must own
     /// everything it uses (capture by value): it may run later on the recording thread.
     template <typename Func>
-    void Record(Func&& func) {
+    void Record(Func&& func, const char* caller = __builtin_FUNCTION()) {
+        if (BbHitch::Trace::Enabled()) {
+            // Carry the producer's operation name to the actual Vulkan thread.
+            // Keep the normal command layout/captures unchanged when tracing is off.
+            RecordImpl([operation = std::forward<Func>(func), caller](vk::CommandBuffer command) mutable {
+                BbHitch::Trace::Scope scope{caller};
+                operation(command);
+            });
+            return;
+        }
+        RecordImpl(std::forward<Func>(func));
+    }
+
+    template <typename Func>
+    void RecordImpl(Func&& func) {
         if (!recording_threaded || direct_mode) {
             func(current_cmdbuf);
             return;

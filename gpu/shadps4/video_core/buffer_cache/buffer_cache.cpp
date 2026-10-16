@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <magic_enum/magic_enum.hpp>
 #include "bbport_copy.h"
+#include "bbport_hitch.h"
 #include "bbport_toggles.h"
 #include "common/alignment.h"
 #include "core/memory.h"
@@ -472,7 +473,10 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         .allocationSize = resident_blocks << block_shift,
         .memoryTypeIndex = arena_memory_type_index,
     };
-    const auto device_memory = Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
+    const auto device_memory = [&] {
+        BbHitch::Scope hitch{"vkAllocateMemory sparse backing"};
+        return Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
+    }();
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =
@@ -709,7 +713,10 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
     {
         // Submit callbacks prepare their commands outside the queue lock. Sparse
         // binding is a queue operation too, and must serialize with submit/present.
+        const auto started = BbHitch::Clock::now();
         std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+        BbHitch::Record("sparse queue lock", started);
+        BbHitch::Scope hitch{"vkQueueBindSparse"};
         const auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
         ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
     }

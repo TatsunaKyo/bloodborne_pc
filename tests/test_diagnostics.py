@@ -39,4 +39,11 @@ with tempfile.TemporaryDirectory(prefix='bbport-diagnostics-') as temp:
     assert f'Bloodborne launcher {launcher.VERSION}' in last
     assert 'Launch settings: ' in last and 'Requested graphics: ' in last
     assert 'DO NOT RECORD THIS' not in last and 'SECRET' not in last
+    diagnostic=launcher.DiagnosticSession({**settings,'_nvidia_diagnostic':'inputs'})
+    env=diagnostic.environment({'BB_GPU_PROFILE':'1'})
+    assert env['BB_HITCH_TRACE']=='1' and 'BB_GPU_PROFILE' not in env
+    assert diagnostic.metadata['cpu_hitch_trace']['normal_renderer_preserved']
+    assert diagnostic.metadata['renderer_environment']['BB_HITCH_TRACE']=='1'
+    assert 'BB_GPU_PROFILE' not in diagnostic.metadata['renderer_environment']
+    diagnostic.log.close()
 print('PASS: diagnostics disabled by default; separate retained runs, real normal/crash subprocess output, timings/settings/exit code, credential omission and last-run compatibility.')

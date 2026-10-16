@@ -8,6 +8,7 @@
 #endif
 #include <time.h>
 #include "bbport_copy.h"
+#include "bbport_hitch_trace.h"
 #include "bbport_toggles.h"
 #include <cstdio>
 #include <boost/preprocessor/stringize.hpp>
@@ -104,6 +105,7 @@ void Liverpool::ProcessCommands() {
 
 void Liverpool::Process(std::stop_token stoken) {
     Common::SetCurrentThreadName("shadPS4:GpuCommandProcessor");
+    BbHitch::Trace::SetRole("GPU decode");
 #ifndef _WIN32
     if (clockid_t clock; pthread_getcpuclockid(pthread_self(), &clock) == 0) {
         BbStats::gpu_thread_clock.store(static_cast<int>(clock));
@@ -254,6 +256,7 @@ void SignalEop(const PM4CmdEventWriteEop& eop) {
 // bbport: end-of-pipe/-shader events run in order with the draws (Rasterizer::RunInOrder: on
 // the draw recording thread when the draw pipeline is in use).
 void RunEventWriteEop(Vulkan::Rasterizer& rasterizer, const u8* data) {
+    BbHitch::Trace::Scope trace{"RunEventWriteEop"};
     const auto eop = *reinterpret_cast<const PM4CmdEventWriteEop*>(data);
     rasterizer.ProcessDownloadImages();
     // Guest memory copies on the copy threads precede the fence the guest sees.
@@ -279,6 +282,7 @@ void RunEventWriteEop(Vulkan::Rasterizer& rasterizer, const u8* data) {
 }
 
 void RunDmaData(Vulkan::Rasterizer& rasterizer, const u8* data) {
+    BbHitch::Trace::Scope trace{"RunDmaData"};
     const auto* dma_data = reinterpret_cast<const PM4DmaData*>(data);
     ASSERT(dma_data->command.das == 0);
     if (dma_data->src_sel == DmaDataSrc::Data && dma_data->dst_sel == DmaDataDst::Gds) {
@@ -313,11 +317,13 @@ void RunDmaData(Vulkan::Rasterizer& rasterizer, const u8* data) {
 }
 
 void SignalFlip(Vulkan::Rasterizer& rasterizer, const u8*) {
+    BbHitch::Trace::Scope trace{"SignalFlip"};
     rasterizer.WaitDeferredSignals();
     Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxFlip);
 }
 
 void RunWriteData(Vulkan::Rasterizer& rasterizer, const u8* data) {
+    BbHitch::Trace::Scope trace{"RunWriteData"};
     const auto* header = reinterpret_cast<const PM4Header*>(data);
     const auto* write_data = reinterpret_cast<const PM4CmdWriteData*>(data);
     // Copies deferred to the recording thread, and fences deferred to it (RecorderFences),
@@ -331,6 +337,7 @@ void RunWriteData(Vulkan::Rasterizer& rasterizer, const u8* data) {
 }
 
 void RunEventWriteEos(Vulkan::Rasterizer& rasterizer, const u8* data) {
+    BbHitch::Trace::Scope trace{"RunEventWriteEos"};
     const auto& event_eos = *reinterpret_cast<const PM4CmdEventWriteEos*>(data);
     // Copies deferred to the recording thread precede writes the guest sees.
     rasterizer.WaitHostCopies();
