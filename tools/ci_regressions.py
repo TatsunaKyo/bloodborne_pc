@@ -44,7 +44,8 @@ def main():
     run([sys.executable,'tests/test_window_focus.py'])
     run([sys.executable,'tests/test_audio_background.py'])
     run([sys.executable,'tests/test_submit_wait_stages.py'])
-    for file in ('test_preparation_lock.py','test_recording_handoff.py','test_presentation_queue.py'):
+    for file in ('test_preparation_lock.py','test_recording_handoff.py','test_presentation_queue.py',
+                 'test_texture_helper_snapshots.py'):
         run([sys.executable,'tests/'+file])
     run([sys.executable,'tests/test_camera_viewport.py','--glm-include','/usr/include',
          '--vulkan','--glslang','/usr/bin/glslangValidator','--validator','/usr/bin/spirv-val'])

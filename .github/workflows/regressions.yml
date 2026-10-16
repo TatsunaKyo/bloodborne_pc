@@ -83,6 +83,15 @@ jobs:
             & ./out/verification/audio-background/current.exe $mode 2>&1 | Tee-Object -Append out/verification/audio-background-windows.log
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
+      - name: Execute texture helper snapshot ownership regression
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          python tests/test_texture_helper_snapshots.py --compiler cl
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Execute production Windows asset streaming and NVIDIA preset tests
         shell: pwsh
         run: |

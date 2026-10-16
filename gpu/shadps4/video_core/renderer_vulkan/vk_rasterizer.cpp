@@ -8,6 +8,7 @@
 #include "bbport_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
+#include "common/scope_exit.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
@@ -1566,6 +1567,17 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
 void Rasterizer::RunTextureTask(void* context) {
     auto& self = *static_cast<Rasterizer*>(context);
     auto& task = self.texture_task;
+    // Shader descriptors consult thread-local draw snapshots. The helper must
+    // see the same packet as stage B, even after stage A refreshes shared Info.
+    std::array<Shader::Info::UdSnapshot, Shader::Info::MaxUdSnapshots> saved{};
+    const u32 saved_count = Shader::Info::num_ud_snapshots;
+    std::copy_n(Shader::Info::ud_snapshots, saved_count, saved.begin());
+    std::copy_n(task.snapshots.begin(), task.num_snapshots, Shader::Info::ud_snapshots);
+    Shader::Info::num_ud_snapshots = task.num_snapshots;
+    SCOPE_EXIT {
+        std::copy_n(saved.begin(), saved_count, Shader::Info::ud_snapshots);
+        Shader::Info::num_ud_snapshots = saved_count;
+    };
     for (u32 i = 0; i < task.count; ++i) {
         auto& stage = task.stages[i];
         if (!self.TexturesBindableOnHelper(*stage.info, stage.prepared)) {
@@ -1684,6 +1696,9 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             set_write_index += num_descriptors;
             uses_dma |= stage->uses_dma;
         }
+        task.num_snapshots = Shader::Info::num_ud_snapshots;
+        ASSERT(task.num_snapshots <= task.snapshots.size());
+        std::copy_n(Shader::Info::ud_snapshots, task.num_snapshots, task.snapshots.begin());
         bind_helper.Fork(&RunTextureTask, this);
         for (u32 i = 0; i < task.count; ++i) {
             auto& stage = buffer_stages[i];

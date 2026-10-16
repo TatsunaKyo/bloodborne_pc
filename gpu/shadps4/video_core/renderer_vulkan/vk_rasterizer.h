@@ -5,6 +5,7 @@
 
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
+#include "shader_recompiler/info.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_bind_helper.h"
@@ -454,6 +455,10 @@ private:
             u32 write_index;
         };
         std::array<Stage, Shader::MaxStageTypes> stages;
+        // Pointers refer to the current draw packet. Join completes the helper
+        // before stage B publishes that packet as consumed.
+        std::array<Shader::Info::UdSnapshot, Shader::Info::MaxUdSnapshots> snapshots{};
+        u32 num_snapshots = 0;
         u32 count = 0;
         u32 completed = 0; ///< stages the helper bound; the rest are bound after the join
         bool barrier = false;

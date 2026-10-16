@@ -78,3 +78,45 @@ No Windows target-game/NVIDIA execution is available locally. The tests above
 reproduce specific defects; they do not establish that the cemetery route,
 119–121 output variation, character halo, or every transient asset artifact is
 resolved on the owner's system. Do not publish a stronger claim.
+
+## Owner runtime feedback, 16 October 2026
+
+The owner's R43 video still shows FPS variation, the cemetery-route hitch and
+reconstruction/foreground geometry artifacts. The revision is not validated as
+resolving those reported symptoms.
+
+In the supplied R43 log extract, submission 1866 has a 69.19 ms real interval,
+16.48 ms guest submission interval, 68.80 ms GPU-thread flip interval and
+56.13 ms submit-to-flip delay. Preparation is 0.33 ms and present/SDK CPU work
+0.08 ms. The recent journal includes draw-pipe drain 48.06 ms and GNM previous
+submission retirement 41.28 ms. These are overlapping peaks from a 250 ms
+window, not additive durations or proven per-submission attribution.
+
+A separate earlier hitch, submission 590, has 24.54 ms FG-input/frame-slot
+retirement and 24.64 ms preparation. It must not be conflated with submission
+1866, whose preparation interval is small. Steady samples in the extract include
+real means 59.928-59.986 FPS and SDK output 119.938-120.683 FPS; those CPU/window
+samples still do not measure display cadence.
+
+## Texture-helper snapshot handoff under review
+
+RunDrawPacket installs the authoritative draw's Shader::Info snapshots in
+stage B's thread-local storage. R43 RunTextureTask executes on a different
+thread without installing those snapshots. On the unprepared descriptor path,
+Info::FlatUserData then falls back to shared Info that stage A may already have
+updated for another draw. Both helper eligibility and texture/sampler binding
+can therefore consume the wrong draw's descriptors.
+
+The proposed change publishes stage B's snapshot views with TextureTask, installs
+them on the helper for the task's duration, and restores previous helper TLS on
+all returns. Existing Fork/Join ordering keeps the packet storage alive until
+the helper completes. Serial and prepared-resource paths are retained. A causal
+CPU regression executes the production publication fragment, RunTextureTask
+and Info accessors with later-draw shared descriptors. It also covers early
+returns, helper reuse, prepared resources and zero-snapshot operation.
+
+This is a source-level correctness finding. Neither the log nor the synthetic
+handoff fixture establishes that this defect causes the cemetery stall, player
+halo or foreground geometry flash. Windows compilation and target-game/NVIDIA
+validation must be reported separately; do not label this a verified gameplay
+fix or prepare a new release based only on this fixture.
