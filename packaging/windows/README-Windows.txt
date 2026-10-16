@@ -29,6 +29,8 @@ Documentation and roadmap
 
 README.md introduces the added features. docs\index.md links installation, live editing, graphics, FG, latency, caps, overlay, cheats, diagnostics and build/release guides. docs\tatsunakyo-next.md keeps Save Manager, input, ultrawide/HUD and pacing work alongside the separate infrastructure plan.
 
+Traversal capture: run Capture-Traversal.cmd with your current FG on/off setting. Reproduce the hitch and close the game; no F8 is required. Traversal-diagnostic.zip is saved in the latest user\diagnostics session. Capture-NVIDIA-FG.cmd is for optional tagged image readbacks using F8 with NVIDIA FG enabled; it also saves CPU logs when no images are available. These modes keep normal parallel renderer settings and disable GPU timestamp profiling. Nothing is uploaded automatically.
+
 Credits and licenses
 
 The full project/community credits are retained in README.md. Original copyright notices and third-party runtime licenses are included. The launcher, shared settings and update channel belong to this TatsunaKyo fork; game and upstream work keep their original authorship.

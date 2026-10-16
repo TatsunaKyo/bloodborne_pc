@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Package an explicitly requested NVIDIA FG capture after the game closes."""
+"""Package a requested traversal trace, with NVIDIA images when available."""
 import hashlib
 import json
 import math
@@ -66,7 +66,8 @@ def frame_metadata(raw, index):
 def export_capture(directory, port, metadata):
     directory, port = Path(directory), Path(port)
     frames = directory / 'fg-inputs'
-    archive = directory / 'NVIDIA-FG-diagnostic.zip'
+    nvidia = bool(metadata.get('nvidia_diagnostic'))
+    archive = directory / ('NVIDIA-FG-diagnostic.zip' if nvidia else 'Traversal-diagnostic.zip')
     temporary = archive.with_suffix('.tmp')
     records, raw_files, warnings = {}, {}, []
     complete, total, requested = 0, 0, 0
@@ -93,8 +94,6 @@ def export_capture(directory, port, metadata):
             total += size
         complete += int(valid)
         records[f'fg-inputs/fg{index}.json'] = json_bytes(record)
-    if not raw_files:
-        return {'status': 'no_frames', 'complete_frames': 0, 'warnings': warnings}
     redactor = Redactor(paths=(directory, port, Path.home(), os.environ.get('APPDATA'),
                               os.environ.get('LOCALAPPDATA')),
                         identities=(os.environ.get('USERNAME'), os.environ.get('USER')))
@@ -102,12 +101,23 @@ def export_capture(directory, port, metadata):
     for key in ('settings', 'ini', 'menu_at_start', 'menu_at_exit'):
         settings.update(settings_whitelist(metadata.get(key)))
     summary = {'schema': 1, 'revision': metadata.get('revision', 'unknown'),
-               'mode': metadata.get('nvidia_diagnostic'), 'complete_frames': complete,
-               'requested_frames': requested, 'status': 'captured' if complete == requested else 'incomplete',
+               'mode': metadata.get('nvidia_diagnostic') or 'traversal', 'complete_frames': complete,
+               'requested_frames': requested or (4 if nvidia else 0),
+               'status': ('captured' if complete and complete == requested else
+                          'incomplete' if raw_files else 'logs_only'),
+               'image_capture_status': ('captured' if complete else
+                                        'no_frames' if nvidia else 'not_requested'),
                'raw_bytes': total, 'settings': settings, 'warnings': warnings,
-               'limitations': ['Readback can affect timing.',
+               'limitations': ['CPU traversal tracing works with frame generation on or off.',
+                   'A logs_only archive contains no captured gameplay images.',
+                   'Readback can affect timing.',
                    'real_color is the actual backbuffer before interpolation, not a generated frame.',
                    'The generated-only display comparison is temporary and is not a normal FPS benchmark.']}
+    trace = metadata.get('cpu_hitch_trace', {})
+    if isinstance(trace, dict):
+        summary['cpu_hitch_trace'] = {key: trace[key] for key in (
+            'enabled', 'ring_events', 'gpu_timestamp_profiler', 'normal_renderer_preserved')
+            if type(trace.get(key)) in (bool, int)}
     records['session.json'] = json_bytes(redactor.value(summary))
     records['system.json'] = json_bytes(redactor.value(detect_system(False)))
     records['build-identity.json'] = json_bytes(redactor.value(
@@ -118,7 +128,9 @@ def export_capture(directory, port, metadata):
             stream.seek(max(0, log.stat().st_size - 4 * 1024 * 1024))
             records['session.log'] = redactor.text(stream.read().decode('utf-8', errors='replace')).encode()
     records['READ-ME.txt'] = (
-        'Private NVIDIA FG diagnostic. Inspect before sharing; nothing was uploaded.\n'
+        'Private renderer diagnostic. Inspect before sharing; nothing was uploaded.\n'
+        'Traversal CPU logs are useful independently of FG and do not require F8.\n'
+        'If status is logs_only, no image readbacks were available.\n'
         'The binary images are explicitly requested gameplay readbacks, not game/save files.\n'
         'Camera constants and image dimensions belong to the same NVIDIA-tagged submission.\n'
         'Depth: one little-endian float32 per pixel. Motion: two little-endian float16s per pixel,\n'
@@ -149,7 +161,8 @@ def export_capture(directory, port, metadata):
                 raise OSError('Capture archive failed its CRC check.')
         temporary.replace(archive)
         return {'status': summary['status'], 'archive': archive.name, 'complete_frames': complete,
-                'requested_frames': requested, 'raw_bytes': total, 'warnings': warnings}
+                'image_capture_status': summary['image_capture_status'],
+                'requested_frames': summary['requested_frames'], 'raw_bytes': total, 'warnings': warnings}
     except (OSError, zipfile.BadZipFile, RuntimeError):
         temporary.unlink(missing_ok=True)
         return {'status': 'archive_failed', 'complete_frames': complete, 'warnings': warnings}

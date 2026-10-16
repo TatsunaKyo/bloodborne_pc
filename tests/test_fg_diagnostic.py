@@ -183,7 +183,16 @@ with tempfile.TemporaryDirectory(prefix='workshop-fg-capture-') as temp:
   with zipfile.ZipFile(archive) as bundle:
    assert 'fg-inputs/save.dat' not in bundle.namelist()
    assert 'fg-inputs/fg3_real_color_8x4.raw' not in bundle.namelist()
-  empty=temp/'empty';empty.mkdir();assert capture.export_capture(empty,port,metadata)['status']=='no_frames'
+  empty=temp/'empty';empty.mkdir()
+  (empty/'session.log').write_text('Frame hitch: real interval 65.32 ms\n')
+  result=capture.export_capture(empty,port,metadata)
+  assert result['status']=='logs_only' and result['complete_frames']==0
+  with zipfile.ZipFile(empty/result['archive']) as bundle:
+   assert bundle.testzip() is None and 'Frame hitch' in bundle.read('session.log').decode()
+   assert not any(n.endswith('.raw') for n in bundle.namelist())
+   assert json.loads(bundle.read('session.json'))['image_capture_status']=='no_frames'
+  result=capture.export_capture(empty,port,{'revision':launcher.VERSION,'traversal_diagnostic':True})
+  assert result['archive']=='Traversal-diagnostic.zip' and result['status']=='logs_only'
  launcher.DATA_DIR=temp
  settings=dict(launcher.APP_DEFAULTS,draw_pipe='1',extra_env='BB_PREP_WORKERS=8 BB_VK_RECORD_THREAD=1 BB_COPY_THREADS=4')
  original=settings.copy()
@@ -196,4 +205,17 @@ with tempfile.TemporaryDirectory(prefix='workshop-fg-capture-') as temp:
   assert 'BB_DUMP_TRIGGER' not in env and 'BB_GEOMETRY_CAPTURE' not in env
   diagnostic.finish(0)
  assert settings==original
+ for fg in ('off','fsr','nvidia'):
+  before={**settings,'frame_generation':fg}
+  selected=launcher.traversal_diagnostic_settings(before,['--play','--traversal-diagnostic'])
+  diagnostic=launcher.DiagnosticSession(selected);env=diagnostic.environment(launcher.game_environment(selected))
+  assert env['BB_HITCH_TRACE']=='1' and 'BB_GPU_PROFILE' not in env
+  assert 'BB_FG_CAPTURE_TRIGGER' not in env and 'BB_GEOMETRY_CAPTURE' not in env
+  assert tuple(env[k] for k in ('BB_DRAW_PIPE','BB_PREP_WORKERS','BB_VK_RECORD_THREAD','BB_COPY_THREADS'))==('1','8','1','4')
+  assert selected['frame_generation']==fg
+  diagnostic.record('Frame hitch: renderer work, FG '+fg+'\n')
+  diagnostic.finish(0)
+  result=diagnostic.metadata['diagnostic_archive']
+  assert result['status']=='logs_only' and (diagnostic.directory/result['archive']).is_file()
+  assert '_traversal_diagnostic' not in before
 print('PASS: NVIDIA diagnostic export: byte hashes/CRC, exact constants, privacy, partial/malformed/missing files, symlink exclusion, interrupted export preserves previous ZIP, one-run comparisons retain normal renderer/settings.')

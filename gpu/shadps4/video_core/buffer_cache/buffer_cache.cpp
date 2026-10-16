@@ -94,6 +94,12 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
                        reqs.memoryTypeBits)
             .value();
 
+    const auto& memory_properties = instance.GetMemoryProperties();
+    const u32 arena_heap = memory_properties.memoryTypes[arena_memory_type_index].heapIndex;
+    backing_pool.Initialize(device, arena_memory_type_index, block_size,
+                            instance.MaxMemoryAllocationSize(),
+                            memory_properties.memoryHeaps[arena_heap].size);
+
     const u64 bda_pagetable_size =
         (blocks_per_arena_page * num_arena_pages) * sizeof(vk::DeviceAddress);
     fault_manager = std::make_unique<FaultManager>(instance, scheduler, *this, block_shift,
@@ -441,7 +447,7 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
             .resourceOffset = (start - base_block) << block_shift,
             .size = (end - start) << block_shift,
             .memory = backing.memory,
-            .memoryOffset = backing.offset + ((start - backing.start) << block_shift),
+            .memoryOffset = (backing.offset + start - backing.start) << block_shift,
         });
     });
 
@@ -469,20 +475,14 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     }
     BbStats::Timer timer{BbStats::t_resident};
 
-    const vk::MemoryAllocateInfo alloc_info = {
-        .allocationSize = resident_blocks << block_shift,
-        .memoryTypeIndex = arena_memory_type_index,
-    };
-    const auto device_memory = [&] {
-        BbHitch::Scope hitch{"vkAllocateMemory sparse backing"};
-        return Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
-    }();
+    const auto physical = Vulkan::Check(backing_pool.Allocate(u64{resident_blocks} << block_shift));
+    const auto device_memory = physical.memory;
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =
         staging_pool.Request(resident_blocks * sizeof(vk::DeviceAddress), MemoryType::HostUncached);
 
-    u64 memory_offset{};
+    u64 memory_offset = physical.offset;
     ArenaBinds* binds = BindsForArena(arena);
     auto* bda_addrs = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
     u64 offset = staging.offset;
@@ -491,7 +491,7 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         backing.start = range.start;
         backing.end = range.end;
         backing.memory = device_memory;
-        backing.offset = memory_offset;
+        backing.offset = memory_offset >> block_shift;
         resident_ranges.Add(backing);
 
         LOG_INFO(Render, "Making range start={}, end={} resident", backing.start, backing.end);

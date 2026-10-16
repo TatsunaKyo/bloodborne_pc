@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.45'
+VERSION = '1.6-tatsunakyo.46'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -561,6 +561,12 @@ def nvidia_diagnostic_settings(settings, args):
     return settings
 
 
+def traversal_diagnostic_settings(settings, args):
+    if '--traversal-diagnostic' in args:
+        return {**settings, 'developer_profile': True, '_traversal_diagnostic': True}
+    return settings
+
+
 class DiagnosticSession:
     """One opt-in session, kept after normal exits as well as crashes."""
     def __init__(self, settings):
@@ -588,6 +594,8 @@ class DiagnosticSession:
             self.metadata['geometry_diagnostic'] = settings['_geometry_diagnostic']
         if settings.get('_nvidia_diagnostic'):
             self.metadata['nvidia_diagnostic'] = settings['_nvidia_diagnostic']
+        if settings.get('_traversal_diagnostic'):
+            self.metadata['traversal_diagnostic'] = True
         self.write_metadata()
         self.log = open(self.directory / 'session.log', 'w', encoding='utf-8', buffering=1)
 
@@ -595,7 +603,7 @@ class DiagnosticSession:
         if self.directory:
             env.update(BB_FRAME_STATS='1', BB_GPU_PROFILE='1',
                        BB_DIAGNOSTICS_DIR=str(self.directory.resolve()))
-            if self.metadata.get('nvidia_diagnostic'):
+            if self.metadata.get('nvidia_diagnostic') or self.metadata.get('traversal_diagnostic'):
                 # Observe short CPU operations and their actual execution thread.
                 # The old GPU profiler ends render passes and can wait for queries:
                 # keep that separate from this reproduction of traversal pacing.
@@ -606,6 +614,9 @@ class DiagnosticSession:
                     'gpu_timestamp_profiler': False,
                     'normal_renderer_preserved': True,
                     'interpretation': 'CPU spans are inclusive and may overlap; they are not GPU durations.'}
+                self.record('Traversal CPU trace active with your current FG setting. '
+                    'Reproduce the hitch and close the game. No key press is required for the log archive.\n')
+            if self.metadata.get('nvidia_diagnostic'):
                 captures = self.directory / 'fg-inputs'
                 captures.mkdir()
                 env.update(BB_FG_CAPTURE_TRIGGER=str((self.directory / 'fg-capture.trigger').resolve()),
@@ -662,17 +673,20 @@ class DiagnosticSession:
             self.log.close()
             if self.metadata.get('geometry_diagnostic') == 'capture':
                 self.archive_capture()
-            if self.metadata.get('nvidia_diagnostic'):
+            if self.metadata.get('nvidia_diagnostic') or self.metadata.get('traversal_diagnostic'):
                 self.archive_fg_capture()
 
     def archive_fg_capture(self):
         from fg_diagnostic import export_capture
         result = export_capture(self.directory, PORT_DIR, self.metadata)
-        self.metadata['frame_capture'].update(result)
+        self.metadata.setdefault('frame_capture', {}).update(result)
+        self.metadata['diagnostic_archive'] = result
         self.write_metadata()
-        if result['status'] in ('captured', 'incomplete') and result.get('archive'):
-            print('NVIDIA FG diagnostic saved: ' + str(self.directory / result['archive']), flush=True)
-            print('Inspect this archive before sharing. It contains private gameplay images; nothing is uploaded.', flush=True)
+        if result.get('archive'):
+            print('Renderer diagnostic saved: ' + str(self.directory / result['archive']), flush=True)
+            if result['status'] == 'logs_only':
+                print('CPU logs/settings were saved. No gameplay images were captured; F8 is only needed for NVIDIA image readbacks.', flush=True)
+            print('Inspect this private archive before sharing; nothing is uploaded.', flush=True)
         else:
             print('NVIDIA FG diagnostic: ' + result['status'] + '. The individual capture files are retained.', flush=True)
 
@@ -2554,6 +2568,7 @@ def main():
     normal_settings = settings
     settings = geometry_diagnostic_settings(settings, args)
     settings = nvidia_diagnostic_settings(settings, args)
+    settings = traversal_diagnostic_settings(settings, args)
     LANG = settings.get('ui_language') or windows_language()
     if args[:1] == ['--install-update'] and len(args) == 3:
         sys.exit(install_update(args[1], args[2]))
@@ -2562,7 +2577,7 @@ def main():
         sys.exit(play_without_window(settings))
     # Comparison switches apply to that launch; never serialize them through the UI.
     settings = {key: value for key, value in normal_settings.items()
-                if key not in ('_geometry_diagnostic', '_nvidia_diagnostic')}
+                if key not in ('_geometry_diagnostic', '_nvidia_diagnostic', '_traversal_diagnostic')}
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)  # sharp text on scaled displays
     except (AttributeError, OSError):
