@@ -67,6 +67,16 @@ void Set(Values& v, const std::string& key, const std::string& value) {
                 v.upscaler = u;
             }
         }
+    } else if (key == "frame_gen") {
+        for (int g = 0; g < FrameGenCount; ++g) {
+            if (value == FrameGenName(g)) {
+                v.frame_gen = g;
+            }
+        }
+    } else if (key == "frame_gen_multiplier") {
+        v.frame_gen_multiplier = std::clamp(i, 2, 4);
+    } else if (key == "frame_gen_fit_display") {
+        v.frame_gen_fit_display = i != 0;
     } else if (key == "preset") {
         v.preset = std::clamp(i, 0, PresetCount - 1);
     } else if (key == "xess_preset") {
@@ -100,6 +110,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.model_lod = std::clamp(i, -2, 2);
     } else if (key == "live_resolution") {
         v.live_resolution = value == "auto" ? -1 : std::clamp(i, 0, 1);
+    } else if (key == "hud_position") {
+        v.hud_position = std::clamp(i, 0, 100);
     } else if (key == "output_res") {
         for (int r = 0; r < OutputCount; ++r) {
             if (value == std::to_string(OutputWidths[r]) + "x" + std::to_string(OutputHeights[r])) {
@@ -297,6 +309,7 @@ void Load() {
     }
     v.startup_model_lod = v.model_lod;
     v.startup_output_res = v.output_res;
+    v.startup_hud_position = v.hud_position;
     v.startup_live_resolution = v.live_resolution;
     v.startup_nvidia_fg_preset = v.nvidia_fg_preset;
     v.startup_nvidia_fg_mod = v.nvidia_fg_mod;
@@ -355,7 +368,10 @@ float RenderScale() {
 
 bool ResolutionNeedsRestart() {
     const auto& v = Get();
-    // TAA needs the live path (native guest targets): run.sh selects it on restart.
+    // TAA needs the live path (native guest targets): run.sh selects it on restart. Ultrawide
+    // outputs patch the camera and HUD at startup.
+    if (Ultrawide(v.output_res) != Ultrawide(v.startup_output_res)) return true;
+    if (Ultrawide(v.output_res) && v.hud_position != v.startup_hud_position) return true;
     return FixedRenderSession() &&
         ((v.upscaler == UpscalerXess ? v.xess_preset != v.startup_xess_preset
                                     : v.preset != v.startup_preset) ||
@@ -437,8 +453,13 @@ void Save() {
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
     }
+    std::fprintf(file, "frame_gen=%s\nframe_gen_multiplier=%d\nframe_gen_fit_display=%d\n",
+                 FrameGenName(v.frame_gen), v.frame_gen_multiplier.load(),
+                 int(v.frame_gen_fit_display.load()));
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
+    // Read by run.py at start (hud_layout.py).
+    std::fprintf(file, "hud_position=%d\n", v.hud_position.load());
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

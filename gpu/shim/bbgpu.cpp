@@ -33,6 +33,7 @@
 #include "core/memory.h"
 #include "core/signals.h"
 #include "sdl_window.h"
+#include "bloodborne_cam.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 extern "C" {
@@ -40,6 +41,7 @@ extern "C" {
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
 int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size);
 int runtime_memory_write_backing(uintptr_t address, const void* data, uint64_t size);
+void runtime_memory_read_backing(uintptr_t address, void* data, uint64_t size);
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size);
 int runtime_memory_region(uintptr_t address, uintptr_t* start, uintptr_t* end, int* mapped);
 void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write);
@@ -117,6 +119,9 @@ void MemoryManager::SetRasterizer(Vulkan::Rasterizer* rasterizer_) {
 void MemoryManager::InvalidateMemory(VAddr address, u64 size) {
     BbHitch::Trace::Scope trace{"host write notification", address, size};
     if (rasterizer) rasterizer->InvalidateMemory(address, size);
+}
+bool MemoryManager::IsValidMapping(VAddr virtual_addr, u64 size) {
+    return runtime_memory_is_mapped(virtual_addr, size) != 0;
 }
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     return runtime_memory_clamp(virtual_addr, size);
@@ -396,4 +401,30 @@ extern "C" int bbgpu_text_input_poll(char* out, uint64_t size) {
         out[n] = 0;
     }
     return state;
+}
+
+extern "C" void bbgpu_mouse_take(BbMouseInput* out) {
+    if (!out) return;
+    if (!g_window) { std::memset(out, 0, sizeof(*out)); return; }
+    Frontend::MouseInput mouse;
+    g_window->TakeMouseInput(mouse);
+    out->dx = mouse.dx;
+    out->dy = mouse.dy;
+    out->buttons = mouse.buttons;
+    out->wheel = mouse.wheel;
+    out->captured = mouse.captured ? 1 : 0;
+}
+
+extern "C" void bbgpu_input_configure(int mouse_mode_available, int32_t toggle_scancode, int32_t reload_scancode) {
+    if (!g_window) return;
+    g_window->ConfigureInput(mouse_mode_available != 0, toggle_scancode, reload_scancode);
+}
+
+extern "C" int bbgpu_input_reload_requested(void) {
+    if (!g_window) return 0;
+    return g_window->TakeInputReloadRequested();
+}
+
+extern "C" void bbgpu_mouse_camera_configure(int direct, float sensitivity) {
+    Core::BloodborneCam::Instance().Configure(direct != 0, sensitivity);
 }

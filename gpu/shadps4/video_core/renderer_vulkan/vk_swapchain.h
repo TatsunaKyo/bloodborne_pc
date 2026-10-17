@@ -93,6 +93,12 @@ public:
     }
     bool WindowPolicyChanged() const;
 
+    /// bbport: FIFO (V-Sync) waits for the display: frame generation caps the game for it.
+    bool WaitsForDisplay() const {
+        return present_mode == vk::PresentModeKHR::eFifo ||
+               present_mode == vk::PresentModeKHR::eFifoRelaxed;
+    }
+
 private:
     /// Selects the best available swapchain image format
     void FindPresentFormat();

@@ -60,6 +60,8 @@ ldd "$dest/bin/bb-probe.exe" "$dest/bin/bb-gpu-capabilities.exe" |
         cp -u "$dll" "$dest/bin/"
     done
 cp -r scripts patches "$dest/"
+# Legacy CPU (Intel 3rd generation and older): the translation plan scripts/cpu_compat.py applies.
+mkdir -p "$dest/tools" && cp tools/legacy-cpu-plan.json "$dest/tools/"
 cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
 cp -r docs "$dest/"
 cp packaging/windows/bbport.menu.ini "$dest/"
@@ -68,6 +70,7 @@ if [[ -d fsr4_shaders ]]; then cp -r fsr4_shaders "$dest/"; fi
 # (packaging/windows/build_dlss.sh). Without them the DLSS option stays unavailable.
 if [[ -f out/bbport_dlss.dll && -f out/nvngx_dlss.dll ]]; then
     cp out/bbport_dlss.dll out/nvngx_dlss.dll "$dest/bin/"
+    if [[ -f out/nvngx_dlssg.dll ]]; then cp out/nvngx_dlssg.dll "$dest/bin/"; fi
     mkdir -p "$dest/licenses" && cp out/NVIDIA-DLSS-LICENSE.txt "$dest/licenses/"
     cp gpu/dlss_bridge/LICENSE.txt "$dest/licenses/bbport_dlss-LICENSE.txt"
 else
@@ -78,6 +81,8 @@ mkdir -p "$dest/licenses"
 cp gpu/third_party/wepoll/LICENSE "$dest/licenses/wepoll-LICENSE.txt"
 cp gpu/third_party/httplib/LICENSE "$dest/licenses/cpp-httplib-LICENSE.txt"
 cp packaging/windows/licenses/*.txt "$dest/licenses/"
+# Where the online code comes from (shadPS4 0.20, Awaken's port, bbhost's protocol).
+cp gpu/bbnet/SHADNET-PORT.md "$dest/licenses/online-code-NOTICE.md"
 for package in protobuf abseil-cpp openssl miniupnpc zlib; do
     license=/clang64/share/licenses/$package/LICENSE
     if [[ -f $license ]]; then cp "$license" "$dest/licenses/$package-LICENSE.txt"; fi

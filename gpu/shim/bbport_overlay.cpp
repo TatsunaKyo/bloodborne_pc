@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cfloat>
 #include <chrono>
+#include <string>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1386,9 +1387,33 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     const auto now = std::chrono::steady_clock::now();
     const float ms = std::chrono::duration<float, std::milli>(now - last_present).count();
     last_present = now;
+    last_present_ms = ms;
     if (ms > 0.0f && ms < 1000.0f) {
         frame_ms_avg = frame_ms_avg == 0.0f ? ms : frame_ms_avg * 0.95f + ms * 0.05f;
     }
+    // BB_FPS_LOG=1: presents per second and the slowest frame, every 5 seconds (test runs).
+    static const bool fps_log = [] {
+        const char* env = std::getenv("BB_FPS_LOG");
+        return env && env[0] == '1';
+    }();
+    if (fps_log) {
+        static auto window_start = now;
+        static int frames = 0;
+        static float worst = 0.0f;
+        ++frames;
+        worst = std::max(worst, ms < 1000.0f ? ms : 0.0f);
+        const float elapsed = std::chrono::duration<float>(now - window_start).count();
+        if (elapsed >= 5.0f) {
+            std::printf("Frame rate: %.1f FPS, slowest frame %.1f ms\n", frames / elapsed, worst);
+            window_start = now;
+            frames = 0;
+            worst = 0.0f;
+        }
+    }
+}
+
+void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
+    const float ms = last_present_ms;
     if (!Visible()) {
         return;
     }

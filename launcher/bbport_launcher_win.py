@@ -74,6 +74,29 @@ def attach_stdio():
         setattr(sys, name, stream or open(os.devnull, 'w'))
 
 
+class LossyStream:
+    """Output whose reader may be gone (a launcher that was closed): on Windows a write to such a
+    pipe fails with OSError [Errno 22], which stopped the game while it was being prepared."""
+
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, text):
+        try:
+            return self.stream.write(text)
+        except (OSError, ValueError):
+            return len(text)
+
+    def flush(self):
+        try:
+            self.stream.flush()
+        except (OSError, ValueError):
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
 def run_role(argv):
     """--run [args]: run.py; --script <file> [args]: a preparation script. Returns an exit code."""
     attach_stdio()
@@ -82,6 +105,7 @@ def run_role(argv):
             stream.reconfigure(line_buffering=True)
         except (AttributeError, ValueError):
             pass
+    sys.stdout, sys.stderr = LossyStream(sys.stdout), LossyStream(sys.stderr)
     if argv[0] == '--script':
         path, sys.argv = argv[1], argv[1:]
     else:
@@ -111,6 +135,10 @@ def run_command():
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bbport_lang  # noqa: E402
+import bbport_trophies as trophies  # noqa: E402
+from bbport_input_config import (KEYBOARD_OUTPUTS, BUTTON_OUTPUTS, STICK_OUTPUTS, OUTPUT_LABELS, keysym_to_name,
+                                  button_num_to_name, input_ini_path, load_input_ini, reserved_keys,
+                                  save_input_ini, save_mouse_settings, wheel_to_name)  # noqa: E402
 
 LANG = 'en'
 
@@ -169,13 +197,18 @@ TWEAKS = [
     ('tweak_easy_run', ('Run with less stick tilt (about 70%)', 'Бег при меньшем наклоне стика (около 70%)'), False),
     ('tweak_ragdoll', ('Dark Souls-style ragdoll physics (corpses fly further)',
                        'Физика тел как в Dark Souls (тела отлетают дальше)'), False),
+    ('tweak_circle_confirm', ('Japanese/Asian buttons: Circle confirms and interacts, Cross dodges',
+                              'Японская раскладка: Круг — подтверждение и действие, Крест — уклонение'), False),
+    ('quit_to_desktop', ('Quit to Desktop in the title menu and in the System menu',
+                         'Пункт «Выйти на рабочий стол» в главном меню и в меню «Система»'), True),
 ]
-INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
+INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', 'frame_gen_fit_display', *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
 INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
-                'live_resolution': 'auto',
+                'live_resolution': 'auto', 'hud_position': '100',
+                'frame_gen': 'off', 'frame_gen_multiplier': '2', 'frame_gen_fit_display': '0',
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
-APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '',
+APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'player_name': '', 'fullscreen': False, 'window_mode': '', 'hdr': False, 'present_mode': 'Mailbox',
                 'fps_mode': 'uncap', 'frame_cap': '', 'real_fps_limit': '-1', 'draw_pipe': '', 'readbacks': '',
@@ -226,6 +259,14 @@ UPSCALERS = [('dlss', ('DLSS (NVIDIA GeForce RTX)',)),
              ('fsr3', ('FSR 3.1 (every GPU)', 'FSR 3.1 (любая видеокарта)')),
              ('taa', ('TAA (native resolution anti-aliasing)', 'TAA (нативное сглаживание)')),
              ('off', ('Off', 'Выключен'))]
+# Frames generated between two of the game's (vk_frame_generation.cpp).
+FRAME_GENERATION = [('off', ('Off', 'Выключена')),
+                    ('fsr3', ('AMD FSR 3.1 Frame Generation (any GPU)', 'AMD FSR 3.1 (любая видеокарта)')),
+                    ('dlss', ('NVIDIA DLSS Frame Generation (GeForce RTX 40/50)',
+                              'NVIDIA DLSS (GeForce RTX 40/50)'))]
+FRAME_GEN_MULTIPLIERS = [('2', ('2× (one generated frame)', '2× (один кадр)')),
+                         ('3', ('3× (DLSS on GeForce RTX 50)', '3× (DLSS на GeForce RTX 50)')),
+                         ('4', ('4× (DLSS on GeForce RTX 50)', '4× (DLSS на GeForce RTX 50)'))]
 PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Quality (×1.5)',)), ('2', ('Balanced (×1.7)',)),
            ('3', ('Performance (×2)',)), ('4', ('Ultra Performance (×3)',))]
 XESS_PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Ultra Quality Plus (×1.3)',)),
@@ -234,7 +275,12 @@ XESS_PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Ultra Quality Plus (×1.3
                 ('6', ('Ultra Performance (×3)',))]
 LEGACY_XESS_PRESETS = ('0', '2', '3', '4', '6')
 OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 1080',)),
-           ('2560x1440', ('2560 × 1440',)), ('3840x2160', ('3840 × 2160 (4K)',))]
+           ('2560x1440', ('2560 × 1440',)), ('3840x2160', ('3840 × 2160 (4K)',)),
+           ('2560x1080', ('2560 × 1080 (21:9)',)), ('3440x1440', ('3440 × 1440 (21:9)',)),
+           ('3840x1600', ('3840 × 1600 (21:9)',)), ('5120x2160', ('5120 × 2160 (21:9)',)),
+           ('3840x1080', ('3840 × 1080 (32:9)',)), ('5120x1440', ('5120 × 1440 (32:9)',))]
+HUD_POSITIONS = [('100', ('Screen edges', 'У краёв экрана')), ('75', ('75%',)), ('50', ('Halfway', 'Посередине')),
+                 ('25', ('25%',)), ('0', ('Centred (16:9)', 'По центру (16:9)'))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
         ('1', ('On (change without restarting)', 'Включена (без перезапуска)'))]
 LODS = [('0', ('As in the game', 'Как в игре')), ('-2', ('Highest (−2)', 'Максимальная (−2)')),
@@ -247,7 +293,11 @@ PRESENT_MODES = [('Mailbox', ('Mailbox (low latency, no tearing)', 'Mailbox (б�
                  ('Immediate', ('Immediate (tearing)', 'Immediate (с разрывами)'))]
 LANGUAGES = [('1', ('English', 'Английский')), ('8', ('Russian', 'Русский')), ('0', ('Japanese', 'Японский')),
              ('2', ('French', 'Французский')), ('3', ('Spanish', 'Испанский')), ('4', ('German', 'Немецкий')),
-             ('5', ('Italian', 'Итальянский'))]
+             ('5', ('Italian', 'Итальянский')), ('17', ('Português (Brasil)',))]
+VOICE_LANGUAGES = [('auto', ('As in the game',)), ('eng', ('English',)),
+                   ('ptb', ('Português (Brasil)',)), ('ded', ('Deutsch',)),
+                   ('esa', ('Español (América)',)), ('ese', ('Español (España)',)),
+                   ('frf', ('Français',)), ('iti', ('Italiano',)), ('jaj', ('日本語',))]
 DRAW_PIPE = [('', ('Auto (8+ threads)', 'Авто (8+ потоков)')), ('1', ('On', 'Включён')),
              ('0', ('Off (more stable)', 'Выключен (стабильнее)'))]
 READBACKS = [('', ('Relaxed (default)', 'Relaxed (по умолчанию)')), ('0', ('Off', 'Выключены')),
@@ -487,17 +537,94 @@ def server_check(server, webapi, community):
     return '\n'.join(lines)
 
 
+# The Hunter's Dream pool: the engine's own backend for it (BB_NET_BACKEND=thd, bbhost's
+# protocol, from Awaken's port). BB_HUNTERS_DREAM=0 hides it.
+HUNTERS_DREAM_POOL = os.environ.get('BB_HUNTERS_DREAM', '1') != '0'
+
+
+def thd_call(url, body):
+    """A call to The Hunter's Dream's account service (bbhost's): its reply, or ValueError with
+    the server's reason."""
+    request = urllib.request.Request(url, data=json.dumps(body).encode(), method='POST',
+                                     headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            text = response.read()
+    except urllib.error.HTTPError as error:
+        text = error.read()
+    try:
+        reply = json.loads(text)
+    except ValueError:
+        reply = None
+    if not isinstance(reply, dict) or 'ResKind' not in reply:
+        raise ValueError(f'{url} has no account service')
+    if reply['ResKind'] != 0:
+        raise ValueError(reply.get('Message') or 'refused')
+    return reply
+
+
+def thd_sign_in(game_server, on_code):
+    """Discord sign-in the way bbhost does it: a code to approve on the website. on_code(page,
+    code) shows it. Returns (online id, token); raises ValueError."""
+    auth = community_address(game_server)
+    start = thd_call(auth + '/auth/device/start', {'DeviceName': f'bbport on {os.environ.get("COMPUTERNAME", "PC")}'})
+    device, user_code = start.get('DeviceCode', ''), start.get('UserCode', '')
+    if not device or not user_code:
+        raise ValueError('no code in the reply')
+    interval = max(1, int(start.get('Interval') or 5))
+    deadline = time.monotonic() + int(start.get('ExpiresIn') or 600)
+    on_code(start.get('VerificationUri') or auth + '/link', user_code)
+    while time.monotonic() < deadline:
+        time.sleep(interval)
+        poll = thd_call(auth + '/auth/device/poll', {'DeviceCode': device})
+        status = poll.get('Status')
+        if status == 'approved':
+            if not poll.get('OnlineId') or not poll.get('Token'):
+                raise ValueError('no token in the reply')
+            return poll['OnlineId'], poll['Token']
+        if status == 'slow_down':
+            interval += 5
+        elif status == 'denied':
+            raise ValueError('the sign-in was denied')
+        elif status == 'expired':
+            break
+    raise ValueError('the code expired; try again')
+# The SuperMedo Server co-op pool: a public shadNet server. Accounts are made at
+# SUPERMEDO_SIGNUP. The launcher shows the pool's name, not its address.
+SUPERMEDO_SERVER = 'www.supermedo.com:31313'
+SUPERMEDO_SIGNUP = 'https://www.supermedo.com'
+
+
+def server_check_hunters_dream():
+    """Whether The Hunter's Dream's game server and bbhost service answer (off the Tk thread)."""
+    lines = []
+    for title, url in ((_('Game server {0}'), COMMUNITY_SERVER + ':20443/bb-eu/ss.info'),
+                       (_('Co-op service {0}'), COMMUNITY_SERVER + ':18671/')):
+        name = title.format(url.split('://', 1)[1].split('/')[0])
+        try:
+            urllib.request.urlopen(url, timeout=6).close()
+            lines.append(_('{0}: reachable').format(name))
+        except urllib.error.HTTPError:
+            lines.append(_('{0}: reachable').format(name))   # it answered
+        except (OSError, ValueError) as error:
+            lines.append(_('{0}: not reachable ({1})').format(name, error))
+    return '\n'.join(lines)
+
+
 def game_environment(s):
     env = dict(os.environ)
     env['BB_GAME_DIR'] = s['game_dir']
     if s['user_dir']:
         env['BB_USER_DIR'] = s['user_dir']
+    if s['dlc_dir']:
+        env['BB_DLC_DIR'] = s['dlc_dir']
     env['BB_MODS_DIR'] = s['mods_dir'] or str(DATA_DIR / 'mods')
     env['BB_MODS_CONFIG'] = str(DATA_DIR / 'mods.json')
     env['BB_MODS_ENABLED'] = '1' if s['mods_enabled'] else '0'
     env['BB_PATCHES_DIR'] = s['patches_dir'] or str(DATA_DIR / 'patches')
     env['BB_PATCHES_CONFIG'] = str(DATA_DIR / 'patches.json')
     env['BB_LANGUAGE'] = s['language']
+    env['BB_VOICE_LANGUAGE'] = s['voice_language']
     if str(s['player_name']).strip():
         env['BB_USER_NAME'] = str(s['player_name']).strip()
     env['BB_FULLSCREEN'] = '1' if s['fullscreen'] else '0'
@@ -536,6 +663,23 @@ def game_environment(s):
         env['BB_SHADNET_PASSWORD'] = str(s['online_password'])
         env['BB_UPNP'] = '1' if s['online_upnp'] else '0'
         env['BB_COMMUNITY_SERVER'] = community_address(s['online_community'])
+        if s.get('online_pool') == 'supermedo':
+            env['BB_SHADNET_SERVER'] = SUPERMEDO_SERVER
+            env['BB_SHADNET_WEBAPI'] = webapi_address(SUPERMEDO_SERVER)
+            env['BB_POOL_NAME'] = 'SuperMedo Server'
+            env['BB_SHADNET_NPID'] = str(s.get('supermedo_user', '')).strip()
+            env['BB_SHADNET_PASSWORD'] = str(s.get('supermedo_password', ''))
+        if s.get('online_pool') == 'huntersdream' and HUNTERS_DREAM_POOL:
+            # The engine's Hunter's Dream backend with the Discord-linked account (run.py sets
+            # the game server and the backend's addresses).
+            env['BB_NET_BACKEND'] = 'thd'
+            env['BB_THD_ONLINE_ID'] = str(s.get('thd_online_id', ''))
+            env['BB_THD_TOKEN'] = str(s.get('thd_token', ''))
+            env['BB_BRIDGE_LIVE_MAP'] = '1' if s.get('bridge_live_map') else '0'
+            for key in ('BB_SHADNET_SERVER', 'BB_SHADNET_WEBAPI', 'BB_SHADNET_NPID', 'BB_SHADNET_PASSWORD'):
+                env.pop(key, None)
+    # Which build a server sees (shadNet's client version, The Hunter's Dream's client field).
+    env.setdefault('BB_CLIENT_VERSION', f'bbport {VERSION}')
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     if s.get('_geometry_diagnostic') in ('serial', 'capture'):
@@ -780,6 +924,7 @@ class Launcher:
         self.menu_baseline = dict(self.menu)
         self.vars = {}
         self.process = self.job = None
+        self.hidden = False  # closed while the game runs: it exits with the game
         self.downloading = False
         self.output = queue.Queue()
         self.gpu_text = _('• Checking the graphics card…', '• Проверка видеокарты…')
@@ -797,6 +942,7 @@ class Launcher:
         self.show('play')
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.after(100, self.drain_output)
+        root.after(300, self.poll_trophies)
         threading.Thread(target=self.detect_gpu, daemon=True).start()
         if self.app.get('check_updates', True) and not COOP_TEST:
             threading.Thread(target=self.check_update, daemon=True).start()
@@ -873,6 +1019,7 @@ class Launcher:
         s.configure('TLabel', background=PANEL, foreground=TEXT)
         s.configure('Muted.TLabel', background=PANEL, foreground=MUTED, font=('Segoe UI', 9))
         s.configure('Section.TLabel', background=PANEL, foreground=GOLD, font=('Georgia', 13))
+        s.configure('Code.TLabel', background=PANEL, foreground=GOLD, font=('Consolas', 22, 'bold'))
         s.configure('TCheckbutton', background=PANEL, foreground=TEXT, padding=(0, 3))
         s.map('TCheckbutton', background=[('active', PANEL)], foreground=[('disabled', MUTED)])
         s.configure('Warning.TLabel', background='#2a1d12', foreground='#e3b25a', padding=(10, 6))
@@ -1241,6 +1388,8 @@ class Launcher:
         self.build_cheats()
         self.build_online()
         self.build_mods()
+        self.build_trophies()
+        self.build_controls()
         self.build_advanced()
         self.build_log()
         self.root.bind_all('<MouseWheel>', self.wheel)
@@ -1266,6 +1415,8 @@ class Launcher:
             self.refresh_fsr4()
         elif name == 'play':
             self.refresh_status()
+        elif name == 'trophies':
+            self.render_trophies()
 
     def show_overlay_settings(self, _event=None):
         self.show('overlay')
@@ -1438,6 +1589,12 @@ class Launcher:
         self.row(f, _('Output resolution', 'Разрешение вывода'), self.choice(f, 'output_res', 'ini', OUTPUTS),
                  _('What the upscaler produces; the HUD is drawn at this size too.',
                    'Что выдаёт апскейлер; интерфейс рисуется в этом же размере.'))
+        self.row(f, _('HUD position (ultrawide)', 'Положение интерфейса (21:9)'),
+                 self.choice(f, 'hud_position', 'ini', HUD_POSITIONS),
+                 _('21:9 outputs: health, items and Blood Echoes at the screen edges, or in the centred '
+                   '16:9 area as on a 16:9 screen.',
+                   'Для 21:9: здоровье, предметы и Отголоски крови у краёв экрана или в центральной '
+                   'области 16:9, как на обычном экране.'))
         self.row(f, _('Live resolution changes', 'Смена разрешения на лету'), self.choice(f, 'live_resolution', 'ini', LIVE),
                  _('Off: outputs other than 1080p are set by a patch at start (fastest; changing them in the '
                    'game restarts it). On: change output and preset in the game without a restart, at a cost.',
@@ -1722,6 +1879,101 @@ class Launcher:
         self.check(f, 'online', 'app', _('Play online'),
                    _('Off: the game stays offline, as before.'))
         self.var('online', 'app').trace_add('write', lambda *_a: self.refresh_status())
+        self.section(f, _('Co-op pool'))
+        pool = self.var('online_pool', 'app')
+        pool.trace_add('write', lambda *_a: self.refresh_status())
+        pools = ttk.Frame(f)
+        ttk.Radiobutton(pools, text=_('shadNet server'), variable=pool, value='shadnet').pack(side='left')
+        ttk.Radiobutton(pools, text=_('SuperMedo Server'), variable=pool,
+                        value='supermedo').pack(side='left', padx=(16, 0))
+        if HUNTERS_DREAM_POOL:
+            ttk.Radiobutton(pools, text=_("The Hunter's Dream (with bbhost players)"), variable=pool,
+                            value='huntersdream').pack(side='left', padx=(16, 0))
+        elif pool.get() == 'huntersdream':
+            pool.set('shadnet')
+        self.row(f, _('Play with'), pools,
+                 _("shadNet: a shadNet server and its account. SuperMedo Server uses an account from "
+                   "supermedo.com."))
+        # Each pool shows only its own settings (show_pool below).
+        groups = {}
+        before = set(f.grid_slaves())
+
+        def group(name):
+            nonlocal before
+            now = set(f.grid_slaves())
+            groups[name] = groups.get(name, []) + list(now - before)
+            before = now
+
+        self.section(f, _('SuperMedo Server account'))
+        self.row(f, '', ttk.Button(f, text=_('Sign up for SuperMedo Server'),
+                                   command=lambda: webbrowser.open(SUPERMEDO_SIGNUP)))
+        self.row(f, _('Username'), ttk.Entry(f, textvariable=self.var('supermedo_user', 'app'), width=40),
+                 _('The account you made at supermedo.com.'))
+        self.row(f, _('Password'), ttk.Entry(f, textvariable=self.var('supermedo_password', 'app'), width=40,
+                                             show='•'),
+                 _('Saved on this PC with the other launcher settings.'))
+        group('supermedo')
+        self.section(f, _("The Hunter's Dream account"))
+        account = ttk.Label(f, text='', justify='left')
+        user_dir = self.var('user_dir', 'app')
+
+        thd_id, thd_token = self.var('thd_online_id', 'app'), self.var('thd_token', 'app')
+
+        def show_accounts():
+            name = thd_id.get() if thd_token.get() else ''
+            account.configure(text=_('Signed in as {}').format(name) if name else _('Not signed in'))
+        show_accounts()
+        self.row(f, _('Account'), account)
+        signing = ttk.Label(f, text='', style='Muted.TLabel', justify='left', wraplength=self.px(560))
+        # The code to type on the website, large, with a button that copies it.
+        code_box = ttk.Frame(f)
+        code_label = ttk.Label(code_box, text='', style='Code.TLabel')
+        code_label.pack(side='left')
+
+        def copy_code():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(code_label.cget('text'))
+        ttk.Button(code_box, text=_('Copy'), command=copy_code).pack(side='left', padx=(14, 0))
+
+        def show_code(code=''):
+            code_label.configure(text=code)
+            if code:
+                code_box.grid()
+            else:
+                code_box.grid_remove()
+
+        def sign_in():
+            signing.configure(text=_('Starting the sign-in…'))
+            show_code()
+            game = self.var('online_community', 'app').get()
+
+            def on_code(page, code):
+                text = _('In the page that opened ({0}), sign in with Discord and enter this code:').format(page)
+                self.ui_calls.put(lambda: (signing.configure(text=text), show_code(code)))
+                webbrowser.open(page)
+
+            def work():
+                try:
+                    name, token = thd_sign_in(game, on_code)
+                except (OSError, ValueError) as error:
+                    self.ui_calls.put(lambda e=error: (signing.configure(text=_('Sign-in failed: {}').format(e)),
+                                                       show_code()))
+                    return
+                self.ui_calls.put(lambda: (thd_id.set(name), thd_token.set(token), signing.configure(text=''),
+                                           show_code(), show_accounts(), self.collect()))
+            threading.Thread(target=work, daemon=True).start()
+        self.row(f, '', ttk.Button(f, text=_('Sign in with Discord'), command=sign_in))
+        signing.grid(row=self.next_row(f), column=1, sticky='w', pady=(6, 0))
+        code_box.grid(row=self.next_row(f), column=1, sticky='w', pady=(4, 0))
+        self.check(f, 'bridge_live_map', 'app', _('Show me on the live map'),
+                   _("thehuntersdream.com/map shows where players are and which bells ring: the game sends "
+                     "your position more often while you play."))
+        credit = ttk.Label(f, text=_("The connection to The Hunter's Dream is Awaken's port of bbhost's network "
+                                     "code; bbhost and The Hunter's Dream are by droogie."),
+                           style='Muted.TLabel', cursor='hand2')
+        credit.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(8, 0))
+        credit.bind('<Button-1>', lambda _e: webbrowser.open('https://github.com/Awakenchan/BloodBorneButPc'))
+        group('huntersdream')
         self.section(f, _('Game server (messages, bloodstains, ghosts)'))
         community = self.var('online_community', 'app')
         self.row(f, _('Game server'), ttk.Entry(f, textvariable=community, width=40),
@@ -1740,9 +1992,11 @@ class Launcher:
                    'owner of a private server.'))
         self.row(f, _('Password'), ttk.Entry(f, textvariable=self.var('online_password', 'app'), width=40, show='•'),
                  _('Saved on this PC with the other launcher settings.'))
+        group('shadnet')
         self.section(f, _('Connection'))
         self.check(f, 'online_upnp', 'app', _('UPnP (open a port on the router automatically)'),
                    _('Turn it off on Tailscale or another VPN.'))
+        group('upnp')
         result = ttk.Label(f, text='', style='Muted.TLabel', justify='left')
 
         def check():
@@ -1751,11 +2005,27 @@ class Launcher:
             address = values['online_server'].strip() or APP_DEFAULTS['online_server']
             webapi, game = webapi_setting(values), community_address(values['online_community'])
             online_on = self.var('online', 'app').get()
+            pool_name = pool.get()
+            hunters_dream, supermedo = pool_name == 'huntersdream', pool_name == 'supermedo'
+            signed_in = thd_id.get() if thd_token.get() else ''
             result.configure(text=_('Checking…'))
 
             def work():
-                text = server_check(address, webapi, game)
-                if values['online_webapi'].strip() and values['online_webapi'].strip() != webapi:
+                if hunters_dream:
+                    text = server_check_hunters_dream()
+                    text += '\n' + (_('Signed in as {}').format(signed_in) if signed_in else
+                                    _('Not signed in: use "Sign in with Discord" above.'))
+                elif supermedo:
+                    # The pool's name instead of its address.
+                    text = server_check(SUPERMEDO_SERVER, webapi_address(SUPERMEDO_SERVER), game)
+                    text = text.replace('http://' + SUPERMEDO_SERVER.split(':')[0] + ':31315', 'SuperMedo Server')
+                    text = text.replace(SUPERMEDO_SERVER, 'SuperMedo Server')
+                    text = text.replace(SUPERMEDO_SERVER.split(':')[0], 'SuperMedo Server')
+                    if 'SuperMedo Server: not reachable' in text:
+                        text += '\n' + _('SuperMedo Server could not be reached. Check your internet connection and try again.')
+                else:
+                    text = server_check(address, webapi, game)
+                if pool_name == 'shadnet' and values['online_webapi'].strip() and values['online_webapi'].strip() != webapi:
                     text += '\n' + _('The WebAPI box holds the game server address; it is ignored.')
                 if not online_on:
                     text += '\n' + _('"Play online" is off: the game starts offline.')
@@ -1765,6 +2035,25 @@ class Launcher:
         result.grid(row=self.next_row(f), column=1, sticky='w', pady=(6, 0))
         self.note(f, _('Everyone in a session needs the same game version (1.09) and the same server. '
                        'Cheats change the game for the other players too: turn them off when you play together.'))
+        show_code()  # hidden until a sign-in shows one; its row stays reserved (rows are counted above)
+        shown = {'shadnet': {'shadnet', 'upnp'}, 'supermedo': {'supermedo', 'upnp'},
+                 'huntersdream': {'huntersdream', 'upnp'}}
+
+        def show_pool(*_args):
+            if pool.get() == 'huntersdream' and not HUNTERS_DREAM_POOL:
+                pool.set('shadnet')  # runs show_pool again
+                return
+            want = shown.get(pool.get(), shown['shadnet'])
+            for name, widgets in groups.items():
+                for widget in widgets:
+                    if widget is not code_box:
+                        widget.grid() if name in want else widget.grid_remove()
+            if 'huntersdream' in want:
+                show_code(code_label.cget('text'))
+            else:
+                code_box.grid_remove()
+        pool.trace_add('write', show_pool)
+        show_pool()
 
     def build_mods(self):
         f = self.scrolled_page('mods', _('Mods & patches', 'Моды и патчи'),
@@ -1787,6 +2076,383 @@ class Launcher:
         self.patches_frame.grid(row=self.next_row(f), column=0, columnspan=2, sticky='we', pady=(8, 0))
         self.ttk.Button(f, text=_('Refresh', 'Обновить'), command=self.refresh_lists).grid(
             row=self.next_row(f), column=0, sticky='w', pady=(14, 0))
+
+    def build_trophies(self):
+        f = self.scrolled_page('trophies', _('Achievements', 'Достижения'),
+                               _('Trophies the game unlocks while you play; updated live, kept with your saves.',
+                                 'Трофеи, которые игра открывает во время игры; обновляются сразу, хранятся с '
+                                 'сохранениями.'))
+        self.trophy_filter, self.trophy_state = 'all', None
+        self.trophy_body = self.ttk.Frame(f)
+        self.trophy_body.grid(row=self.next_row(f), column=0, columnspan=2, sticky='we')
+
+    def trophy_icon(self, parent, grade, earned, size, bg):
+        """A trophy cup in the colour of its grade (dim while locked), on a round plate."""
+        c = self.tk.Canvas(parent, width=size, height=size, bg=bg, highlightthickness=0, bd=0)
+        color = TROPHY_COLORS.get(grade, MUTED) if earned else TROPHY_LOCKED
+        p = lambda *xy: [v * size for v in xy]
+        c.create_oval(*p(.02, .02, .98, .98), fill=PANEL, outline=LINE if earned else PANEL)
+        handle = max(2, round(size / 18))
+        c.create_arc(*p(.24, .27, .42, .47), start=90, extent=180, style='arc', outline=color, width=handle)
+        c.create_arc(*p(.58, .27, .76, .47), start=270, extent=180, style='arc', outline=color, width=handle)
+        c.create_polygon(*p(.33, .25, .67, .25, .66, .44, .58, .55, .42, .55, .34, .44), fill=color, outline=color)
+        c.create_rectangle(*p(.47, .55, .53, .65), fill=color, outline='')
+        c.create_rectangle(*p(.39, .65, .61, .70), fill=color, outline='')
+        c.create_rectangle(*p(.35, .71, .65, .76), fill=color, outline='')
+        return c
+
+    def render_trophies(self):
+        """Rebuilds the page when the unlocks or the filter changed."""
+        unlocked = dict(self.tracker.unlocked)
+        state = (tuple(sorted(unlocked.items())), self.trophy_filter)
+        if state == self.trophy_state:
+            return
+        self.trophy_state = state
+        tk, body = self.tk, self.trophy_body
+        for widget in body.winfo_children():
+            widget.destroy()
+        known = trophies.TROPHIES
+        earned = [t for t in known if t[0] in unlocked]
+        percent = len(earned) * 100 // len(known)
+
+        card = tk.Frame(body, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+        card.pack(fill='x', pady=(4, 0))
+        left = tk.Frame(card, bg=CARD)
+        left.pack(side='left', padx=22, pady=16)
+        tk.Label(left, text=f'{percent}%', bg=CARD, fg=TEXT, font=('Georgia', 26)).pack(anchor='w')
+        width, height = self.px(260), max(3, self.px(4))
+        bar = tk.Canvas(left, width=width, height=height, bg=LINE, highlightthickness=0, bd=0)
+        bar.pack(anchor='w', pady=(2, 8))
+        if earned:
+            bar.create_rectangle(0, 0, max(height, width * len(earned) // len(known)), height, fill=GOLD, outline='')
+        tk.Label(left, text=_('{} of {} trophies earned', '{} из {} трофеев получено').format(len(earned), len(known)),
+                 bg=CARD, fg=MUTED, font=('Segoe UI', 9)).pack(anchor='w')
+        grades = tk.Frame(card, bg=CARD)
+        grades.pack(side='right', padx=(0, 22))
+        for grade in trophies.GRADES:
+            have = sum(1 for t in earned if t[3] == grade)
+            total = sum(1 for t in known if t[3] == grade)
+            cell = tk.Frame(grades, bg=CARD)
+            cell.pack(side='left', padx=self.px(9))
+            self.trophy_icon(cell, grade, True, self.px(34), CARD).pack()
+            tk.Label(cell, text=f'{have} / {total}', bg=CARD, fg=TEXT if have else MUTED,
+                     font=('Segoe UI', 9)).pack(pady=(4, 0))
+
+        tabs = tk.Frame(body, bg=PANEL)
+        tabs.pack(fill='x', pady=(18, 2))
+        for name, title, count in (('all', _('All', 'Все'), len(known)),
+                                   ('earned', _('Earned', 'Получены'), len(earned)),
+                                   ('locked', _('Locked', 'Не получены'), len(known) - len(earned))):
+            on = name == self.trophy_filter
+            tab = tk.Frame(tabs, bg=PANEL, cursor='hand2')
+            tab.pack(side='left', padx=(0, 24))
+            label = tk.Label(tab, text=f'{title}   {count}', bg=PANEL, fg=TEXT if on else MUTED, cursor='hand2',
+                             font=('Segoe UI', 10, 'bold' if on else 'normal'))
+            label.pack()
+            tk.Frame(tab, bg=GOLD if on else PANEL, height=2).pack(fill='x', pady=(4, 0))
+            for widget in (tab, label):
+                widget.bind('<Button-1>', lambda _e, n=name: self.set_trophy_filter(n))
+
+        keep = {'all': lambda t: True, 'earned': lambda t: t[0] in unlocked,
+                'locked': lambda t: t[0] not in unlocked}[self.trophy_filter]
+        shown = 0
+        for group in (trophies.BASE, trophies.DLC):
+            members = [t for t in known if t[4] == group]
+            items = [t for t in members if keep(t)]
+            if not items:
+                continue
+            shown += len(items)
+            head = tk.Frame(body, bg=PANEL)
+            head.pack(fill='x', pady=(16, 8))
+            tk.Label(head, text=group, bg=PANEL, fg=GOLD, font=('Georgia', 13)).pack(side='left')
+            tk.Label(head, text='{} / {}'.format(sum(1 for t in members if t[0] in unlocked), len(members)),
+                     bg=PANEL, fg=MUTED, font=('Segoe UI', 9)).pack(side='left', padx=10, pady=(3, 0))
+            for trophy in items:
+                self.trophy_card(body, trophy, unlocked.get(trophy[0]))
+        if not shown:
+            tk.Label(body, text=_('No trophies yet. They appear here as soon as the game unlocks them.',
+                                  'Трофеев пока нет. Они появятся здесь, как только игра их откроет.')
+                     if self.trophy_filter == 'earned' else _('Every trophy is earned. Hail, good hunter.',
+                                                              'Все трофеи получены. Славной охоты.'),
+                     bg=PANEL, fg=MUTED, font=('Segoe UI', 10)).pack(anchor='w', pady=(22, 0))
+
+    def trophy_card(self, parent, trophy, when):
+        tk = self.tk
+        _id, name, text, grade, _group = trophy
+        earned = when is not None
+        card = tk.Frame(parent, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+        card.pack(fill='x', pady=(0, 6))
+        self.trophy_icon(card, grade, earned, self.px(46), CARD).pack(side='left', padx=(12, 14), pady=10)
+        side = tk.Frame(card, bg=CARD)
+        side.pack(side='right', padx=(12, 18))
+        tk.Label(side, text=_(*GRADE_NAMES[grade]), bg=CARD, fg=TROPHY_COLORS[grade] if earned else MUTED,
+                 font=('Segoe UI', 9, 'bold')).pack(anchor='e')
+        tk.Label(side, text=time.strftime('%d %b %Y', time.localtime(when)) if earned else _('Locked', 'Не получен'),
+                 bg=CARD, fg=MUTED, font=('Segoe UI', 9)).pack(anchor='e', pady=(2, 0))
+        middle = tk.Frame(card, bg=CARD)
+        middle.pack(side='left', fill='x', expand=True, pady=10)
+        tk.Label(middle, text=name, bg=CARD, fg=TEXT if earned else MUTED,
+                 font=('Segoe UI', 11, 'bold' if earned else 'normal')).pack(anchor='w')
+        tk.Label(middle, text=text, bg=CARD, fg=MUTED, font=('Segoe UI', 9), justify='left',
+                 wraplength=self.px(520)).pack(anchor='w', pady=(1, 0))
+
+    def set_trophy_filter(self, name):
+        self.trophy_filter = name
+        self.render_trophies()
+
+    def trophy_dir(self):
+        return Path(self.var('user_dir', 'app').get() or DATA_DIR / 'user')
+
+    def poll_trophies(self):
+        """Every 2 s: trophies.log (written by the game) and last_run.log (a game started elsewhere)."""
+        folder = self.trophy_dir()
+        if folder != self.tracker.user_dir:
+            self.tracker, self.trophies_loaded = trophies.Tracker(folder), False
+        self.trophies_changed(self.tracker.poll(run_log=not self.process), announce=self.trophies_loaded)
+        self.trophies_loaded = True
+        self.root.after(2000, self.poll_trophies)
+
+    def trophies_changed(self, new, announce=True):
+        if self.current_page == 'trophies':
+            self.render_trophies()
+        if announce:
+            for trophy in new:
+                self.toasts.append(trophy)
+                if len(self.toasts) == 1:
+                    self.show_toast()
+
+    def show_toast(self):
+        """The console's 'You've earned a trophy' notice, top right, one at a time."""
+        if not self.toasts:
+            return
+        tk = self.tk
+        trophy = self.toasts[0]
+        _id, name, _text, grade, _group = trophies.BY_ID.get(
+            trophy, (trophy, _('Trophy {}', 'Трофей {}').format(trophy), '', trophies.BRONZE, trophies.BASE))
+        box = tk.Frame(self.content, bg=CARD, highlightthickness=1, highlightbackground=LINE, cursor='hand2')
+        icon = self.trophy_icon(box, grade, True, self.px(38), CARD)
+        icon.pack(side='left', padx=(12, 12), pady=10)
+        words = tk.Frame(box, bg=CARD)
+        words.pack(side='left', padx=(0, 20), pady=8)
+        caption = tk.Label(words, text=_("You've earned a trophy.", 'Вы получили трофей.'), bg=CARD, fg=MUTED,
+                           font=('Segoe UI', 9))
+        caption.pack(anchor='w')
+        title = tk.Label(words, text=f'{name}', bg=CARD, fg=TEXT, font=('Segoe UI', 11, 'bold'))
+        title.pack(anchor='w')
+        for widget in (box, icon, words, caption, title):
+            widget.bind('<Button-1>', lambda _e: self.show('trophies'))
+        box.place(relx=1.0, x=-self.px(20), y=self.px(18), anchor='ne')
+        box.lift()
+
+        def done():
+            box.destroy()
+            self.toasts.pop(0)
+            self.show_toast()
+        self.root.after(5500, done)
+    def current_binding(self, output):
+        """The key name currently bound to `output`'s first slot: a pending edit (even "cleared
+        to None"), else whatever input.ini already had, else None."""
+        if output in self.remap_edits:
+            return self.remap_edits[output]
+        values = self.remap_bindings.get(output) or []
+        return values[0] if values else None
+
+    def build_controls(self):
+        ttk, tk = self.ttk, self.tk
+        f = self.scrolled_page('controls', _('Controls', 'Управление'),
+                               _('Keyboard and mouse-button bindings. The controller keeps '
+                                 'working side by side; edit its lines in input.ini directly — '
+                                 'see docs/INPUT.md.',
+                                 'Раскладка клавиатуры и кнопок мыши. Геймпад продолжает '
+                                 'работать одновременно; его строки можно настроить только в '
+                                 'input.ini — см. docs/INPUT.md.'))
+        self.remap_rows = {}
+
+        def add_row(parent, output):
+            r = self.next_row(parent)
+            label, _ru = OUTPUT_LABELS[output]
+            ttk.Label(parent, text=_(label, _ru)).grid(row=r, column=0, sticky='w', padx=(0, 18), pady=4)
+            key_label = ttk.Label(parent, width=14, style='Muted.TLabel')
+            key_label.grid(row=r, column=1, sticky='w', pady=4)
+            set_btn = ttk.Button(parent, text=_('Set…', 'Назначить…'),
+                                 command=lambda o=output: self.start_remap_capture(o, key_label, set_btn))
+            set_btn.grid(row=r, column=2, sticky='w', padx=(10, 4), pady=4)
+            ttk.Button(parent, text=_('Clear', 'Сбросить'),
+                      command=lambda o=output: self.clear_remap(o, key_label)).grid(
+                row=r, column=3, sticky='w', pady=4)
+            self.remap_rows[output] = key_label
+            self.refresh_remap_row(output)
+
+        self.section(f, _('Buttons', 'Кнопки'), top=4)
+        for output in BUTTON_OUTPUTS:
+            add_row(f, output)
+        self.section(f, _('Sticks', 'Стики'))
+        for output in STICK_OUTPUTS:
+            add_row(f, output)
+        self.note(f, _('Click "Set…" on a button row to bind a mouse button instead of a key — '
+                       'left, middle, right, or the side buttons (back/forward), if the mouse '
+                       'has them. Stick directions stay keyboard-only.',
+                       'Нажмите «Назначить…» в строке кнопки, чтобы привязать кнопку мыши '
+                       'вместо клавиши — левую, среднюю, правую или боковые (вперёд/назад), '
+                       'если они есть. Направления стиков можно привязать только к клавише.'))
+        self.note(f, _('Reserved: Insert/Escape (the port\'s menu), F9 (route recording), and '
+                       'whichever key toggles mouse look or reloads input.ini (F7/F8 by '
+                       'default). A key or button already used elsewhere is simply bound to '
+                       'both actions (hold it to trigger both) — this page does not warn about '
+                       'that.',
+                       'Зарезервированы: Insert/Escape (меню порта), F9 (запись маршрута), а '
+                       'также клавиши переключения мыши и перезагрузки input.ini (по умолчанию '
+                       'F7/F8). Если клавиша или кнопка уже где-то занята, она просто '
+                       'срабатывает на обе привязки — страница об этом не предупреждает.'))
+
+        self.section(f, _('Mouse look', 'Обзор мышью'))
+        ms = self.mouse_settings
+
+        def mark_mouse_edited(*_a):
+            self.mouse_edited = True
+
+        # Built manually (not via self.check) because mouse_settings is its own dict, not
+        # self.ini/self.app -- self.var()'s ini/app bookkeeping does not apply to it.
+        enabled_var = tk.BooleanVar(value=ms['enabled'])
+        enabled_var.trace_add('write', lambda *_a: (ms.__setitem__('enabled', enabled_var.get()), mark_mouse_edited()))
+        ttk.Checkbutton(f, text=_('Enable mouse look', 'Включить обзор мышью'), variable=enabled_var).grid(
+            row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(4, 0))
+        self.note(f, _('F7 also toggles this in-game, instantly; F8 reloads these settings '
+                       'without restarting.', 'F7 также переключает это прямо в игре мгновенно; '
+                       'F8 применяет эти настройки без перезапуска.'), top=2)
+
+        stick_var = tk.StringVar(value=ms['stick'])
+        stick_var.trace_add('write', lambda *_a: (ms.__setitem__('stick', stick_var.get()), mark_mouse_edited()))
+        stick_box = ttk.Frame(f)
+        ttk.Radiobutton(stick_box, text=_('Camera (right stick)', 'Камера (правый стик)'),
+                       variable=stick_var, value='right').pack(side='left')
+        ttk.Radiobutton(stick_box, text=_('Movement (left stick)', 'Движение (левый стик)'),
+                       variable=stick_var, value='left').pack(side='left', padx=(16, 0))
+        self.row(f, _('Mouse controls', 'Мышь управляет'), stick_box)
+
+        def slider_row(key, title, hint, lo, hi, fmt='{:.2f}'):
+            holder = ttk.Frame(f)
+            var = tk.DoubleVar(value=ms[key])
+            ttk.Scale(holder, from_=lo, to=hi, variable=var, length=280).pack(side='left')
+            value_label = ttk.Label(holder, width=6)
+            value_label.pack(side='left', padx=10)
+            show = lambda *_a: value_label.configure(text=fmt.format(var.get()))
+            var.trace_add('write', lambda *_a: (ms.__setitem__(key, round(var.get(), 3)), show(), mark_mouse_edited()))
+            show()
+            self.row(f, title, holder, hint)
+
+        # deadzone_offset ("Smoothness") used to gate a startup floor/ramp in mouse_to_axis;
+        # that formula was replaced by an output-value lerp with a fixed time constant
+        # (src/runtime_pad.c), which deadzone_offset no longer affects, so the slider for it was
+        # removed here rather than leave a control with no real effect. The value is still read/
+        # written in input.ini by bbport_input_config.py for files that already set it.
+        slider_row('speed', _('Sensitivity', 'Чувствительность'),
+                   _('How fast the camera turns for a given mouse movement.',
+                     'Насколько быстро поворачивается камера при движении мыши.'), 0.1, 5.0)
+        slider_row('speed_offset', _('Minimum turn speed', 'Минимальная скорость поворота'),
+                   _('A constant added on top of sensitivity; raises the floor for slow '
+                     'movements without affecting fast ones as much.',
+                     'Добавляется поверх чувствительности; поднимает минимальную скорость для '
+                     'медленных движений, почти не влияя на быстрые.'), 0.0, 1.0)
+
+        self.note(f, _('Mouse buttons and the scroll wheel are bound in the Buttons section above: '
+                       'press Set… and click or turn the wheel. They work while the mouse is captured '
+                       '(mouse look on).',
+                       'Кнопки мыши и колесо назначаются в разделе «Кнопки» выше: нажмите «Назначить…» '
+                       'и щёлкните или прокрутите колесо. Они работают, пока мышь захвачена '
+                       '(обзор мышью включён).'), top=10)
+        self.note(f, _('Changes apply the next time the game starts, or press F8 in-game to '
+                       'reload input.ini without restarting.',
+                       'Изменения применяются при следующем запуске игры, либо нажмите F8 в '
+                       'игре, чтобы перечитать input.ini без перезапуска.'), top=6)
+
+    def refresh_remap_row(self, output):
+        key = self.current_binding(output)
+        self.remap_rows[output].configure(text=key if key else _('(none)', '(нет)'))
+
+    def clear_remap(self, output, key_label):
+        self.remap_edits[output] = None
+        self.refresh_remap_row(output)
+
+    def start_remap_capture(self, output, key_label, set_btn):
+        """Grabs the next keypress or mouse click and binds it to `output`'s first slot. Esc
+        cancels; a key/button already reserved (HOT-001/HOT-002), or a mouse click on a
+        STICK_OUTPUTS row (an axis has no use for a press), is rejected in place, leaving the
+        previous binding untouched. bind_all (not root.bind) plus grab_set makes sure the event
+        reaches this handler even if some other widget currently has focus, and that no other
+        widget (e.g. the player-name Entry on another page) reacts to the same keypress.
+
+        The <ButtonPress> bind is installed via after_idle rather than immediately: this call
+        itself runs from the "Set…" button's own click handler, so the left-button-release that
+        follows (Tk doesn't fire <ButtonPress> again for that click, but belt-and-suspenders
+        against any platform quirk) would otherwise risk being seen as "the user chose
+        leftbutton" the instant capture starts."""
+        is_stick = output in STICK_OUTPUTS
+        original_text = set_btn['text']
+        key_label.configure(text=_('Press a key, a mouse button or turn the wheel…',
+                                   'Нажмите клавишу, кнопку мыши или прокрутите колесо…')
+                            if not is_stick else _('Press a key…', 'Нажмите клавишу…'))
+        set_btn.configure(state='disabled')
+        self.root.grab_set()
+
+        def finish():
+            self.root.unbind_all('<KeyPress>')
+            self.root.unbind_all('<ButtonPress>')
+            self.root.unbind_all('<Shift-MouseWheel>')
+            self.root.bind_all('<MouseWheel>', self.wheel)  # the pages scroll again
+            self.root.grab_release()
+            set_btn.configure(state='normal', text=original_text)
+            self.refresh_remap_row(output)
+
+        def apply(name):
+            reserved = reserved_keys(self.remap_toggle_key, self.remap_reload_key)
+            if name in reserved:
+                self.messagebox.showwarning(
+                    _('Reserved', 'Зарезервировано'),
+                    _('{} is reserved (menu, recording, or a hotkey) and cannot be bound to a '
+                      'game action.', '{} зарезервирована (меню, запись или горячая клавиша) и '
+                      'не может быть назначена игровому действию.').format(name))
+            else:
+                self.remap_edits[output] = name
+            finish()
+
+        def on_key(event):
+            if event.keysym == 'Escape':
+                finish()
+                return
+            name = keysym_to_name(event.keysym)
+            if name is None:
+                self.messagebox.showwarning(
+                    _('Unsupported key', 'Клавиша не поддерживается'),
+                    _('That key has no bbport name; pick another one.',
+                      'У этой клавиши нет имени в bbport; выберите другую.'))
+                return
+            apply(name)
+
+        def on_click(event):
+            name = button_num_to_name(event.num)
+            if name is None:
+                return  # a button Tk reports but bbport has no name for: ignore, keep waiting
+            if is_stick:
+                self.messagebox.showwarning(
+                    _('Keyboard only', 'Только клавиатура'),
+                    _('A stick direction can only be bound to a key, not a mouse button.',
+                      'Направление стика можно привязать только к клавише, а не к кнопке мыши.'))
+                return
+            apply(name)
+
+        def on_wheel(event, horizontal=False):
+            name = wheel_to_name(event.delta, horizontal)
+            if name:
+                apply(name)
+            return 'break'
+
+        self.root.bind_all('<KeyPress>', on_key)
+        if not is_stick:
+            self.root.after_idle(lambda: self.root.bind_all('<ButtonPress>', on_click))
+            # While waiting, the wheel binds instead of scrolling the page.
+            self.root.bind_all('<MouseWheel>', on_wheel)
+            self.root.bind_all('<Shift-MouseWheel>', lambda e: on_wheel(e, True))
 
     def build_advanced(self):
         ttk = self.ttk
@@ -1955,6 +2621,10 @@ class Launcher:
         upscaler = dict(UPSCALERS).get(self.var('upscaler', 'ini').get(), ('?',))[0].split(' (')[0]
         output = self.var('output_res', 'ini').get().replace('x', ' × ')
         online = _('Online') if self.var('online', 'app').get() else _('Offline')
+        if self.var('online', 'app').get() and self.var('online_pool', 'app').get() == 'huntersdream':
+            online = _("Online (The Hunter's Dream)")
+        elif self.var('online', 'app').get() and self.var('online_pool', 'app').get() == 'supermedo':
+            online = _('Online (SuperMedo Server)')
         return f'{_(*fps)}   ·   {upscaler}   ·   {output}   ·   {online}'
 
     def detect_gpu(self):
@@ -2025,7 +2695,7 @@ class Launcher:
         if not hasattr(self, 'patches_frame'):
             return
         tk, ttk = self.tk, self.ttk
-        from mods import discover
+        from mods import discover, unrecognized
         from patches import external_patches
         for holder in (self.mods_frame, self.patches_frame):
             for widget in holder.winfo_children():
@@ -2053,6 +2723,10 @@ class Launcher:
             ttk.Label(self.mods_frame, text=_('Lower in the list loads later and wins conflicts.',
                                               'Ниже в списке — загружается позже и перекрывает.'),
                       style='Muted.TLabel').pack(anchor='w', pady=(4, 0))
+        # Folders that are not mods are named, with why, instead of left out silently.
+        for name, problem in unrecognized(root):
+            ttk.Label(self.mods_frame, text=_('Not loaded: {}: {}', 'Не загружен: {}: {}').format(name, problem),
+                      style='Muted.TLabel', wraplength=self.px(620), justify='left').pack(anchor='w', pady=(4, 0))
         chosen = load_json(DATA_DIR / 'patches.json', {})
         found = external_patches(Path(self.var('patches_dir', 'app').get() or DATA_DIR / 'patches'), PATCH_VERSION)
         old = {n: v.get() for n, v in self.patch_vars.items()}
@@ -2110,6 +2784,19 @@ class Launcher:
         CONFIG_FILE.write_text(json.dumps(self.app, indent=2, ensure_ascii=False), encoding='utf-8')
         save_ini({key: self.ini[key] for key in INI_DEFAULTS}, self.ini_lines)
         self.ini, self.ini_lines = load_ini()
+        if self.remap_edits:
+            first_bindings = {key: (self.remap_edits[key] if key in self.remap_edits else
+                                    (vals[0] if vals else None))
+                              for key, vals in self.remap_bindings.items()}
+            save_input_ini(self.remap_ini_path, first_bindings, self.remap_lines)
+            self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
+                self.mouse_settings = load_input_ini(self.remap_ini_path)
+            self.remap_edits = {}
+        if self.mouse_edited:
+            save_mouse_settings(self.remap_ini_path, self.mouse_settings, self.remap_lines)
+            self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
+                self.mouse_settings = load_input_ini(self.remap_ini_path)
+            self.mouse_edited = False
         if self.mod_order:
             (DATA_DIR / 'mods.json').write_text(json.dumps(
                 {'order': self.mod_order, 'disabled': [n for n, v in self.mod_vars.items() if not v.get()]},
@@ -2134,7 +2821,21 @@ class Launcher:
             if choice is None:
                 return
             online.set(bool(choice))
-        if online.get() and '@' in npid.get():
+        pool_name = self.var('online_pool', 'app').get()
+        hunters_dream = pool_name == 'huntersdream'
+        if online.get() and hunters_dream and not self.var('thd_token', 'app').get():
+            self.messagebox.showwarning(
+                'Bloodborne', _("To play online with The Hunter's Dream, sign in with Discord first."))
+            self.show('online')
+            return
+        if online.get() and pool_name == 'supermedo' and not (
+                self.var('supermedo_user', 'app').get().strip() and self.var('supermedo_password', 'app').get()):
+            self.messagebox.showwarning(
+                'Bloodborne', _('To play on SuperMedo Server, enter your supermedo.com username and password '
+                                'on the Online co-op page (Sign up there if you have no account).'))
+            self.show('online')
+            return
+        if online.get() and pool_name == 'shadnet' and '@' in npid.get():
             self.messagebox.showwarning(
                 'Bloodborne', _('The Online ID is the account name (NPID) you registered on the server, '
                                 'not your email address.'))
@@ -2172,7 +2873,7 @@ class Launcher:
         self.status.configure(text=_('Preparing the game; it opens in its own window…',
                                      'Подготовка игры; она откроется в своём окне…'), fg=GOLD)
         if self.app.get('close_on_play'):
-            self.root.after(5000, self.root.destroy)  # the game keeps running
+            self.root.after(5000, lambda: self.process and self.close())
 
     def read_output(self, process, settings, diagnostic):
         """Helper thread: the game's output to the Log page and to <saves folder>/last_run.log."""
@@ -2197,11 +2898,21 @@ class Launcher:
                     self.stop_button.configure(state='disabled')
                     self.refresh_menu_settings()
                     self.refresh_status()
+                    if self.hidden:
+                        if item[0] == 0:
+                            self.root.destroy()
+                            return
+                        # It stopped with an error: back with its log instead of vanishing.
+                        self.hidden = False
+                        self.root.deiconify()
+                        self.show('log')
                 else:
                     if 'Entering original x86-64 code' in item:
                         self.status.configure(text=_('The game is running.', 'Игра запущена.'), fg=GOLD)
                     elif 'restarting through run.py' in item:
                         self.status.configure(text=_('Restarting with the new settings…', 'Перезапуск с новыми настройками…'), fg=GOLD)
+                    elif 'Runtime: trophy ' in item:
+                        self.trophies_changed(self.tracker.observe(item))
                     self.append(item)
         except queue.Empty:
             pass
@@ -2417,6 +3128,14 @@ class Launcher:
             self.collect()
         except Exception:  # never keep the window open over a settings problem
             pass
+        if self.process:
+            # The game's output still comes through this process (Log page, last_run.log). An
+            # exited launcher closed that pipe, and the next line a preparation script or the
+            # in-game restart printed failed (OSError: [Errno 22] Invalid argument): the game
+            # never started. Hidden instead, it exits with the game.
+            self.hidden = True
+            self.root.withdraw()
+            return
         self.root.destroy()
 
 

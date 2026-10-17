@@ -117,6 +117,7 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
         FindMemoryType(instance.GetMemoryProperties(), vk::MemoryPropertyFlagBits::eDeviceLocal,
                        reqs.memoryTypeBits)
             .value();
+    arena_memory_type_bits = reqs.memoryTypeBits;
 
     const auto& memory_properties = instance.GetMemoryProperties();
     const u32 arena_heap = memory_properties.memoryTypes[arena_memory_type_index].heapIndex;

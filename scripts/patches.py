@@ -5,6 +5,7 @@ image places eboot vaddr 0 at image offset 0. Only literal writes are supported
 (bytes, bytes16/32/64, float32/64, utf8, utf16); pattern ("mask") patches are rejected.
 """
 import argparse
+import hashlib
 import json
 import os
 import struct
@@ -25,6 +26,14 @@ LEGACY_XESS_PRESETS=[0,2,3,4,6]
 # and the UI movie viewport. Keep the latter at native size so glyph rasterisation and
 # vector tessellation do not inherit the scene's FSR resolution.
 RESOLUTION_TEMPLATE='Resolution Patch 1280x720 (16:9)'
+# Outputs wider than 16:9: Kyo's 21:9 patch widens the camera's aspect ratio, the HUD canvas
+# (1080 high, wider), the HUD projection and the screen-to-HUD mapping of the lock-on and HP-bar
+# markers; ultrawide_writes recomputes those values for the output's own aspect ratio.
+ULTRAWIDE_TEMPLATE='Resolution Patch 2560x1080 (21:9)'
+ULTRAWIDE_CANVAS=2560 # the HUD canvas width written by ULTRAWIDE_TEMPLATE
+CAMERA_ASPECT=0x0183A35D-EBOOT_BASE
+HUD_PROJECTION_WIDTH=0x04D26EA4-EBOOT_BASE
+MARKER_BIAS=(0x04CF9A10-EBOOT_BASE,0x04CF9A70-EBOOT_BASE,0x04CF9AE0-EBOOT_BASE)
 # Effect switches (bbport.ini, in-game menu, launcher): key -> (patch when the key is 0, patch
 # when it is 1). The game reads these at start; a change applies after a restart.
 EFFECTS={
@@ -49,6 +58,7 @@ EFFECTS={
     'tweak_no_camera_rotation':(None,'Disable Camera Auto Rotation via Movement'),
     'tweak_easy_run':(None,'Sensitive Analog Input (easier to run)'),
     'tweak_ragdoll':(None,'DS1-like physics'),
+    'tweak_circle_confirm':(None,'Circle Confirm (Japanese/Asian button layout)'),
 }
 # model_lod: -2 highest, 0 the game's, 1 lower, 2 lowest.
 MODEL_LOD={'-2':'Model LOD -2 (Highest)','1':'Model LOD 1 (Lower)','2':'Model LOD 2 (Lowest)'}
@@ -105,9 +115,11 @@ UI_HEIGHT=0x0235855D-EBOOT_BASE
 
 
 def read_settings(path):
+    # Path.read_text() defaults to the process locale; bbport.ini may contain
+    # UTF-8 outside that encoding. Match the Windows launcher (encoding='utf-8').
     settings={}
     if path.exists():
-        for line in path.read_text().splitlines():
+        for line in path.read_text(encoding='utf-8').splitlines():
             key,sep,value=line.partition('=')
             if sep and not line.startswith('#'): settings[key.strip()]=value.strip()
     # XeSS quality is shared with the launcher and in-game menu. Other menu options
@@ -168,9 +180,11 @@ def scaled_sizes(settings):
     if settings.get('upscaler','fsr3')!='off':
         scale=preset_scale(settings)
     render=tuple(max(2,round(v/scale/2)*2) for v in out)
-    # A scene of exactly 1920x1080 (4K Performance) is indistinguishable from the game's UI
-    # coordinate space, which the port's UI composition recognizes by that size.
-    if render==OUTPUT_SIZE: render=(1916,1078)
+    # A scene of exactly the UI coordinate space's size (1920x1080 at 4K Performance, the
+    # ultrawide HUD canvas at 2560x1080 or 3840x1080 native) is indistinguishable from it: the
+    # port's UI composition recognizes UI draws by that size (HUD gauges came out too long).
+    canvas=hud_canvas(out)
+    if render==canvas: render=(canvas[0]-4,canvas[1]-2)
     return render,out
 
 
@@ -195,6 +209,43 @@ def resolution_writes(xml,size,app_version,segments,ui=OUTPUT_SIZE):
     return out
 
 
+def hud_canvas(output):
+    """The HUD's coordinate space for an output: 1920x1080 up to 16:9, wider (still 1080 high,
+    even width) for ultrawide outputs, e.g. 2580x1080 for 3440x1440. The port scales it to the
+    output uniformly (UiComposition, BB_UI_RES)."""
+    w,h=output
+    if w*OUTPUT_SIZE[1]<=h*OUTPUT_SIZE[0]: return OUTPUT_SIZE
+    return (round(OUTPUT_SIZE[1]*w/h/2)*2,OUTPUT_SIZE[1])
+
+
+def ultrawide_writes(xml,output,app_version,segments):
+    """ULTRAWIDE_TEMPLATE for `output`'s aspect ratio, without its scene and UI viewport sizes
+    (resolution_writes). After resolution_writes: its 1920-wide HUD writes are replaced."""
+    canvas=hud_canvas(output)[0]
+    viewport={SCENE_WIDTH,SCENE_HEIGHT,UI_WIDTH,UI_HEIGHT}
+    floats={CAMERA_ASPECT:(ULTRAWIDE_CANVAS/1080,output[0]/output[1]),
+            HUD_PROJECTION_WIDTH:(ULTRAWIDE_CANVAS,canvas)}
+    floats.update({site:(0.5*1920/ULTRAWIDE_CANVAS,0.5*1920/canvas) for site in MARKER_BIAS})
+    old_width=ULTRAWIDE_CANVAS.to_bytes(3,'little')
+    out=[]
+    found=set()
+    for offset,data in compile_patches(xml,[ULTRAWIDE_TEMPLATE],app_version,segments):
+        if offset in viewport: continue
+        if offset in floats:
+            old,value=floats[offset]
+            if len(data)!=4 or abs(struct.unpack('<f',data)[0]-old)>1e-3:
+                raise ValueError(f'unexpected ultrawide value at {offset+EBOOT_BASE:#x}')
+            data=struct.pack('<f',value)
+            found.add(offset)
+        elif len(data)==4 and data[0] in (0xB8,0xB9,0xBE) and data[1:]==old_width:
+            # mov e?x, 2560 (the imm32's last byte is the next write's): the HUD canvas width.
+            data=bytes([data[0]])+canvas.to_bytes(3,'little')
+        out.append((offset,data))
+    if found!=floats.keys():
+        raise ValueError('ultrawide patch is missing camera/HUD values')
+    return out
+
+
 def eboot_segments(elf):
     phoff,=struct.unpack_from('<Q',elf,0x20)
     phentsize,phnum=struct.unpack_from('<HH',elf,0x36)
@@ -203,6 +254,57 @@ def eboot_segments(elf):
         kind,_,_,vaddr,_,_,memsz,_=struct.unpack_from('<IIQQQQQQ',elf,phoff+i*phentsize)
         if kind==1: segments.append((vaddr,vaddr+memsz))
     return segments
+
+
+def eboot_bytes(elf,start,end):
+    """The eboot's memory image at [start, end): its PT_LOAD file bytes, zero past their file size."""
+    phoff,=struct.unpack_from('<Q',elf,0x20)
+    phentsize,phnum=struct.unpack_from('<HH',elf,0x36)
+    out=bytearray(end-start)
+    for i in range(phnum):
+        kind,_,offset,vaddr,_,filesz,_,_=struct.unpack_from('<IIQQQQQQ',elf,phoff+i*phentsize)
+        low,high=max(start,vaddr),min(end,vaddr+filesz)
+        if kind==1 and low<high: out[low-start:high-start]=elf[offset+low-vaddr:offset+high-vaddr]
+    return bytes(out)
+
+
+# The patches write bytes into the code of one build of the game. A game whose param.sfo says 01.09
+# but whose eboot.bin holds other code (a base-game eboot beside an update's param.sfo, a modified
+# eboot) got them written over other instructions and crashed at start (write fault at guest
+# offset 0x20348b8). The fingerprint covers the game's original bytes everywhere the FPS and
+# resolution patches write, so another region's build with the same code passes. Recompute it
+# with --print-fingerprint (after a run of CUSA03173 v01.09) when those patches change.
+BUILTIN_XML=Path(__file__).resolve().parent.parent/'patches/Bloodborne.xml'
+FINGERPRINT_PATCHES=sorted({n for names in FPS_PRESETS.values() for n in names}|{RESOLUTION_TEMPLATE})
+PATCH_FINGERPRINTS={'01.09':'34e41d1df9e3805762bfd59054e69fe60c330b9b6df7906fa7f66a43c939fbf0'}
+
+
+def patch_sites(xml,app_version,names=FINGERPRINT_PATCHES):
+    """Sorted, merged [start, end) eboot ranges the named patches write."""
+    ranges=[]
+    for meta in ET.parse(xml).getroot().iter('Metadata'):
+        if meta.get('Name') not in names or meta.get('AppVer')!=app_version: continue
+        for line in meta.iter('Line'):
+            offset=int(line.get('Address'),0)-EBOOT_BASE
+            ranges.append((offset,offset+len(encode(line))))
+    merged=[]
+    for start,end in sorted(ranges):
+        if merged and start<=merged[-1][1]: merged[-1]=(merged[-1][0],max(merged[-1][1],end))
+        else: merged.append((start,end))
+    return merged
+
+
+def patch_fingerprint(elf,xml=BUILTIN_XML,app_version='01.09'):
+    digest=hashlib.sha256()
+    for start,end in patch_sites(xml,app_version):
+        digest.update(struct.pack('<QQ',start,end)+eboot_bytes(elf,start,end))
+    return digest.hexdigest()
+
+
+def eboot_matches_patches(elf_path,app_version='01.09'):
+    """False when eboot.elf (prepare.py) differs from the build the patches were made for."""
+    expected=PATCH_FINGERPRINTS.get(app_version)
+    return not expected or patch_fingerprint(Path(elf_path).read_bytes(),BUILTIN_XML,app_version)==expected
 
 
 def encode(line):
@@ -236,7 +338,10 @@ def compile_patches(xml, names, app_version, segments):
 
 
 # Third-party patch files (shadPS4/GoldHEN XML) in the data directory's patches/ folder.
-BLOODBORNE_IDS={'CUSA00207','CUSA00208','CUSA00900','CUSA01363','CUSA03173','CUSA03023'}
+# Every retail release with update 1.09 (the same executable): US, EU, UK, JP, Asia, then the
+# editions with The Old Hunters.
+BLOODBORNE_IDS={'CUSA00900','CUSA00207','CUSA00208','CUSA00299','CUSA01363',
+                'CUSA03179','CUSA03173','CUSA03014','CUSA03023'}
 
 
 def external_patches(directory, app_version='01.09', exclude=Path(__file__).resolve().parent.parent/'patches/Bloodborne.xml'):
@@ -246,6 +351,8 @@ def external_patches(directory, app_version='01.09', exclude=Path(__file__).reso
     directory=Path(directory)
     for path in sorted(directory.glob('*.xml')) if directory.is_dir() else []:
         if path.resolve()==Path(exclude).resolve(): continue  # the built-in file (patches/ in a checkout)
+        # Left by bbbridge's app: play logs every 5 s to The Hunter's Dream.
+        if path.name.lower()=='bbbridge-live-map.xml': continue
         try:
             root=ET.parse(path).getroot()
         except ET.ParseError as error:
@@ -264,7 +371,7 @@ def external_selection(found, config):
     each file's isEnabled."""
     settings={}
     if config and Path(config).is_file():
-        settings=json.loads(Path(config).read_text())
+        settings=json.loads(Path(config).read_text(encoding='utf-8'))
     enabled,disabled=set(settings.get('enabled',[])),set(settings.get('disabled',[]))
     return [(key,path,meta) for key,path,meta in found
             if key in enabled or (key not in disabled and meta.get('isEnabled','false').lower()=='true')]
@@ -306,7 +413,12 @@ def main():
     p.add_argument('--output-res',default='',help='output resolution WxH (the upscaler\'s; the UI stays 1920x1080)')
     p.add_argument('--print-scaled',action='store_true',
                    help='print "RENDER OUTPUT" (WxH) when bbport.ini selects an output other than 1080p')
+    p.add_argument('--print-fingerprint',action='store_true',
+                   help='print the patch fingerprint of <out>/eboot.elf (PATCH_FINGERPRINTS)')
     a=p.parse_args()
+    if a.print_fingerprint:
+        print(patch_fingerprint((a.out/'eboot.elf').read_bytes(),BUILTIN_XML,a.app_version))
+        return
     if a.print_scaled:
         sizes=scaled_sizes(read_settings(a.settings))
         if sizes: print(f'{sizes[0][0]}x{sizes[0][1]} {sizes[1][0]}x{sizes[1][1]}')
@@ -323,11 +435,16 @@ def main():
     # The patches are byte writes at the addresses of one game version: on another version they
     # would corrupt code. Such a game runs unpatched (run.sh/run.py then choose 30 FPS).
     version=game_app_version(a.game_dir)
-    if version and version!=a.app_version and not os.environ.get('BB_FORCE_PATCHES'):
-        blob=struct.pack('<8sQQ',b'BBPATCH2',EBOOT_BASE,0)
-        (a.out/'patches.bin').write_bytes(blob)
+    force=os.environ.get('BB_FORCE_PATCHES')
+    if version and version!=a.app_version and not force:
+        (a.out/'patches.bin').write_bytes(struct.pack('<8sQQ',b'BBPATCH2',EBOOT_BASE,0))
         print(f'Patches: game version {version}, patches are for {a.app_version}: none applied '
               '(30 FPS, no effect or resolution patches)')
+        return
+    if not force and not eboot_matches_patches(a.out/'eboot.elf',a.app_version):
+        (a.out/'patches.bin').write_bytes(struct.pack('<8sQQ',b'BBPATCH2',EBOOT_BASE,0))
+        print(f'Patches: eboot.bin is not the {a.app_version} build the patches were made for: none '
+              'applied (30 FPS, no effect or resolution patches; BB_FORCE_PATCHES=1 applies them)')
         return
     names=FPS_PRESETS[a.fps]+[n.strip() for n in a.extra.split(';') if n.strip()]
     names+=[n for n in effect_patches(read_settings(a.settings)) if n not in names]
@@ -337,15 +454,31 @@ def main():
     size=render_size(read_settings(a.settings),a.render_res) if a.render_res else None
     # The UI keeps the game's 1920x1080 coordinates even for a larger output: the port draws
     # it into the output-size image with a viewport scaled by output / 1920
-    # (UiComposition::NativeViewport), so it is rasterized at the output resolution.
-    ui=OUTPUT_SIZE
+    # (UiComposition::NativeViewport), so it is rasterized at the output resolution. Ultrawide
+    # outputs widen those coordinates (hud_canvas; run.py passes the same size as BB_UI_RES).
+    output=tuple(int(v) for v in a.output_res.lower().split('x')) if a.output_res else OUTPUT_SIZE
+    ui=hud_canvas(output)
     if size:
         writes+=resolution_writes(a.xml,size,a.app_version,segments,ui)
+        if ui!=OUTPUT_SIZE:
+            writes+=ultrawide_writes(a.xml,output,a.app_version,segments)
+            names.append(f'ultrawide {output[0]}x{output[1]} (HUD {ui[0]}x{ui[1]})')
         if size[0]*size[1]>OUTPUT_SIZE[0]*OUTPUT_SIZE[1]:
             heap='Increased Graphics Heap Sizes'
             writes+=compile_patches(a.xml,[heap],a.app_version,segments)
             names.append(heap)
         print(f'Patches: scene {size[0]}x{size[1]}; UI {ui[0]}x{ui[1]}')
+    if read_settings(a.settings).get('quit_to_desktop','1')!='0' and os.environ.get('BB_QUIT_TO_DESKTOP')!='0':
+        # Quit to Desktop in the title and System menus (quit_menu.py; its texts are a mod layer).
+        sys.path.insert(0,str(Path(__file__).resolve().parent))
+        import quit_menu
+        elf=(a.out/'eboot.elf').read_bytes()
+        try:
+            quit_menu.check_original(lambda start,end: eboot_bytes(elf,start,end))
+            writes+=quit_menu.code_writes()
+            names.append('Quit to Desktop')
+        except ValueError as error:
+            print(f'Patches: {error}; Quit to Desktop skipped')
     if a.patches_dir:
         # After the built-in ones: an external patch of the same bytes wins.
         writes+=compile_external(external_selection(external_patches(a.patches_dir,a.app_version,a.xml),
