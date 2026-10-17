@@ -24,7 +24,7 @@ const char* FrameGenName(int mode) { return mode==FrameGenFsr3 ? "fsr3" : mode==
 int NativeProvider() {
     const auto& s = Get();
     const int mode=s.frame_generation;
-    if (s.startup_native_dlss != (mode==FrameGenerationNativeDlss)) return FrameGenOff;
+    if (!s.startup_native_dlss && mode==FrameGenerationNativeDlss) return FrameGenOff;
     return mode==FrameGenerationNativeFsr ? FrameGenFsr3 : mode==FrameGenerationNativeDlss ? FrameGenDlss : FrameGenOff;
 }
 
@@ -36,15 +36,17 @@ unsigned EffectiveFrameLimit(unsigned foreground_limit) {
     if (s.window_focused || s.background_mode == BackgroundRun) {
         // The ordinary limit counts real game flips. Only an explicitly enabled
         // display cap may reduce that rate to account for generated frames.
-        const unsigned multiplier=unsigned(std::max(1,s.frame_generation==FrameGenerationNvidia ?
-            s.frame_generation_cap_multiplier.load() : s.frame_generation_active.load()));
-        if (s.limit_generated_fps && multiplier>1) {
-            const unsigned real_cap=unsigned(std::clamp(s.generated_fps_limit.load(),30,1000))/multiplier;
-            return foreground_limit ? std::min(foreground_limit,real_cap) : real_cap;
-        }
         if (s.frame_gen_flip_limit > 0 && NativeProvider()!=FrameGenOff) {
             const unsigned cap=unsigned(s.frame_gen_flip_limit.load());
             foreground_limit=foreground_limit ? std::min(foreground_limit,cap) : cap;
+        }
+        const bool native_mode=s.frame_generation>=FrameGenerationNativeFsr;
+        const unsigned multiplier=s.frame_generation==FrameGenerationOff || (native_mode && NativeProvider()==FrameGenOff) ? 1u :
+            unsigned(std::max(1,s.frame_generation==FrameGenerationNvidia ?
+                s.frame_generation_cap_multiplier.load() : s.frame_generation_active.load()));
+        if (s.limit_generated_fps && multiplier>1) {
+            const unsigned real_cap=unsigned(std::clamp(s.generated_fps_limit.load(),30,1000))/multiplier;
+            return foreground_limit ? std::min(foreground_limit,real_cap) : real_cap;
         }
         return foreground_limit;
     }
@@ -174,6 +176,8 @@ void Load() {
     v.show_frametime_graph = false;
     v.background_mode = BackgroundRun;
     v.frame_generation = FrameGenerationOff;
+    v.frame_gen=FrameGenOff;v.frame_gen_multiplier=2;v.frame_gen_fit_display=false;
+    bool explicit_frame_generation=false;
     v.limit_generated_fps = false;
     v.generated_fps_limit = 144;
     v.reflex=0;v.nvidia_generated_frames=1;
@@ -242,6 +246,7 @@ void Load() {
                 v.background_mode = value == "pause" ? BackgroundPause
                     : value == "30" ? Background30 : value == "60" ? Background60 : BackgroundRun;
             } else if (key == "frame_generation") {
+                explicit_frame_generation=true;
                 v.frame_generation = value == "fsr" ? FrameGenerationFsr : value == "nvidia" ? FrameGenerationNvidia : value == "native_fsr" ? FrameGenerationNativeFsr : value == "native_dlss" ? FrameGenerationNativeDlss : FrameGenerationOff;
             } else if (key == "reflex") {
                 v.reflex=value=="boost" ? 2 : value=="on" ? 1 : 0;
@@ -326,6 +331,8 @@ void Load() {
     v.startup_nvidia_fg_preset = v.nvidia_fg_preset;
     v.startup_nvidia_fg_mod = v.nvidia_fg_mod;
     UpdateCheatMask();
+    if (!explicit_frame_generation && v.frame_gen!=FrameGenOff)
+        v.frame_generation=v.frame_gen==FrameGenDlss ? FrameGenerationNativeDlss : FrameGenerationNativeFsr;
     v.startup_native_dlss = v.frame_generation == FrameGenerationNativeDlss;
 }
 
@@ -467,7 +474,7 @@ void Save() {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
     }
     std::fprintf(file, "frame_gen=%s\nframe_gen_multiplier=%d\nframe_gen_fit_display=%d\n",
-                 FrameGenName(v.frame_gen), v.frame_gen_multiplier.load(),
+                 FrameGenName(v.frame_generation==FrameGenerationNativeDlss ? FrameGenDlss : v.frame_generation==FrameGenerationNativeFsr ? FrameGenFsr3 : FrameGenOff), v.frame_gen_multiplier.load(),
                  int(v.frame_gen_fit_display.load()));
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);

@@ -146,6 +146,16 @@ int main(){
    s.Write(p,v);assert(s.Dirty(p));s.Upload(p);assert(!s.Dirty(p) && gpu[p*4096]==v);}
   printf("PASS: readback mode %u, 10000 real writes, cross-word/region snapshots and GPU neighbour isolation; faults %llu\n",mode,(unsigned long long)faults.load());
  }
+ // Preupload reads only quiet CPU-authored regions; a GPU-authored neighbour excludes the span.
+ {
+  Session s(Precise);auto& tracker=*s.cache.memory_tracker;
+  s.Upload(0);s.Write(0,17);assert(!tracker.IsPreuploadCandidate(Base,4096,0));
+  const u64 future=RegionManager::NowMillis()+1;
+  assert(tracker.IsPreuploadCandidate(Base,4096,future));
+  s.Upload(0);assert(!tracker.IsPreuploadCandidate(Base,4096,future));
+  s.Write(0,18);s.Upload(1,1,true);
+  assert(!tracker.IsPreuploadCandidate(Base,8192,RegionManager::NowMillis()+1));
+ }
  // Two independent owners may watch one page: the first untrack must retain protection.
  {
   Session s;auto p=Base+7*4096;s.pages.UpdatePageWatchers(p,4096,PageOp::Track);auto n=protects.load();

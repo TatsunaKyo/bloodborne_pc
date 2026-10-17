@@ -59,6 +59,7 @@ static uint64_t now_ns(){return uint64_t(std::chrono::duration_cast<std::chrono:
 static void sleep_until(uint64_t ns){std::this_thread::sleep_until(Clock::time_point(std::chrono::nanoseconds(ns)));}
 constexpr int SDL_INIT_AUDIO=1,SDL_AUDIO_F32=2,SDL_AUDIO_S16=3,SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK=1;
 struct SDL_AudioSpec{int format,channels,freq;};
+bool SDL_GetAudioDeviceFormat(int,SDL_AudioSpec* spec,void*){spec->channels=8;return true;}
 struct SDL_AudioStream {std::mutex mutex;bool paused=true,closed=false;std::vector<unsigned char> queued;};
 static bool open_fail;
 bool SDL_InitSubSystem(int){return true;}

@@ -32,10 +32,11 @@ public:
     }
 
     void Initialize(vk::Device device_, u32 type_, u64 alignment_, u64 max_allocation,
-                    u64 heap_bytes) {
+                    u64 heap_bytes, std::vector<u32> alternatives = {}) {
         assert(allocations.empty());
         device = device_;
         type = type_;
+        fallback_types=std::move(alternatives);
         alignment = alignment_;
         // At most 16 MiB per new slab, smaller on small heaps. Large requests
         // keep exact-size allocations, preventing slabs with large unused tails.
@@ -57,12 +58,13 @@ public:
             return {vk::Result::eSuccess, slice};
         }
         u64 allocated = bytes < slab_bytes / 4 ? slab_bytes : bytes;
-        const auto allocate = [&](u64 size) {
+        const auto allocate_type = [&](u64 size,u32 memory_type) {
             const vk::MemoryAllocateFlagsInfo flags{.flags=vk::MemoryAllocateFlagBits::eDeviceAddress};
-            const vk::MemoryAllocateInfo info{.pNext=&flags,.allocationSize = size, .memoryTypeIndex = type};
+            const vk::MemoryAllocateInfo info{.pNext=&flags,.allocationSize = size, .memoryTypeIndex = memory_type};
             BbHitch::Scope hitch{"vkAllocateMemory sparse backing"};
             return device.allocateMemory(info);
         };
+        const auto allocate=[&](u64 size) {return allocate_type(size,type);};
         auto result = allocate(allocated);
         if (result.result != vk::Result::eSuccess && allocated > bytes &&
             (result.result == vk::Result::eErrorOutOfDeviceMemory ||
@@ -71,6 +73,13 @@ public:
             // exact-size allocation behavior rather than rejecting a valid bind.
             allocated = bytes;
             result = allocate(bytes);
+        }
+        if (result.result == vk::Result::eErrorOutOfDeviceMemory) {
+            for (u32 alternative:fallback_types) {
+                allocated=bytes;
+                result=allocate_type(bytes,alternative);
+                if (result.result!=vk::Result::eErrorOutOfDeviceMemory) break;
+            }
         }
         if (result.result != vk::Result::eSuccess) return {result.result, {}};
         allocations.push_back(result.value);
@@ -81,6 +90,7 @@ public:
 private:
     vk::Device device{};
     u32 type{};
+    std::vector<u32> fallback_types;
     u64 alignment{}, slab_bytes{};
     std::vector<vk::DeviceMemory> allocations;
     std::multimap<u64, Slice> tails; // best fit; retain and reuse older slab tails

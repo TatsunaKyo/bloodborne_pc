@@ -205,6 +205,10 @@ void Presenter::PrepareNativeFrame(Frame* frame,vk::CommandBuffer cmd,vk::ImageV
         if (!native_frame_generator->Wanted()) native_frame_generator->Release();
         native_frame_generator->Skip();
         frame->native.reset();
+        if(BbSettings::Get().frame_generation>=BbSettings::FrameGenerationNativeFsr) {
+            BbSettings::Get().frame_generation_active=0;
+            if(frame->is_hdr)BbSettings::Get().frame_gen_problem="The native Supermedo provider requires SDR output.";
+        }
         return;
     }
     const u32 count=std::min(native_frame_generator->WantedCount(),frame_gen_limit.load());
@@ -253,6 +257,7 @@ void Presenter::PrepareNativeFrame(Frame* frame,vk::CommandBuffer cmd,vk::ImageV
     for(u32 i=0;i<available;++i)outputs[i]={owned.outputs[i].image,*owned.output_views[i]};
     frame->native_count=native_frame_generator->Generate(cmd,owned.color.image,*owned.color_view,
         usage,hudless,hudless_view,frame->width,frame->height,{outputs.data(),available});
+    BbSettings::Get().frame_generation_active=frame->native_count ? int(frame->native_count+1) : 1;
 }
 
 bool Presenter::IsVideoOutSurface(const AmdGpu::ColorBuffer& color_buffer) const {

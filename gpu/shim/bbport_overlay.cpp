@@ -550,7 +550,7 @@ void FrameSettings() {
     const int fg=std::clamp(s.frame_generation.load(),0,4);
     if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
         for (int i=0;i<5;++i) {
-            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported && !s.nvidia_fg_mod)));
+            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported && !s.nvidia_fg_mod && !s.startup_native_dlss)));
             if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
             ImGui::EndDisabled();
         }
@@ -561,7 +561,7 @@ void FrameSettings() {
     if (s.frame_generation>=BbSettings::FrameGenerationNativeFsr) {
         ImGui::TextWrapped("Supermedo native FG uses SDR output. HDR retains the existing providers.");
         int multiplier=s.frame_gen_multiplier;
-        if(ImGui::SliderInt("Native FG multiplier###frame_gen_multiplier",&multiplier,2,4)) Store(s.frame_gen_multiplier,multiplier,true);
+        if(ImGui::SliderInt("Native FG multiplier###frame_gen_multiplier",&multiplier,2,4,"%dx")) Store(s.frame_gen_multiplier,multiplier,true);
         Checkbox("Fit native FG to display###frame_gen_fit_display",s.frame_gen_fit_display);
         if(const char* message=s.frame_gen_problem)ImGui::TextWrapped("Native FG: %s",message);
     }
@@ -1123,7 +1123,7 @@ void FpsCounter() {
         const int active=s.frame_generation_active;
         if (s.frame_generation==BbSettings::FrameGenerationOff) append("FG:off");
         else {
-            const char* mode=s.frame_generation==BbSettings::FrameGenerationNvidia ? "NV" : "FSR";
+            const char* mode=(s.frame_generation==BbSettings::FrameGenerationNvidia || s.frame_generation==BbSettings::FrameGenerationNativeDlss) ? "NV" : "FSR";
             if (active>1) std::snprintf(detail,sizeof(detail),"FG:%s%dx",mode,active);
             else std::snprintf(detail,sizeof(detail),"FG:%s wait",mode);
             append(detail);

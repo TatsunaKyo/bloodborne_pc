@@ -438,7 +438,7 @@ static void ParseLine(ParseState *state, char *line) {
         ++cfg->warnings;
         return;
     }
-    InputBinding binding;
+    InputBinding binding={0};
     if (!ResolveInput(input_raw, &binding)) { ++cfg->warnings; return; }
     if (binding.kind == IN_NONE) return; /* "unmapped": explicitly no binding, not a warning */
 

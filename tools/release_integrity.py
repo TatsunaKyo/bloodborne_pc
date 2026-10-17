@@ -236,7 +236,8 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
                     safe_member(name)
                     require(hashlib.sha256(read(folder+'/'+name)).hexdigest() == record['sha256'],
                             'Vendor runtime checksum mismatch: '+name)
-        launcher = 'source/modified-files/launcher/bbport_launcher_win.py'
+        launcher = ('launcher/bbport_launcher_win.py' if root+'/launcher/bbport_launcher_win.py' in names
+                    else 'source/modified-files/launcher/bbport_launcher_win.py')
         require(source_version(read(launcher)) == version, 'Packaged launcher source and identity disagree')
         notes_path = f'docs/releases/windows-v{version}.md'
         notes = read(notes_path).decode('utf-8')

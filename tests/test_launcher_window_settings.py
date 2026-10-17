@@ -73,6 +73,7 @@ def build(settings):
     obj.ini, obj.ini_lines = launcher.load_ini()
     obj.menu = launcher.menu_values(obj.app)
     obj.menu_baseline = dict(obj.menu)
+    obj.remap_edits={};obj.mouse_edited=False
     obj.vars, obj.pages, obj.content = {}, {}, Widget()
     obj.mod_order, obj.patch_vars = [], {}
     def scrolled_page(name, *_args):

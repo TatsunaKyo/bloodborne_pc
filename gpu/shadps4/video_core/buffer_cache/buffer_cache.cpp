@@ -120,9 +120,15 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
 
     const auto& memory_properties = instance.GetMemoryProperties();
     const u32 arena_heap = memory_properties.memoryTypes[arena_memory_type_index].heapIndex;
+    std::vector<u32> compatible_host_types;
+    for (u32 i=0;i<memory_properties.memoryTypeCount;++i) {
+        if (i!=arena_memory_type_index && (reqs.memoryTypeBits&(1u<<i)) &&
+            !(memory_properties.memoryHeaps[memory_properties.memoryTypes[i].heapIndex].flags & vk::MemoryHeapFlagBits::eDeviceLocal))
+            compatible_host_types.push_back(i);
+    }
     backing_pool.Initialize(device, arena_memory_type_index, block_size,
                             instance.MaxMemoryAllocationSize(),
-                            memory_properties.memoryHeaps[arena_heap].size);
+                            memory_properties.memoryHeaps[arena_heap].size,std::move(compatible_host_types));
 
     const u64 bda_pagetable_size =
         (blocks_per_arena_page * num_arena_pages) * sizeof(vk::DeviceAddress);
@@ -150,7 +156,7 @@ void BufferCache::TickFrame() {
 // Only idle CPU-authored data already backed by an arena is eligible. No new sparse
 // bindings or allocations are made here; uploads retain the normal issue-time copy fences.
 void BufferCache::PreuploadResident() {
-    static const bool enabled=[] {const char* value=std::getenv("BB_PREUPLOAD");return !value||value[0]!='0';}();
+    static const bool enabled=[] {const char* value=std::getenv("BB_PREUPLOAD");return value&&value[0]=='1';}();
     if(!enabled)return;
     const auto start=std::chrono::steady_clock::now();
     const u64 now=RegionManager::NowMillis();

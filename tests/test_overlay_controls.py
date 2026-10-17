@@ -869,6 +869,17 @@ int main(int argc,char** argv) {
         s.menu_language=language; s.upscaler=BbSettings::UpscalerFsr3;
         s.fsr4_supported=true; s.fsr411_supported=true;
         TestFrameGeneration();
+        s.upscaler=BbSettings::UpscalerDlss;s.dlss_supported=true;
+        for(int mode:{BbSettings::FrameGenerationNativeFsr,BbSettings::FrameGenerationNativeDlss}) {
+            Reveal("frame_generation");selectables.clear();Click(controls.at("frame_generation").GetCenter());Frame();Frame();
+            const char* label=mode==BbSettings::FrameGenerationNativeFsr ? "FSR FG - Supermedo (SDR)" : "DLSS FG - Supermedo (SDR, restart)";
+            assert(selectables.contains(label));Click(selectables.at(label).GetCenter());assert(s.frame_generation==mode);
+            BbSettings::Save();s.frame_generation=BbSettings::FrameGenerationOff;BbSettings::Load();assert(s.frame_generation==mode);
+            Reveal("frame_gen_multiplier");assert(controls.contains("frame_gen_fit_display"));
+            assert(s.startup_native_dlss==(mode==BbSettings::FrameGenerationNativeDlss));
+        }
+        s.frame_generation=BbSettings::FrameGenerationOff;s.startup_native_dlss=false;BbSettings::Save();
+
         TestNvidiaControls();
         TestRealFpsAndAntiLag();
         TestXessQuality();

@@ -98,7 +98,7 @@ static float take(const void *data, int is_float, size_t index, float gain) {
 static void put(void *dst, int is_float, size_t index, float v) {
     v=sat(v);
     if (is_float) { memcpy((char *)dst+index*4,&v,4); return; }
-    int16_t s=(int16_t)(v*32767.f); memcpy((char *)dst+index*2,&s,2);
+    int16_t s=v>=1.f ? 32767 : (int16_t)(v*32768.f); memcpy((char *)dst+index*2,&s,2);
 }
 static void fold8(const float in[8], float *out, int n) {
     memset(out,0,(size_t)n*sizeof(float));
@@ -201,6 +201,7 @@ static ABI int32_t audio_open(int32_t user, int32_t type, int32_t index, uint32_
         audio_levels();
         int out=p->channels;
         if (device_channels>0 && device_channels<p->channels) out=device_channels;
+        p->out_channels=out;
         SDL_AudioSpec spec={p->is_float ? SDL_AUDIO_F32 : SDL_AUDIO_S16, out, 48000};
         p->stream=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&spec,NULL,NULL);
         if (p->stream) {
@@ -249,7 +250,8 @@ static int32_t output_port(int32_t handle, const void *data, int pace) {
     if (p) pthread_mutex_lock(&p->lock);
     pthread_mutex_unlock(&table_lock);
     if (!p) return error;
-    size_t samples=(size_t)p->frames*(size_t)p->channels, bytes=samples*(size_t)p->sample_bytes;
+    size_t samples=(size_t)p->frames*(size_t)p->channels;
+    const size_t out_bytes=(size_t)p->frames*(size_t)p->out_channels*(size_t)p->sample_bytes;
     uint64_t period=(uint64_t)p->frames*1000000000u/48000u;
     if (data) {
         /* Per-channel volume. When the device has fewer channels than the port,
@@ -273,8 +275,7 @@ static int32_t output_port(int32_t handle, const void *data, int pace) {
                 int target=p->channels==8 && !p->std_layout ? remap[c] : c;
                 size_t from=f*(size_t)p->channels+(size_t)c, to=f*(size_t)p->channels+(size_t)target;
                 float gain=(float)p->volume[c]/VOLUME_0DB*master_gain;
-                if (p->is_float) { float v; memcpy(&v,(const char *)data+from*4,4); v*=gain; memcpy(converted+to*4,&v,4); }
-                else { int16_t v; memcpy(&v,(const char *)data+from*2,2); v=(int16_t)((float)v*gain); memcpy(converted+to*2,&v,2); }
+                put(converted,p->is_float,to,take(data,p->is_float,from,gain));
             }
         }
         if (p->dump) fwrite(converted,1,out_bytes,p->dump);

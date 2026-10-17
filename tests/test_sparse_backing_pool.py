@@ -6,7 +6,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT/'gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp').read_text()
-methods = source[source.index('const Buffer* BufferCache::GetArena('):source.index('bool BufferCache::SynchronizeMemory(')]
+methods = source[source.index('const Buffer* BufferCache::GetArena('):source.index('std::pair<const Buffer*, u64> BufferCache::ObtainVertexBuffer(')]
 header = (ROOT/'gpu/shadps4/video_core/buffer_cache/buffer_cache.h').read_text()
 backing = header[header.index('    struct Backing :'):header.index('    IntervalList<Backing>')]
 HARNESS = r'''
@@ -24,10 +24,16 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 constexpr u64 MiB=1024*1024;
 struct Allocation{u64 bytes;u32 type;};
 std::map<VkDeviceMemory,Allocation> physical;
+u32 reject_type=~u32{};
 u64 serial{},calls{},frees{};u64 reject_above=~u64{},reject_count{};
 VKAPI_ATTR VkResult VKAPI_CALL Allocate(VkDevice,const VkMemoryAllocateInfo* info,
  const VkAllocationCallbacks*,VkDeviceMemory* out){
- ++calls;assert(info->allocationSize>0);assert(!info->pNext);
+ ++calls;assert(info->allocationSize>0);
+#ifndef BB_R45_CONTROL
+ const auto* flags=static_cast<const VkMemoryAllocateFlagsInfo*>(info->pNext);
+ assert(flags && flags->sType==VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO && (flags->flags&VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT));
+#endif
+ if(info->memoryTypeIndex==reject_type)return VK_ERROR_OUT_OF_DEVICE_MEMORY;
  if(info->allocationSize>reject_above || reject_count){if(reject_count)--reject_count;return VK_ERROR_OUT_OF_DEVICE_MEMORY;}
  *out=reinterpret_cast<VkDeviceMemory>(++serial);
  assert(physical.emplace(*out,Allocation{info->allocationSize,info->memoryTypeIndex}).second);
@@ -95,6 +101,9 @@ int main(){
  while(!physical.empty())Free({},physical.begin()->first,nullptr);
  return 0;
 #endif
+ {SparseMemoryPool pool;reject_type=3;pool.Initialize(vk::Device(reinterpret_cast<VkDevice>(1)),3,65536,1ull<<32,8ull<<30,{7});
+  auto result=pool.Allocate(65536);assert(result.result==vk::Result::eSuccess && physical.begin()->second.type==7);}
+ reject_type=~u32{};Reset();
  for(u64 alignment:{16ull*1024,64ull*1024,256ull*1024}){
   Reset();{
    SparseMemoryPool pool;pool.Initialize(vk::Device(reinterpret_cast<VkDevice>(1)),3,alignment,1ull<<32,8ull<<30);

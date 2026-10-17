@@ -408,7 +408,8 @@ void FrameGeneration::RetireCompleted() {
 }
 void FrameGeneration::Invalidate() {
     history=false;
-    if (BbSettings::Get().frame_generation!=BbSettings::FrameGenerationNvidia)
+    if (BbSettings::Get().frame_generation==BbSettings::FrameGenerationOff ||
+        BbSettings::Get().frame_generation==BbSettings::FrameGenerationFsr)
         BbSettings::Get().frame_generation_active=0;
 }
 void FrameGeneration::Reset() {

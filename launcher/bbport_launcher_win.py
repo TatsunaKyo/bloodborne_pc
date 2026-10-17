@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.52'
+VERSION = '1.6-tatsunakyo.53'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -134,6 +134,10 @@ def run_command():
 # languages are in bbport_lang.py, keyed by the English text.
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Current first-party modules are shipped once beside the application.
+# Prefer them over the older bundled PYZ when retaining the verified Windows bootloader.
+for _module_dir in ('tools', 'scripts', 'launcher'):
+    sys.path.insert(0, str(PORT_DIR / _module_dir))
 import bbport_lang  # noqa: E402
 import bbport_trophies as trophies  # noqa: E402
 from bbport_input_config import (KEYBOARD_OUTPUTS, BUTTON_OUTPUTS, STICK_OUTPUTS, OUTPUT_LABELS, keysym_to_name,
@@ -216,7 +220,8 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'vk_validation': False, 'developer_profile': False, 'extra_env': '', 'close_on_play': False,
                 'check_updates': True, 'online': False, 'online_server': 'srv.shadps4.net:31313',
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
-                'online_community': COMMUNITY_SERVER, 'save_auto_backup': True, 'save_backup_retention': 10}
+                'online_community': COMMUNITY_SERVER, 'online_pool': 'shadnet', 'bridge_live_map': False,
+                'supermedo_user': '', 'supermedo_password': '', 'thd_online_id': '', 'thd_token': '', 'save_auto_backup': True, 'save_backup_retention': 10, 'voice_language': 'auto'}
 MENU_DEFAULTS = {'menu_language': 'en', 'window_mode': 'launcher', 'borderless_vsync': '0',
                  'dlss_preset': 'default', 'xess_preset': '2', 'show_fps': '1', 'show_dlss_preset': '0',
                  'show_resolution': '0', 'show_fg_preset': '0', 'show_frame_generation': '0', 'show_latency': '0', 'show_frametime_graph': '0',
@@ -924,6 +929,14 @@ class Launcher:
         self.ini, self.ini_lines = load_ini()
         self.menu = menu_values(self.app)
         self.menu_baseline = dict(self.menu)
+        self.remap_ini_path = input_ini_path(ini_path())
+        self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
+            self.mouse_settings = load_input_ini(self.remap_ini_path)
+        # {output: first-binding key name, or None once cleared}, edited by the remap page and
+        # applied on top of self.remap_bindings in collect(); separate from it so re-opening the
+        # Controls page after a cancelled edit shows what is actually on disk, not a half-edit.
+        self.remap_edits = {}
+        self.mouse_edited = False  # set by any mouse widget's command/trace; gates the save in collect()
         self.vars = {}
         self.process = self.job = None
         self.hidden = False  # closed while the game runs: it exits with the game
@@ -933,6 +946,8 @@ class Launcher:
         self.banner_source = self.banner_image = None
         self.ui_calls = queue.Queue()  # work for the Tk thread from helper threads
         self.mod_order, self.mod_vars, self.patch_vars = [], {}, {}
+        self.tracker = trophies.Tracker(self.trophy_dir())
+        self.trophies_loaded, self.toasts = False, []
         root.title('Bloodborne: The Crowned Workshop — TatsunaKyo')
         root.configure(bg=BG)
         self.dpi = root.winfo_fpixels('1i') / 96.0
@@ -1665,6 +1680,15 @@ class Launcher:
                  self.frame_generation_choice(f),
                  _('FSR FG adds one interpolated frame between real frames. Supports SDR and HDR10 with a temporal upscaler. The normal FPS limit counts real frames: 75 can produce 150 with FG 2x.',
                    'FSR FG добавляет один промежуточный кадр. Поддерживает SDR и HDR10 с временным апскейлером. Обычный лимит относится к реальным кадрам: 75 даёт до 150 с FG 2x.'))
+        native_multiplier = self.choice(f, 'frame_gen_multiplier', 'ini', FRAME_GEN_MULTIPLIERS)
+        self.row(f, _('Supermedo native FG multiplier', 'Supermedo native FG multiplier'), native_multiplier,
+                 _('SDR only. Native DLSS requires restart; the existing NVIDIA path retains HDR and Encore.',
+                   'SDR only. Native DLSS requires restart; the existing NVIDIA path retains HDR and Encore.'))
+        self.check(f, 'frame_gen_fit_display', 'ini', _('Fit native FG to display', 'Fit native FG to display'))
+        def native_multiplier_state(*_args):
+            native_multiplier.configure(state='readonly' if self.var('frame_generation', 'menu').get() == 'native_dlss' else 'disabled')
+        self.var('frame_generation', 'menu').trace_add('write', native_multiplier_state)
+        native_multiplier_state()
         multiplier_choice = self.choice(f, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS)
         def multiplier_state(*_args):
             multiplier_choice.configure(state='readonly' if self.var('frame_generation', 'menu').get() == 'nvidia' else 'disabled')
