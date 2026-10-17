@@ -44,7 +44,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # Fork releases use windows-v<upstream version>-tatsunakyo.<revision>.
-VERSION = '1.6-tatsunakyo.53'
+VERSION = '1.6-tatsunakyo.54'
 LAUNCHER_BUILD = 'TatsunaKyo revision'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
@@ -266,11 +266,6 @@ UPSCALERS = [('dlss', ('DLSS (NVIDIA GeForce RTX)',)),
              ('fsr3', ('FSR 3.1 (every GPU)', 'FSR 3.1 (любая видеокарта)')),
              ('taa', ('TAA (native resolution anti-aliasing)', 'TAA (нативное сглаживание)')),
              ('off', ('Off', 'Выключен'))]
-# Frames generated between two of the game's (vk_frame_generation.cpp).
-FRAME_GENERATION = [('off', ('Off', 'Выключена')),
-                    ('fsr3', ('AMD FSR 3.1 Frame Generation (any GPU)', 'AMD FSR 3.1 (любая видеокарта)')),
-                    ('dlss', ('NVIDIA DLSS Frame Generation (GeForce RTX 40/50)',
-                              'NVIDIA DLSS (GeForce RTX 40/50)'))]
 FRAME_GEN_MULTIPLIERS = [('2', ('2× (one generated frame)', '2× (один кадр)')),
                          ('3', ('3× (DLSS on GeForce RTX 50)', '3× (DLSS на GeForce RTX 50)')),
                          ('4', ('4× (DLSS on GeForce RTX 50)', '4× (DLSS на GeForce RTX 50)'))]
@@ -643,9 +638,13 @@ def game_environment(s):
         env['BB_HDR'] = '1'
     # 75 uses the variable frame-time patch, not a fixed 60/90 timing patch.
     env['BB_FPS'] = 'uncap' if s['fps_mode'] == '75' else s['fps_mode']
-    real_cap = str(s.get('real_fps_limit', '-1'))
-    if real_cap.isdecimal() and (real_cap == '0' or 30 <= int(real_cap) <= 1000):
-        env['BB_FPS_LIMIT'] = real_cap
+    if 'real_fps_limit' in s:
+        # Modern preferences are authoritative, including Auto. Legacy frame_cap
+        # is migrated by load_menu once, not reapplied on every subsequent launch.
+        env.pop('BB_FPS_LIMIT', None)
+        real_cap = str(s['real_fps_limit'])
+        if real_cap.isdecimal() and (real_cap == '0' or 30 <= int(real_cap) <= 1000):
+            env['BB_FPS_LIMIT'] = real_cap
     elif s['fps_mode'] == '75':
         env['BB_FPS_LIMIT'] = '75'
     elif s.get('frame_cap', ''):

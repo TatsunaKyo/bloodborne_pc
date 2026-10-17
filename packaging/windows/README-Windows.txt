@@ -17,7 +17,7 @@ Frames keeps the ordinary cap tied to real game frames and offers a separate gen
 
 Input, mods and online
 
-Keyboard fallback: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle, 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab left touchpad, Backspace right touchpad. Native mouse look/full remapping remain planned.
+Keyboard fallback: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle, 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab left touchpad, Backspace right touchpad. Input includes keyboard/controller remapping and native mouse look from the Supermedo integration.
 
 Mods & patches retains the original folder/mod-order and 1.09 XML patch support. Use each mod’s game-relative directories. Online co-op remains the inherited beta integration; its account settings live in Online co-op. Keep account details out of public reports.
 

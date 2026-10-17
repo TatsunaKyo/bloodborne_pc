@@ -39,6 +39,22 @@ int main() {
     s.frame_generation=FrameGenerationNativeDlss;s.startup_native_dlss=false;assert(EffectiveFrameLimit(120)==75);
     s.frame_gen_flip_limit=0;s.limit_generated_fps=false;
 
+    // Live provider changes must not retain a native FIFO cap or a stale MFG
+    // multiplier after FG is switched off, including a bridge switch awaiting restart.
+    for (int cap : {60,75,90,120}) {
+        for (int previous : {FrameGenerationFsr,FrameGenerationNvidia,
+                             FrameGenerationNativeFsr,FrameGenerationNativeDlss}) {
+            s.real_fps_limit=cap;s.frame_generation=previous;
+            s.frame_gen_flip_limit=30;s.frame_generation_active=4;s.frame_generation_cap_multiplier=4;
+            s.limit_generated_fps=true;s.generated_fps_limit=120;
+            s.frame_generation=FrameGenerationOff;
+            assert(EffectiveFrameLimit(120)==unsigned(cap));
+            s.frame_generation=FrameGenerationNativeDlss;s.startup_native_dlss=false;
+            assert(EffectiveFrameLimit(120)==unsigned(cap));
+        }
+    }
+    s.frame_gen_flip_limit=0;s.limit_generated_fps=false;
+
     const auto dir=std::filesystem::temp_directory_path()/
         ("bb-fps-test-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directory(dir);

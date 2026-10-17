@@ -6,6 +6,7 @@ import importlib
 import json
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -49,6 +50,22 @@ class Releases(unittest.TestCase):
                     'release_tag':'windows-v'+version, 'channel':'stable',
                     'executables':{name:hashlib.sha256(data[name]).hexdigest() for name in integrity.CORE},
                     'runtime_files':{name:hashlib.sha256(data[name]).hexdigest() for name in integrity.RUNTIMES+('bin/streamline/nvngx_dlss.dll','_internal/python314.dll')}}
+        base,revision=integrity.version_parts(version)
+        if (tuple(map(int,base.split('.'))),revision)>=((1,6),54):
+            data['launcher/bbport_launcher_win.py']=data['source/modified-files/launcher/bbport_launcher_win.py']
+            for name in ('patches/Bloodborne.xml','patches/redzone.json','scripts/patches.py'):
+                data[name]=b'current fixture'
+            identity['runtime_source_files']={name:hashlib.sha256(data[name]).hexdigest() for name in
+                ('run.py','launcher/bbport_launcher_win.py','scripts/patches.py','patches/Bloodborne.xml','patches/redzone.json')}
+            data['bin/bbport_dlss_native.dll']=pe()
+            data['bin/nvngx_dlssg.dll']=data['bin/streamline/nvngx_dlssg.dll']
+            identity['native_fg_runtime']={
+                'default_sr_bridge':{'file':'bin/bbport_dlss.dll','abi':1,
+                    'sha256':hashlib.sha256(data['bin/bbport_dlss.dll']).hexdigest()},
+                'native_fg_bridge':{'file':'bin/bbport_dlss_native.dll','abi':2,
+                    'sha256':hashlib.sha256(data['bin/bbport_dlss_native.dll']).hexdigest()},
+                'native_fg_feature':{'file':'bin/nvngx_dlssg.dll','same_bytes_as':'bin/streamline/nvngx_dlssg.dll',
+                    'sha256':hashlib.sha256(data['bin/nvngx_dlssg.dll']).hexdigest()}}
         if modify: modify(identity, data)
         data['BUILD-IDENTITY.json'] = json.dumps(identity).encode()
         path = self.root/integrity.package_name(version)
@@ -110,6 +127,40 @@ class Releases(unittest.TestCase):
         # Existing archives remain readable for recovery, without claiming that
         # the old broken layout is fit for another release.
         integrity.validate(self.package('1.6-tatsunakyo.39', modify=r39_omission))
+
+    def test_new_releases_require_and_verify_startup_sources(self):
+        version='1.6-tatsunakyo.54'
+        integrity.validate(self.package(version))
+        with self.assertRaisesRegex(ValueError,'Missing first-party runtime source provenance'):
+            integrity.validate(self.package(version,modify=lambda i,d:i.pop('runtime_source_files')))
+        with self.assertRaisesRegex(ValueError,'First-party runtime checksum mismatch: patches/Bloodborne.xml'):
+            integrity.validate(self.package(version,modify=lambda i,d:d.update({'patches/Bloodborne.xml':b'old revision'})))
+        with self.assertRaisesRegex(ValueError,'Missing native FG bridge provenance'):
+            integrity.validate(self.package(version,modify=lambda i,d:i.pop('native_fg_runtime')))
+
+    def test_every_startup_file_is_compared_with_git_even_if_self_hashes_match(self):
+        repo=self.root/'source';repo.mkdir()
+        tracked={'VERSION':b'54','run.py':b'launch',
+            'launcher/app.py':b'launcher','scripts/patches.py':b'new patch compiler',
+            'tools/input-plan.json':b'current input plan','patches/Bloodborne.xml':b'new FPS patch data',
+            'patches/redzone.json':b'new red-zone data','packaging/windows/bbport.menu.ini':b'new defaults'}
+        for name,data in tracked.items():
+            p=repo/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
+        subprocess.run(['git','init','-q'],cwd=repo,check=True)
+        subprocess.run(['git','add','.'],cwd=repo,check=True)
+        subprocess.run(['git','-c','user.name=Fixture','-c','user.email=fixture@example.invalid',
+                        'commit','-qm','fixture'],cwd=repo,check=True)
+        commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip()
+        layout=integrity.runtime_source_paths(repo,commit)
+        self.assertEqual(set(layout),{n.removeprefix('packaging/windows/') for n in tracked})
+        shipped={name:tracked[source] for name,source in layout.items()}
+        self.assertEqual(set(integrity.verify_runtime_sources(shipped.__getitem__,repo,commit)),set(shipped))
+        for name in ('patches/Bloodborne.xml','patches/redzone.json','scripts/patches.py','tools/input-plan.json'):
+            with self.subTest(name=name):
+                old=shipped[name];shipped[name]=b'old payload with a valid self-reported hash'
+                with self.assertRaisesRegex(ValueError,'Packaged runtime differs from source commit: '+name):
+                    integrity.verify_runtime_sources(shipped.__getitem__,repo,commit)
+                shipped[name]=old
 
     def test_dynamic_dlss_runtime_requires_matching_bytes_and_provenance(self):
         def mismatch(identity, data):

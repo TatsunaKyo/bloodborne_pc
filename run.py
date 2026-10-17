@@ -278,7 +278,8 @@ def main():
         if env.get('BB_AUTO_RENDER_RES') == '1':
             for key in ('BB_RENDER_RES', 'BB_OUTPUT_RES', 'BB_AUTO_RENDER_RES'):
                 env.pop(key, None)
-        fps = env.get('BB_FPS', 'uncap') if patched else '30'
+        requested_fps = env.get('BB_FPS', 'uncap')
+        fps = requested_fps if patched else '30'
         scaled_render = scaled_output = None
         if not env.get('BB_RENDER_RES'):
             printed = run_script('patches.py', '--print-scaled', '--settings', config, capture=True).split()
@@ -317,8 +318,16 @@ def main():
                    '--output-res', env.get('BB_OUTPUT_RES', ''),
                    '--patches-dir', env.get('BB_PATCHES_DIR', data / 'patches'),
                    '--patches-config', env.get('BB_PATCHES_CONFIG', data / 'patches.json'))
+        # A restart inherits this process's environment. Recompute a derived
+        # vblank when the selected timing patch changes; preserve explicit overrides.
+        if env.pop('BB_AUTO_VBLANK_HZ', None) == '1':
+            env.pop('BB_VBLANK_HZ', None)
         if not env.get('BB_VBLANK_HZ'):
             env['BB_VBLANK_HZ'] = {'uncap': '0', '90': '90'}.get(fps, '60')
+            env['BB_AUTO_VBLANK_HZ'] = '1'
+        env['BB_FPS'] = fps
+        print(f'Frame timing: requested {requested_fps}; applied {fps}; '
+              f'vblank {env["BB_VBLANK_HZ"]} Hz; real cap {env.get("BB_FPS_LIMIT", "auto")}')
 
         # The in-game restart starts this script again once this process is gone.
         # GPU caches (shaders, pipelines) beside the saves; read before main(), so set here.
