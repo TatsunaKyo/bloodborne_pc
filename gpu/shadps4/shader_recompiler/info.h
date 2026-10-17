@@ -44,23 +44,6 @@ struct InfoPersistent {
     SamplerResourceList samplers;
     FMaskResourceList fmasks;
 
-    struct UserDataMask {
-        void Set(IR::ScalarReg reg) noexcept {
-            mask |= 1 << static_cast<u32>(reg);
-        }
-
-        u32 Index(IR::ScalarReg reg) const noexcept {
-            const u32 reg_mask = (1 << static_cast<u32>(reg)) - 1;
-            return std::popcount(mask & reg_mask);
-        }
-
-        u32 NumRegs() const noexcept {
-            return std::popcount(mask);
-        }
-
-        u32 mask;
-    };
-    UserDataMask ud_mask{};
     u32 fetch_shader_sgpr_base{};
     u32 shared_memory_scratch_size{};
 
@@ -133,7 +116,7 @@ struct Info : InfoPersistent {
     bool has_discard{};
     bool has_image_gather{};
     bool has_image_query{};
-    bool has_readconst{};
+    bool has_flatbuf{};
     bool uses_buffer_atomic_float_min_max{};
     bool uses_image_atomic_float_min_max{};
     bool uses_lane_id{};
@@ -207,6 +190,16 @@ struct Info : InfoPersistent {
         return *reinterpret_cast<const T*>(&FlatUserData()[sharp_idx]);
     }
 
+    /// bbport: the table pointer in user data register ptr_index is null (see ReadUdReg).
+    bool UdPointerNull(u32 ptr_index) const noexcept {
+        if (ptr_index == IR::NumScalarRegs) {
+            return false;
+        }
+        u64 pointer;
+        std::memcpy(&pointer, &UserData()[ptr_index], sizeof(pointer));
+        return (pointer & 0xFFFFFFFFFFFFULL) < 0x10000;
+    }
+
     template <typename T>
     T ReadUdReg(u32 ptr_index, u32 dword_offset) const noexcept {
         T data;
@@ -215,26 +208,20 @@ struct Info : InfoPersistent {
         if (ptr_index != IR::NumScalarRegs) {
             std::memcpy(&base, &ud[ptr_index], sizeof(base));
             base = reinterpret_cast<const u32*>(VAddr(base) & 0xFFFFFFFFFFFFULL);
+            // bbport: some draws leave the table pointer null (the SRT walker meets the same
+            // loads at 0x0..0xc first). The GPU reads nothing there; here it crashed the game.
+            // A zero descriptor is a null buffer, which the callers skip.
+            if (VAddr(base) < 0x10000) {
+                return T{};
+            }
         }
         std::memcpy(&data, base + dword_offset, sizeof(T));
         return data;
     }
 
-    void PushUd(Backend::Bindings& bnd, PushData& push) const {
-        const auto ud = UserData();
-        u32 mask = ud_mask.mask;
-        while (mask) {
-            const u32 index = std::countr_zero(mask);
-            ASSERT(bnd.user_data < NUM_USER_DATA_REGS && index < NUM_USER_DATA_REGS);
-            mask &= ~(1U << index);
-            push.ud_regs[bnd.user_data++] = ud[index];
-        }
-    }
-
     void AddBindings(Backend::Bindings& bnd) const {
         bnd.buffer += buffers.size();
         bnd.unified += buffers.size() + images.size() + samplers.size();
-        bnd.user_data += ud_mask.NumRegs();
     }
 
     void RefreshFlatBuf() {

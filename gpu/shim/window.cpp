@@ -2,10 +2,13 @@
 // bbport: SDL3 window for the Vulkan swapchain (X11 or Wayland).
 #include <cstdlib>
 #include <cstring>
+#include <array>
 #include <SDL3/SDL.h>
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "sdl_window.h"
+#include "bbport_mouse.h"
+#include "bloodborne_cam.h"
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
 #include "bbport_background.h"
@@ -15,6 +18,14 @@
 #endif
 
 namespace Frontend {
+
+namespace {
+// MOU-007: each wheel step keeps its direction's bit set for 33 ms (shadPS4's pulse length,
+// ported so a config's mouse_movement_params tuning carries over); consecutive steps extend
+// it rather than stacking. One expiry timestamp per direction, window-thread only.
+constexpr uint32_t kWheelPulseMs = 33;
+std::array<uint64_t, 4> g_wheel_expiry_ms{}; // index: WHEEL_UP=0, DOWN=1, LEFT=2, RIGHT=3
+} // namespace
 
 WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}, height{height_} {
     // Gamepads are sampled by runtime_pad.c; their events are pumped here with the window's.
@@ -74,9 +85,12 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     height = h;
     RefreshFocusState();
     LOG_INFO(Frontend, "Window {}x{} on {}", w, h, driver);
+    BbMouse::Start();
 }
 
 WindowSDL::~WindowSDL() {
+    BbMouse::Stop();
+    Core::BloodborneCam::Instance().Shutdown();
     SDL_DestroyWindow(window);
 }
 
@@ -224,6 +238,90 @@ bool WindowSDL::PollEvents() {
     BbBackground::Update(is_open && !settings.window_focused &&
                          settings.background_mode == BbSettings::BackgroundPause);
     return is_open;
+}
+
+void WindowSDL::UpdateMouseCamera() {
+    Core::BloodborneCam& cam = Core::BloodborneCam::Instance();
+    const bool wanted = cam.IsConfigured() && mouse_mode_available.load(std::memory_order_relaxed) &&
+                        mouse_mode_on.load(std::memory_order_relaxed);
+    if (!wanted) {
+        cam_hook_failed = false; // F7/F8 retry after a failed attempt
+        if (cam.IsEnabled()) {
+            cam.SetEnabled(false);
+        }
+    } else if (!cam.IsEnabled() && !cam_hook_failed && mouse_captured_last) {
+        // Hooked once the game is actually being played (captured), F7 off unhooks so the
+        // stick/arrow keys drive the camera again.
+        cam_hook_failed = !cam.SetEnabled(true);
+    }
+    BbMouse::SetActive(mouse_captured_last && cam.IsEnabled());
+}
+
+bool WindowSDL::WantsMouseCapture() const {
+    // MOU-003: all of mouse mode on, window focused, menu closed, text dialog inactive.
+    // BbOverlay::CapturesInput() already covers both the menu and the text entry box.
+    return mouse_mode_on.load(std::memory_order_relaxed) && window_focused && !BbOverlay::CapturesInput();
+}
+
+void WindowSDL::UpdateMouseCapture() {
+    const bool wants = WantsMouseCapture();
+    if (wants == mouse_captured_last) {
+        return;
+    }
+    mouse_captured_last = wants;
+    SDL_SetWindowRelativeMouseMode(window, wants);
+    // Enabling relative mode hides the cursor by itself; disabling it does not document giving
+    // it back, so that side is made explicit here (SDL_ShowCursor is a no-op if already shown).
+    if (!wants) {
+        SDL_ShowCursor();
+    }
+    {
+        // MOU-005/MOU-007: leaving capture drops whatever motion/buttons/wheel accumulated so
+        // far -- a button still held when capture ends must never reach the pad as a press.
+        std::scoped_lock lock{mouse_mutex};
+        mouse.dx = mouse.dy = 0.0f;
+        mouse.buttons = 0;
+        mouse.wheel = 0;
+        mouse.captured = wants;
+    }
+    if (!wants) {
+        g_wheel_expiry_ms.fill(0);
+    }
+}
+
+void WindowSDL::TakeMouseInput(MouseInput& out) {
+    std::scoped_lock lock{mouse_mutex};
+    const uint64_t now = SDL_GetTicks();
+    mouse.wheel = 0;
+    for (size_t i = 0; i < g_wheel_expiry_ms.size(); ++i) {
+        if (g_wheel_expiry_ms[i] > now) mouse.wheel |= (1u << i);
+    }
+    out = mouse;
+    // Motion is drained (MOU-008: a delta is reported once, to the next sample only); held
+    // buttons are not -- a button still down stays down across calls until its SDL_EVENT_MOUSE_
+    // BUTTON_UP, same as SDL_GetMouseState would report. UpdateMouseCapture() is what clears
+    // buttons/wheel on the capture->uncaptured transition (MOU-005/MOU-007), not this function.
+    mouse.dx = mouse.dy = 0.0f;
+}
+
+void WindowSDL::ConfigureInput(bool mouse_mode_available_, int32_t toggle_scancode_, int32_t reload_scancode_) {
+    mouse_mode_available.store(mouse_mode_available_, std::memory_order_relaxed);
+    toggle_scancode.store(toggle_scancode_, std::memory_order_relaxed);
+    reload_scancode.store(reload_scancode_, std::memory_order_relaxed);
+    if (!mouse_mode_available_) {
+        // MOU-001: without mouse_to_joystick in input.ini, the mode does not exist; turning it
+        // off here also covers an F8 reload that removed the line while it was on.
+        mouse_mode_on.store(false, std::memory_order_relaxed);
+    } else if (!input_configured_once.exchange(true, std::memory_order_relaxed)) {
+        // MOU-002: "mode starts on" applies only to the very first load (game startup). A
+        // later F8 reload that keeps mouse_to_joystick present must not re-enable a mode the
+        // player turned off with the hotkey in between.
+        mouse_mode_on.store(true, std::memory_order_relaxed);
+    }
+}
+
+int WindowSDL::TakeInputReloadRequested() {
+    return reload_requested.exchange(false, std::memory_order_relaxed) ? 1 : 0;
 }
 
 } // namespace Frontend

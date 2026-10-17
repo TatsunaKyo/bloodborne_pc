@@ -10,6 +10,11 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 # Frame pointers keep the loader's thread dumps (watchdog, SIGUSR2 sampling) walkable.
 add_compile_options(-fno-omit-frame-pointer)
+if (MINGW)
+    # Headers newer libc++ no longer includes transitively (see the file).
+    add_compile_options(
+        "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include \"${CMAKE_CURRENT_SOURCE_DIR}/mingw_libcxx_compat.h\">")
+endif()
 
 # bbport: link-time optimization (BB_LTO, default on) and profile-guided optimization
 # (BB_PGO: off, generate = instrumented build writing into BB_PGO_DIR, use = build with that
@@ -126,6 +131,9 @@ add_host_shader(depth_resample.frag depth_resample_frag)
 add_host_shader(depth_resample.frag depth_stencil_resample_frag HAS_STENCIL=1)
 add_host_shader(depth_resample.frag depth_stencil_bits_frag STENCIL_BITS=1)
 add_host_shader(camera_motion.comp camera_motion_debug_comp DEBUG_OVERLAY=1)
+# Frame generation (vk_frame_generation.cpp): its depth input and the UI over generated frames.
+add_host_shader(frame_gen_inputs.comp frame_gen_inputs_comp)
+add_host_shader(frame_gen_ui.comp frame_gen_ui_comp)
 foreach(BPP IN ITEMS 8 16 32 64 96 128)
     add_host_shader(tiling.comp tiling_micro_${BPP}_comp BITS_PER_PIXEL=${BPP} IS_MACRO_TILED=0)
     add_host_shader(tiling.comp tiling_macro_${BPP}_comp BITS_PER_PIXEL=${BPP} IS_MACRO_TILED=1)
@@ -138,7 +146,7 @@ list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")
 set(COMMON
     shadps4/common/decoder.cpp shadps4/common/error.cpp
     shadps4/common/io_file.cpp shadps4/common/native_clock.cpp shadps4/common/number_utils.cpp
-    shadps4/common/path_util.cpp shadps4/common/rdtsc.cpp shadps4/common/spin_lock.cpp shadps4/common/recursive_lock.cpp
+    shadps4/common/path_util.cpp shadps4/common/rdtsc.cpp shadps4/common/slot_vector.cpp shadps4/common/spin_lock.cpp shadps4/common/recursive_lock.cpp
     shadps4/common/string_util.cpp shadps4/common/thread.cpp shadps4/common/signal_context.cpp
     shim/common/logging/log.cpp)
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
@@ -164,31 +172,42 @@ endif()
 if(WIN32)
     target_link_libraries(bbgpu PRIVATE wintrust crypt32)
 endif()
-# bbport co-op: PS4 network and PSN libraries with the shadNet client, from shadp2p
-# (github.com/Wozzardman/shadp2p, GPL-2.0), for private Bloodborne co-op servers.
+# bbport online: shadPS4 v.0.20.0's network, NP and shadNet sources (bbnet/vendor/shadps4,
+# 529ceb3, with bbnet/vendor-changes.diff) and The Hunter's Dream backend (bbnet/thd, from
+# droogie's bbhost), as Awaken (Awakenchan/BloodBorneButPc) put them together.
+# See bbnet/SHADNET-PORT.md.
 find_package(Protobuf CONFIG REQUIRED)
+set(BBNET_VENDOR "${CMAKE_CURRENT_SOURCE_DIR}/bbnet/vendor/shadps4")
 set(SHADNET_PROTO_OUT "${CMAKE_CURRENT_BINARY_DIR}/shadnet_proto_gen")
 file(MAKE_DIRECTORY "${SHADNET_PROTO_OUT}")
 add_custom_command(
     OUTPUT "${SHADNET_PROTO_OUT}/shadnet.pb.cc" "${SHADNET_PROTO_OUT}/shadnet.pb.h"
-    COMMAND protobuf::protoc "--proto_path=${CMAKE_CURRENT_SOURCE_DIR}/shadps4/shadnet"
-            "--cpp_out=${SHADNET_PROTO_OUT}" "${CMAKE_CURRENT_SOURCE_DIR}/shadps4/shadnet/shadnet.proto"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shadps4/shadnet/shadnet.proto")
-file(GLOB_RECURSE BBNET_SOURCES CONFIGURE_DEPENDS shadps4/core/libraries/network/*.cpp
-    shadps4/core/libraries/np/*.cpp shadps4/shadnet/*.cpp)
-# Trophies and the system dialogs stay in the C runtime; their shadPS4 versions need the
-# emulator's UI layers.
+    COMMAND protobuf::protoc "--proto_path=${BBNET_VENDOR}/shadnet"
+            "--cpp_out=${SHADNET_PROTO_OUT}" "${BBNET_VENDOR}/shadnet/shadnet.proto"
+    DEPENDS "${BBNET_VENDOR}/shadnet/shadnet.proto")
+file(GLOB_RECURSE BBNET_SOURCES CONFIGURE_DEPENDS
+    bbnet/vendor/shadps4/core/libraries/net/*.cpp bbnet/vendor/shadps4/core/libraries/network/*.cpp
+    bbnet/vendor/shadps4/core/libraries/np/*.cpp bbnet/vendor/shadps4/core/net/*.cpp
+    bbnet/vendor/shadps4/shadnet/*.cpp)
+# Trophies, commerce and the profile and Facebook dialogs stay in the C runtime.
 list(FILTER BBNET_SOURCES EXCLUDE REGEX
     "np_trophy|trophy_ui|np_sns_facebook_dialog|np_profile_dialog/|np_commerce/")
+file(GLOB BBNET_THD_SOURCES CONFIGURE_DEPENDS bbnet/thd/*.cpp)
 find_package(nlohmann_json CONFIG REQUIRED)
-add_library(bbnet STATIC ${BBNET_SOURCES} "${SHADNET_PROTO_OUT}/shadnet.pb.cc" bbnet/bbnet_glue.cpp)
-target_include_directories(bbnet PRIVATE shim shadps4 shadps4/shadnet "${SHADNET_PROTO_OUT}"
-    third_party/imgui third_party/httplib)
+add_library(bbnet STATIC ${BBNET_SOURCES} ${BBNET_THD_SOURCES} "${SHADNET_PROTO_OUT}/shadnet.pb.cc"
+    bbnet/bbnet_glue.cpp)
+target_include_directories(bbnet PRIVATE bbnet/include bbnet shim "${BBNET_VENDOR}"
+    "${BBNET_VENDOR}/shadnet" shadps4 "${SHADNET_PROTO_OUT}" third_party/imgui third_party/httplib)
 target_link_libraries(bbnet PRIVATE nlohmann_json::nlohmann_json)
 # HTTPS (the community game server only speaks TLS) and gzip replies in cpp-httplib.
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
 target_compile_definitions(bbnet PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT CPPHTTPLIB_ZLIB_SUPPORT)
+# OpenSSL verifies the server's chain (with the Windows ROOT and CA stores) and the host name.
+# cpp-httplib's second check on Windows rebuilt the chain from the leaf alone and could pick an
+# expired cross-signed "ISRG Root X2" from the user's intermediate store: "SSL server
+# verification failed" (error 10) for The Hunter's Dream on some PCs.
+target_compile_definitions(bbnet PRIVATE CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
 target_link_libraries(bbnet PRIVATE OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
 if (WIN32)
     target_sources(bbnet PRIVATE third_party/wepoll/wepoll.c)
@@ -206,7 +225,7 @@ target_link_libraries(bbnet PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic
 if (WIN32)
     target_compile_definitions(bbnet PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
     target_compile_options(bbnet PRIVATE
-        $<$<COMPILE_LANGUAGE:CXX>:-include ${CMAKE_CURRENT_SOURCE_DIR}/shim/bb_win_compat.h>)
+        $<$<COMPILE_LANGUAGE:CXX>:-include ${CMAKE_CURRENT_SOURCE_DIR}/bbnet/include/bb_win_compat.h>)
     target_link_libraries(bbnet PUBLIC ws2_32 iphlpapi bcrypt crypt32)
 endif()
 target_link_libraries(bbgpu PUBLIC bbnet)
@@ -255,6 +274,14 @@ if (WIN32)
         ../packaging/windows/bb-probe.rc)
     set_target_properties(bb-probe PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
     target_compile_options(bb-probe PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
+    # Clang 23 added -Wunused-but-set-global (on with -Wall): the runtime keeps a few
+    # set-only state flags (e.g. common_initialized), so it stays a warning there.
+    include(CheckCCompilerFlag)
+    check_c_compiler_flag(-Wno-error=unused-but-set-global BB_HAS_UNUSED_SET_GLOBAL)
+    if (BB_HAS_UNUSED_SET_GLOBAL)
+        target_compile_options(bb-probe PRIVATE
+            $<$<COMPILE_LANGUAGE:C>:-Wno-error=unused-but-set-global>)
+    endif()
     target_include_directories(bb-probe PRIVATE .. ../src)
     target_link_libraries(bb-probe PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
     # The PS4 range (64 GiB - 1 TiB) must stay free: no high-entropy ASLR for heaps and stacks.
@@ -279,6 +306,10 @@ add_executable(shader-cache-test EXCLUDE_FROM_ALL ../tests/test_shader_cache.cpp
 target_include_directories(shader-cache-test BEFORE PRIVATE ../tests/cache_stubs shadps4)
 target_compile_options(shader-cache-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_link_libraries(shader-cache-test PRIVATE miniz::miniz)
+add_executable(command-buffer-test EXCLUDE_FROM_ALL ../tests/test_command_buffers.cpp)
+target_compile_options(command-buffer-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_include_directories(command-buffer-test PRIVATE ..)
+
 add_executable(motion-history-test EXCLUDE_FROM_ALL ../tests/test_motion_history.cpp)
 add_executable(temporal-history-test EXCLUDE_FROM_ALL ../tests/test_temporal_history.cpp)
 target_include_directories(temporal-history-test PRIVATE ..)

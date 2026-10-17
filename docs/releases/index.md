@@ -2,6 +2,16 @@
 
 Revision 23 is the latest published stable release, with Support Report and Save Manager. Revision 24 begins the next renderer work with safer shader-cache loading and complete cache-write draining at shutdown. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
 
+- [Revision 52 — renderer 0.20.1, stable cache storage and texture retention (preview)](windows-v1.6-tatsunakyo.52.md)
+- [Revision 51 — direct vertex upload footprints and complete timeline export (preview)](windows-v1.6-tatsunakyo.51.md)
+- [Revision 50 — source-range dependencies and issue-time copy fences (preview)](windows-v1.6-tatsunakyo.50.md)
+- [Revision 49 — ordered Windows write-watch installation (preview)](windows-v1.6-tatsunakyo.49.md)
+- [Revision 48 — resident buffer upload batching (preview)](windows-v1.6-tatsunakyo.48.md)
+- [Revision 47 — first-use resource tracking and instance identity (preview)](windows-v1.6-tatsunakyo.47.md)
+- [Revision 46 — sparse backing reuse and cold write watches (preview)](windows-v1.6-tatsunakyo.46.md)
+- [Revision 45 — renderer investigation and frame-path attribution (preview)](windows-v1.6-tatsunakyo.45.md)
+- [Revision 44 — draw snapshots and renderer contention (preview)](windows-v1.6-tatsunakyo.44.md)
+- [Revision 43 — camera guides and renderer synchronization (preview)](windows-v1.6-tatsunakyo.43.md)
 - [Revision 42 — reusable motion shaders and FG queue ownership (preview)](windows-v1.6-tatsunakyo.42.md)
 - [Revision 41 — streaming invalidation and frame path waits (preview)](windows-v1.6-tatsunakyo.41.md)
 - [Revision 40 — restore DLSS dynamic search paths (preview)](windows-v1.6-tatsunakyo.40.md)

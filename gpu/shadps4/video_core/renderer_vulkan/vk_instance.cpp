@@ -21,7 +21,22 @@
 
 #include <vk_mem_alloc.h>
 
+#include <atomic>
+#include <cstdio>
+
 namespace Vulkan {
+
+void NoteOverBudget(const char* what) {
+    static std::atomic<bool> image_noted{false}, buffer_noted{false};
+    auto& noted = what[0] == 'i' ? image_noted : buffer_noted;
+    if (!noted.exchange(true)) {
+        std::printf("GPU: video memory full: %s memory allocated past the driver's budget (the driver "
+                    "may keep it in system memory: slower, but the game goes on). A lower output "
+                    "resolution or upscaler preset needs less.\n",
+                    what);
+        std::fflush(stdout);
+    }
+}
 
 namespace {
 
@@ -298,6 +313,7 @@ bool Instance::CreateDevice() {
     }
 #endif
     maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
+    maintenance_6 = add_extension(VK_KHR_MAINTENANCE_6_EXTENSION_NAME);
     maintenance_8 = add_extension(VK_KHR_MAINTENANCE_8_EXTENSION_NAME);
     attachment_feedback_loop = add_extension(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
     if (attachment_feedback_loop) {
@@ -320,7 +336,10 @@ bool Instance::CreateDevice() {
     depth_clip_control = add_extension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
     depth_clip_enable = add_extension(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
     vertex_input_dynamic_state = add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
-    list_restart = add_extension(VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME);
+    // Games excessively leave restart enabled with lists when it isn't actually needed, and it
+    // slows down KosmicKrisp due to unrolling. Revisit if KosmicKrisp moves this to mesh shaders.
+    list_restart = driver_id != vk::DriverId::eMesaKosmickrisp &&
+                   add_extension(VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME);
     if (list_restart) {
         list_restart_features =
             feature_chain.get<vk::PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT>();
@@ -548,6 +567,9 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceMaintenance5FeaturesKHR{
             .maintenance5 = true,
         },
+        vk::PhysicalDeviceMaintenance6FeaturesKHR{
+            .maintenance6 = true,
+        },
         vk::PhysicalDeviceMaintenance8FeaturesKHR{
             .maintenance8 = true,
         },
@@ -619,6 +641,9 @@ bool Instance::CreateDevice() {
     }
     if (!maintenance_5) {
         device_chain.unlink<vk::PhysicalDeviceMaintenance5FeaturesKHR>();
+    }
+    if (!maintenance_6) {
+        device_chain.unlink<vk::PhysicalDeviceMaintenance6FeaturesKHR>();
     }
     if (!maintenance_8) {
         device_chain.unlink<vk::PhysicalDeviceMaintenance8FeaturesKHR>();
@@ -719,8 +744,17 @@ void Instance::CreateAllocator() {
         .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr,
     };
 
+    // bbport: with VK_EXT_memory_budget VMA's budget checks (WITHIN_BUDGET) use the driver's
+    // usage, which counts the buffer cache's guest memory backing (allocated directly, not
+    // through VMA). Without it VMA only counted its own allocations against 80% of VRAM: on
+    // 4 GB cards textures filled VRAM next to 2-3 GB of backing, and the next area's backing
+    // found no room ("ErrorOutOfDeviceMemory"; on NVIDIA it can only be in VRAM).
+    VmaAllocatorCreateFlags allocator_flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    if (supports_memory_budget) {
+        allocator_flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+    }
     const VmaAllocatorCreateInfo allocator_info = {
-        .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+        .flags = allocator_flags,
         .physicalDevice = physical_device,
         .device = *device,
         .pVulkanFunctions = &functions,
@@ -751,6 +785,20 @@ void Instance::CollectDeviceParameters() {
     const std::string api_version = GetReadableVersion(properties.apiVersion);
     const std::string extensions = fmt::format("{}", fmt::join(available_extensions, ", "));
 
+    // bbport: the GPU, its VRAM and the driver in every log (LOG_INFO is filtered out by
+    // default), flushed so it is there even if the device is lost right after. Idea from
+    // parsifal295 (PR #61).
+    u64 vram = 0;
+    const auto heaps = physical_device.getMemoryProperties();
+    for (u32 i = 0; i < heaps.memoryHeapCount; ++i) {
+        if (heaps.memoryHeaps[i].flags & vk::MemoryHeapFlagBits::eDeviceLocal) {
+            vram = std::max<u64>(vram, heaps.memoryHeaps[i].size);
+        }
+    }
+    std::printf("GPU: %s%s, %llu MiB VRAM, driver %s (%s), Vulkan %s\n", model_name.c_str(),
+                IsIntegrated() ? " (integrated)" : "", static_cast<unsigned long long>(vram >> 20),
+                driver_name.c_str(), driver.driverInfo.data(), api_version.c_str());
+    std::fflush(stdout);
     LOG_INFO(Render_Vulkan, "GPU_Vendor: {}", vendor_name);
     LOG_INFO(Render_Vulkan, "GPU_Model: {}", model_name);
     LOG_INFO(Render_Vulkan, "GPU_Integrated: {}", IsIntegrated() ? "Yes" : "No");
@@ -799,7 +847,7 @@ void Instance::CollectPhysicalMemoryInfo() {
     // Leave at least 8 GB for the system on integrated GPUs.
     const s64 available_memory = static_cast<s64>(total_memory_budget - device_initial_usage);
     total_memory_budget =
-        static_cast<u64>(std::max<s64>(available_memory - 8_GB, static_cast<s64>(local_memory)));
+        static_cast<u64>(std::max<s64>(available_memory - 8_GB, static_cast<s64>(2_GB)));
 }
 
 void Instance::CollectImageFormatInfo() {

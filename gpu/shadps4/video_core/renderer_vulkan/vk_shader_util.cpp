@@ -6,14 +6,22 @@
 #include "common/assert.h"
 #include "common/cache_blob.h"
 #include "shader_recompiler/motion_address.h"
+#include "shader_recompiler/push_data_upgrade.h"
 
 namespace Vulkan {
+std::shared_mutex& DriverCacheMutex() { static auto* mutex = new std::shared_mutex; return *mutex; }
 
 vk::ShaderModule CompileSPV(std::span<const u32> code, vk::Device device,
                             bool preloading) {
   if (preloading && !Storage::Blob::WellFormedSpirv(code)) {
     throw CacheLoadError("Malformed cached SPIR-V");
   }
+  std::vector<u32> upgraded;
+  if (!Shader::PushLayout::Upgrade(code, upgraded)) {
+    if (preloading) throw CacheLoadError("Malformed cached push layout");
+    ASSERT_MSG(false, "Malformed push layout");
+  }
+  if (!upgraded.empty()) code = upgraded;
   std::vector<u32> linked;
   const auto result = Shader::MotionAddress::Link(code, linked);
   if (result == Shader::MotionAddress::Result::Invalid) {

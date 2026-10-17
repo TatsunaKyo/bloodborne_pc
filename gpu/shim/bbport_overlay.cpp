@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cfloat>
 #include <chrono>
+#include <string>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -545,15 +546,24 @@ void FrameSettings() {
     Hint(Text("Requires Apply and restart. Only the selected RTX 20/30 can load the isolated mod; RTX 40/50 keep the original NVIDIA path. Vulkan support is experimental. The launcher prepares the provider on restart.",
               "Нужны применение и перезапуск. Изолированный мод загружается только для выбранной RTX 20/30; RTX 40/50 используют исходный путь NVIDIA. Vulkan экспериментален. Лаунчер подготовит мод при перезапуске."));
     if (const char* status=s.nvidia_fg_mod_status) ImGui::TextWrapped("DLSSG: %s",status);
-    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG"};
-    const int fg=std::clamp(s.frame_generation.load(),0,2);
+    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG","FSR FG - Supermedo (SDR)","DLSS FG - Supermedo (SDR, restart)"};
+    const int fg=std::clamp(s.frame_generation.load(),0,4);
     if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
-        for (int i=0;i<3;++i) {
-            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported && !s.nvidia_fg_mod)));
+        for (int i=0;i<5;++i) {
+            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported && !s.nvidia_fg_mod && !s.startup_native_dlss)));
             if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
             ImGui::EndDisabled();
         }
         ImGui::EndCombo();
+    }
+    if (s.startup_native_dlss != (s.frame_generation==BbSettings::FrameGenerationNativeDlss))
+        ImGui::TextWrapped("Apply and restart to switch between the native DLSS bridge and Streamline.");
+    if (s.frame_generation>=BbSettings::FrameGenerationNativeFsr) {
+        ImGui::TextWrapped("Supermedo native FG uses SDR output. HDR retains the existing providers.");
+        int multiplier=s.frame_gen_multiplier;
+        if(ImGui::SliderInt("Native FG multiplier###frame_gen_multiplier",&multiplier,2,4,"%dx")) Store(s.frame_gen_multiplier,multiplier,true);
+        Checkbox("Fit native FG to display###frame_gen_fit_display",s.frame_gen_fit_display);
+        if(const char* message=s.frame_gen_problem)ImGui::TextWrapped("Native FG: %s",message);
     }
     if (s.frame_generation==BbSettings::FrameGenerationNvidia) {
         const int fg_preset=std::clamp(s.nvidia_fg_preset.load(),0,3);
@@ -1113,7 +1123,7 @@ void FpsCounter() {
         const int active=s.frame_generation_active;
         if (s.frame_generation==BbSettings::FrameGenerationOff) append("FG:off");
         else {
-            const char* mode=s.frame_generation==BbSettings::FrameGenerationNvidia ? "NV" : "FSR";
+            const char* mode=(s.frame_generation==BbSettings::FrameGenerationNvidia || s.frame_generation==BbSettings::FrameGenerationNativeDlss) ? "NV" : "FSR";
             if (active>1) std::snprintf(detail,sizeof(detail),"FG:%s%dx",mode,active);
             else std::snprintf(detail,sizeof(detail),"FG:%s wait",mode);
             append(detail);
@@ -1389,6 +1399,26 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (ms > 0.0f && ms < 1000.0f) {
         frame_ms_avg = frame_ms_avg == 0.0f ? ms : frame_ms_avg * 0.95f + ms * 0.05f;
     }
+    // BB_FPS_LOG=1: presents per second and the slowest frame, every 5 seconds (test runs).
+    static const bool fps_log = [] {
+        const char* env = std::getenv("BB_FPS_LOG");
+        return env && env[0] == '1';
+    }();
+    if (fps_log) {
+        static auto window_start = now;
+        static int frames = 0;
+        static float worst = 0.0f;
+        ++frames;
+        worst = std::max(worst, ms < 1000.0f ? ms : 0.0f);
+        const float elapsed = std::chrono::duration<float>(now - window_start).count();
+        if (elapsed >= 5.0f) {
+            std::printf("Frame rate: %.1f FPS, slowest frame %.1f ms\n", frames / elapsed, worst);
+            window_start = now;
+            frames = 0;
+            worst = 0.0f;
+        }
+    }
+
     if (!Visible()) {
         return;
     }

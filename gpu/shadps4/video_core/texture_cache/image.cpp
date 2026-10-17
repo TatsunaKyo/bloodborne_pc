@@ -4,6 +4,7 @@
 #include "bbport_toggles.h"
 #include "bbport_hitch.h"
 #include <ranges>
+#include <memory>
 #include "common/assert.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -20,6 +21,45 @@ using namespace Vulkan;
 
 Common::IncrementalIdProvider<u64> Image::global_image_uid{};
 
+namespace {
+
+/// bbport: discrete GPUs: the memory types outside VRAM, when VRAM is within `reserve` of the
+/// driver's budget; 0 otherwise. The buffer cache backs guest memory in VRAM as areas load, and
+/// on NVIDIA that backing cannot go anywhere else: textures made near the limit go to system
+/// memory instead (slower, but the next area still finds room; ErrorOutOfDeviceMemory on 4 GB
+/// cards otherwise). Integrated GPUs (Steam Deck) keep their own rules.
+u32 SystemMemoryTypesNearVramLimit(VmaAllocator allocator) {
+    const VkPhysicalDeviceProperties* device{};
+    vmaGetPhysicalDeviceProperties(allocator, &device);
+    if (device->deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+        return 0;
+    }
+    const VkPhysicalDeviceMemoryProperties* memory{};
+    vmaGetMemoryProperties(allocator, &memory);
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
+    vmaGetHeapBudgets(allocator, budgets);
+    bool near_limit = false;
+    for (u32 heap = 0; heap < memory->memoryHeapCount; ++heap) {
+        if (memory->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+            const u64 reserve = std::min<u64>(512ull << 20, memory->memoryHeaps[heap].size / 8);
+            near_limit |= budgets[heap].usage + reserve > budgets[heap].budget;
+        }
+    }
+    if (!near_limit) {
+        return 0;
+    }
+    u32 types = 0;
+    for (u32 type = 0; type < memory->memoryTypeCount; ++type) {
+        const u32 heap = memory->memoryTypes[type].heapIndex;
+        if (!(memory->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)) {
+            types |= 1u << type;
+        }
+    }
+    return types;
+}
+
+} // namespace
+
 static vk::ImageUsageFlags ImageUsageFlags(const Vulkan::Instance& instance,
                                            const ImageInfo& info) {
     vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eTransferSrc |
@@ -35,8 +75,10 @@ static vk::ImageUsageFlags ImageUsageFlags(const Vulkan::Instance& instance,
             }
             // Always create images with storage flag to avoid needing re-creation in case of e.g
             // compute clears This sacrifices a bit of performance but is less work. ExtendedUsage
-            // flag is also used.
-            usage |= vk::ImageUsageFlagBits::eStorage;
+            // flag is also used. The exception here is for multisample images when storage is not
+            // supported, where even with ExtendedUsage we may get only one supported sample back.
+            if (info.num_samples == 1 || instance.IsMultisampleStorageImageSupported())
+                usage |= vk::ImageUsageFlagBits::eStorage;
         }
     } else {
         // Similarly to above, we specify storage usage. This is typically not supported by
@@ -52,10 +94,10 @@ static vk::ImageType ConvertImageType(AmdGpu::ImageType type) noexcept {
     switch (type) {
     case AmdGpu::ImageType::Color1D:
     case AmdGpu::ImageType::Color1DArray:
-        return vk::ImageType::e1D;
     case AmdGpu::ImageType::Color2D:
     case AmdGpu::ImageType::Color2DMsaa:
     case AmdGpu::ImageType::Color2DArray:
+    case AmdGpu::ImageType::Cube:
         return vk::ImageType::e2D;
     case AmdGpu::ImageType::Color3D:
         return vk::ImageType::e3D;
@@ -104,7 +146,7 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     BbHitch::Scope hitch{"Vulkan image allocation"};
     this->image_ci = image_ci;
     ASSERT(!image);
-    const VmaAllocationCreateInfo alloc_ci = {
+    VmaAllocationCreateInfo alloc_ci = {
         .flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
         .requiredFlags = 0,
@@ -116,8 +158,29 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     const VkImageCreateInfo image_ci_unsafe = static_cast<VkImageCreateInfo>(image_ci);
     VkImage unsafe_image{};
     VmaAllocationInfo alloc_info{};
-    VkResult result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
-                                     &allocation, &alloc_info);
+    VkResult result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    if (const u32 system_types = SystemMemoryTypesNearVramLimit(allocator)) {
+        VmaAllocationCreateInfo system = alloc_ci;
+        system.memoryTypeBits = system_types;
+        result = vmaCreateImage(allocator, &image_ci_unsafe, &system, &unsafe_image, &allocation,
+                                &alloc_info);
+        if (result == VK_SUCCESS) {
+            Vulkan::NoteOverBudget("image");
+        }
+    }
+    if (result != VK_SUCCESS) {
+        result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
+                                &allocation, &alloc_info);
+    }
+    if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
+        // bbport: VRAM full (6 GB cards, high resolutions). Past the budget the driver keeps the
+        // image in system memory, which is slower but no crash.
+        Vulkan::NoteOverBudget("image");
+        VmaAllocationCreateInfo over_budget = alloc_ci;
+        over_budget.flags &= ~VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT;
+        result = vmaCreateImage(allocator, &image_ci_unsafe, &over_budget, &unsafe_image,
+                                &allocation, &alloc_info);
+    }
     ASSERT_MSG(result == VK_SUCCESS, "Failed allocating image with error {}",
                vk::to_string(vk::Result{result}));
     image = vk::Image{unsafe_image};
@@ -134,7 +197,6 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     }
 
     image_uid = global_image_uid.Next();
-    mip_hashes.resize(info.resources.levels);
     vk::ImageCreateFlags flags{vk::ImageCreateFlagBits::eMutableFormat |
                                vk::ImageCreateFlagBits::eExtendedUsage};
     if (info.props.is_volume) {
@@ -235,7 +297,7 @@ ImageView& Image::FindView(const ImageViewInfo& view_info, bool ensure_guest_sam
         const auto view_id = backing->image_view_ids[backing->last_view];
         return (*slot_image_views)[view_id];
     }
-    const auto view_id = slot_image_views->insert(runtime->GetInstance(), view_info, *this);
+    const auto view_id = slot_image_views->Insert(runtime->GetInstance(), view_info, *this);
     backing->image_view_infos.emplace_back(view_info);
     backing->image_view_ids.emplace_back(view_id);
     return (*slot_image_views)[view_id];
@@ -261,19 +323,16 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
         // In case of partial transition, we need to change the specified subresources only.
         // Otherwise all subresources need to be set to the same state so we can use a full
         // resource transition for the next time.
-        const auto mips =
-            needs_partial_transition
-                ? std::ranges::views::iota(subres_range->base.level,
-                                           subres_range->base.level + subres_range->extent.levels)
-                : std::views::iota(0u, info.resources.levels);
-        const auto layers =
-            needs_partial_transition
-                ? std::ranges::views::iota(subres_range->base.layer,
-                                           subres_range->base.layer + subres_range->extent.layers)
-                : std::views::iota(0u, info.resources.layers);
-
-        for (u32 mip : mips) {
-            for (u32 layer : layers) {
+        const u32 start_mip = needs_partial_transition ? subres_range->base.level : u16{0};
+        const u32 end_mip = needs_partial_transition
+                                ? subres_range->base.level + subres_range->extent.levels
+                                : info.resources.levels;
+        const u32 start_layer = needs_partial_transition ? subres_range->base.layer : u16{0};
+        const u32 end_layer = needs_partial_transition
+                                  ? subres_range->base.layer + subres_range->extent.layers
+                                  : info.resources.layers;
+        for (u32 mip = start_mip; mip < end_mip; ++mip) {
+            for (u32 layer = start_layer; layer < end_layer; ++layer) {
                 // NOTE: these loops may produce a lot of small barriers.
                 // If this becomes a problem, we can optimize it by merging adjacent barriers.
                 const auto subres_idx = mip * info.resources.layers + layer;
@@ -321,7 +380,6 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
         if (last_state.layout == dst_layout && last_state.access_mask == dst_mask && !is_write) {
             return;
         }
-
         barriers.emplace_back(vk::ImageMemoryBarrier2{
             .srcStageMask = last_state.pl_stage,
             .srcAccessMask = last_state.access_mask,

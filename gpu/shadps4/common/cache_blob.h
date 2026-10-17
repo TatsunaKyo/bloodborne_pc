@@ -16,8 +16,8 @@ inline constexpr std::array<u8, 8> Magic{'C', 'W', 'C', 'A',
 inline constexpr size_t HeaderSize = 32;
 
 constexpr size_t PayloadLimit(u32 kind) {
-  constexpr std::array<size_t, 4> limits{4 * 1024 * 1024, 32 * 1024 * 1024,
-                                         4 * 1024 * 1024, 64 * 1024};
+  constexpr std::array<size_t, 5> limits{4 * 1024 * 1024, 32 * 1024 * 1024,
+                                         4 * 1024 * 1024, 64 * 1024, 256 * 1024 * 1024};
   return kind < limits.size() ? limits[kind] : 0;
 }
 

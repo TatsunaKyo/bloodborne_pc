@@ -63,6 +63,8 @@ constexpr std::string GetBlobFileExtension(BlobType type) {
     return "spv";
   case BlobType::PipelineKey:
     return "key";
+  case BlobType::PipelineBinary:
+    return "vkp";
   case BlobType::ShaderProfile:
     return "bin";
   default:
@@ -111,6 +113,18 @@ void DataBase::Open() {
   }
   io_worker = std::jthread{ProcessIO};
   opened = true;
+}
+
+void DataBase::Flush() {
+  auto done = std::make_shared<std::promise<void>>();
+  auto ready = done->get_future();
+  {
+    std::scoped_lock lock{request_mutex};
+    if (!accepting_requests) return;
+    req_queue.emplace([done] { done->set_value(); });
+  }
+  request_cv.notify_one();
+  ready.get();
 }
 
 void DataBase::Close() {

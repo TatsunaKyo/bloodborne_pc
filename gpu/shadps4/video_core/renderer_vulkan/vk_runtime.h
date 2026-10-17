@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include "common/interval_set.h"
 #include "common/types.h"
 #include "video_core/buffer_cache/buffer.h"
-#include "video_core/renderer_vulkan/vk_barrier_tracker.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/texture_cache/image.h"
 #include "video_core/texture_cache/types.h"
@@ -112,24 +112,23 @@ public:
 private:
     void (*image_access_hook)(void*) = nullptr;
     void* image_access_context = nullptr;
+    void MakeCurrent(const VideoCore::Buffer* handle);
+
+private:
     const Instance& instance;
     Scheduler& scheduler;
     std::unique_ptr<VideoCore::BlitHelper> blit_helper;
     StagingBufferPool staging_pool;
-    BarrierTracker barrier_tracker;
+    struct BufferBarriers {
+        const VideoCore::Buffer* handle;
+        using AccessList = IntervalList<Interval>;
+        AccessList read_ranges;
+        AccessList write_ranges;
+    };
+    BufferBarriers* resource{};
+    std::vector<BufferBarriers> resources;
     VideoCore::Image::Barriers image_barriers;
     vk::MemoryBarrier2 memory_barrier{};
-    // bbport: ranges inserted into barrier_tracker since its last Clear(); re-inserting a
-    // contained range is a no-op, and draws re-bind the same ranges constantly.
-    struct AccessMemo {
-        u64 resource;
-        u64 start;
-        u64 end;
-        u32 epoch;
-        u32 access;
-    };
-    std::array<AccessMemo, 512> access_memo{};
-    u32 access_epoch = 1;
 };
 
 } // namespace Vulkan

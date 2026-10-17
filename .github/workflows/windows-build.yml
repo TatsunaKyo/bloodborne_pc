@@ -60,11 +60,15 @@ jobs:
         env:
           RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
+          set -euo pipefail
           "$WINPYTHON" -m pip install PyInstaller==6.19.0 Pillow==12.3.0
           "$WINPYTHON" tests/test_launcher_updates.py out/pyi-dist/Bloodborne/Bloodborne.exe
           "$WINPYTHON" tests/test_launcher_window_settings.py out/pyi-dist/Bloodborne/Bloodborne.exe
           "$WINPYTHON" tests/test_launcher_startup.py out/pyi-dist/Bloodborne/Bloodborne.exe
           "$WINPYTHON" tools/assemble_windows.py --baseline out/dependencies/runtime-baseline.zip --dll-dir "$(cygpath -w /clang64/bin)" --channel "$RELEASE_CHANNEL"
+          for package in dist/*.zip; do
+            "$WINPYTHON" tests/test_packaged_startup.py --package "$package" --compiled
+          done
       - name: Upload the single package and checksum
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

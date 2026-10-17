@@ -115,6 +115,7 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
         .stage = shader_ci,
         .layout = *pipeline_layout,
     };
+    std::shared_lock driver_lock{DriverCacheMutex()};
     auto [pipeline_result, pipe] =
         instance.GetDevice().createComputePipelineUnique(pipeline_cache, compute_pipeline_ci);
     if (preloading && pipeline_result != vk::Result::eSuccess) {

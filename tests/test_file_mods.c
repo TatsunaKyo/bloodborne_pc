@@ -2,6 +2,8 @@
 #include "../src/runtime_file.c"
 void runtime_memory_prepare_io_write(uintptr_t address,uint64_t size) {(void)address;(void)size;}
 #include <assert.h>
+#include <sys/wait.h>
+void runtime_quit_on_open(const char *guest) {(void)guest;}
 static int32_t guest_errno;
 int32_t *runtime_errno(void) { return &guest_errno; }
 int32_t runtime_guest_errno(int e) { return e; }
@@ -46,6 +48,20 @@ int main(void) {
     int save=(int)do_open("/data/test-save",0x202,0644); assert(save>=3);
     assert(do_write(save,"save",4)==4 && !do_close(save));
     assert(!path_op("/data/test-save",2,0));
+    char savedir[512],state[1024];snprintf(savedir,sizeof(savedir),"%s/savedata",root);
+    assert(!mkdir(savedir,0755));snprintf(state,sizeof(state),"%s/state",savedir);
+    assert(!runtime_file_mount("/savedata0",savedir));
+    FILE *seed=fopen(state,"wb");assert(seed);assert(fwrite("old-safe",1,8,seed)==8);assert(!fclose(seed));
+    int atomic=(int)do_open("/savedata0/state",2|0x400,0644);assert(atomic>=3);assert(do_write(atomic,"next",4)==4);
+    char check[16]={0};seed=fopen(state,"rb");assert(seed&&fread(check,1,15,seed)==8&&!memcmp(check,"old-safe",8));fclose(seed);
+    assert(!do_close(atomic));seed=fopen(state,"rb");memset(check,0,sizeof(check));assert(seed&&fread(check,1,15,seed)==4&&!memcmp(check,"next",4));fclose(seed);
+    pid_t child=fork();assert(child>=0);
+    if(!child){int fd=(int)do_open("/savedata0/state",2|0x400,0644);if(fd<3||do_write(fd,"incomplete",10)!=10)_exit(2);_exit(0);}
+    int status=0;assert(waitpid(child,&status,0)==child&&WIFEXITED(status)&&WEXITSTATUS(status)==0);
+    runtime_file_unmount("/savedata0");assert(!runtime_file_mount("/savedata0",savedir));
+    seed=fopen(state,"rb");memset(check,0,sizeof(check));assert(seed&&fread(check,1,15,seed)==4&&!memcmp(check,"next",4));fclose(seed);
+    runtime_file_unmount("/savedata0");assert(!unlink(state)&&!rmdir(savedir));
+    puts("Atomic saves: original kept while writing and after interrupted process; completed save committed; stale temp cleaned PASS");
     assert(!unlink(link) && !unlink(source) && !rmdir(game));
     const char *dirs[]={"temp0","download0","data"};
     for (int i=0;i<3;++i) { char p[1024]; snprintf(p,sizeof(p),"%s/%s",user,dirs[i]); assert(!rmdir(p)); }

@@ -20,6 +20,14 @@
 #endif
 
 namespace BbSettings {
+const char* FrameGenName(int mode) { return mode==FrameGenFsr3 ? "fsr3" : mode==FrameGenDlss ? "dlss" : "off"; }
+int NativeProvider() {
+    const auto& s = Get();
+    const int mode=s.frame_generation;
+    if (!s.startup_native_dlss && mode==FrameGenerationNativeDlss) return FrameGenOff;
+    return mode==FrameGenerationNativeFsr ? FrameGenFsr3 : mode==FrameGenerationNativeDlss ? FrameGenDlss : FrameGenOff;
+}
+
 unsigned EffectiveFrameLimit(unsigned foreground_limit) {
     const auto& s = Get();
     const int requested = s.real_fps_limit;
@@ -28,8 +36,14 @@ unsigned EffectiveFrameLimit(unsigned foreground_limit) {
     if (s.window_focused || s.background_mode == BackgroundRun) {
         // The ordinary limit counts real game flips. Only an explicitly enabled
         // display cap may reduce that rate to account for generated frames.
-        const unsigned multiplier=unsigned(std::max(1,s.frame_generation==FrameGenerationNvidia ?
-            s.frame_generation_cap_multiplier.load() : s.frame_generation_active.load()));
+        if (s.frame_gen_flip_limit > 0 && NativeProvider()!=FrameGenOff) {
+            const unsigned cap=unsigned(s.frame_gen_flip_limit.load());
+            foreground_limit=foreground_limit ? std::min(foreground_limit,cap) : cap;
+        }
+        const bool native_mode=s.frame_generation>=FrameGenerationNativeFsr;
+        const unsigned multiplier=s.frame_generation==FrameGenerationOff || (native_mode && NativeProvider()==FrameGenOff) ? 1u :
+            unsigned(std::max(1,s.frame_generation==FrameGenerationNvidia ?
+                s.frame_generation_cap_multiplier.load() : s.frame_generation_active.load()));
         if (s.limit_generated_fps && multiplier>1) {
             const unsigned real_cap=unsigned(std::clamp(s.generated_fps_limit.load(),30,1000))/multiplier;
             return foreground_limit ? std::min(foreground_limit,real_cap) : real_cap;
@@ -67,6 +81,16 @@ void Set(Values& v, const std::string& key, const std::string& value) {
                 v.upscaler = u;
             }
         }
+    } else if (key == "frame_gen") {
+        for (int g = 0; g < FrameGenCount; ++g) {
+            if (value == FrameGenName(g)) {
+                v.frame_gen = g;
+            }
+        }
+    } else if (key == "frame_gen_multiplier") {
+        v.frame_gen_multiplier = std::clamp(i, 2, 4);
+    } else if (key == "frame_gen_fit_display") {
+        v.frame_gen_fit_display = i != 0;
     } else if (key == "preset") {
         v.preset = std::clamp(i, 0, PresetCount - 1);
     } else if (key == "xess_preset") {
@@ -100,6 +124,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.model_lod = std::clamp(i, -2, 2);
     } else if (key == "live_resolution") {
         v.live_resolution = value == "auto" ? -1 : std::clamp(i, 0, 1);
+    } else if (key == "hud_position") {
+        v.hud_position = std::clamp(i, 0, 100);
     } else if (key == "output_res") {
         for (int r = 0; r < OutputCount; ++r) {
             if (value == std::to_string(OutputWidths[r]) + "x" + std::to_string(OutputHeights[r])) {
@@ -150,6 +176,8 @@ void Load() {
     v.show_frametime_graph = false;
     v.background_mode = BackgroundRun;
     v.frame_generation = FrameGenerationOff;
+    v.frame_gen=FrameGenOff;v.frame_gen_multiplier=2;v.frame_gen_fit_display=false;
+    bool explicit_frame_generation=false;
     v.limit_generated_fps = false;
     v.generated_fps_limit = 144;
     v.reflex=0;v.nvidia_generated_frames=1;
@@ -218,7 +246,8 @@ void Load() {
                 v.background_mode = value == "pause" ? BackgroundPause
                     : value == "30" ? Background30 : value == "60" ? Background60 : BackgroundRun;
             } else if (key == "frame_generation") {
-                v.frame_generation = value == "fsr" ? FrameGenerationFsr : value == "nvidia" ? FrameGenerationNvidia : FrameGenerationOff;
+                explicit_frame_generation=true;
+                v.frame_generation = value == "fsr" ? FrameGenerationFsr : value == "nvidia" ? FrameGenerationNvidia : value == "native_fsr" ? FrameGenerationNativeFsr : value == "native_dlss" ? FrameGenerationNativeDlss : FrameGenerationOff;
             } else if (key == "reflex") {
                 v.reflex=value=="boost" ? 2 : value=="on" ? 1 : 0;
             } else if (key == "amd_antilag") {
@@ -297,10 +326,14 @@ void Load() {
     }
     v.startup_model_lod = v.model_lod;
     v.startup_output_res = v.output_res;
+    v.startup_hud_position = v.hud_position;
     v.startup_live_resolution = v.live_resolution;
     v.startup_nvidia_fg_preset = v.nvidia_fg_preset;
     v.startup_nvidia_fg_mod = v.nvidia_fg_mod;
     UpdateCheatMask();
+    if (!explicit_frame_generation && v.frame_gen!=FrameGenOff)
+        v.frame_generation=v.frame_gen==FrameGenDlss ? FrameGenerationNativeDlss : FrameGenerationNativeFsr;
+    v.startup_native_dlss = v.frame_generation == FrameGenerationNativeDlss;
 }
 
 void ConfigureUpscalerSupport(bool fsr4, bool fsr411) {
@@ -355,7 +388,10 @@ float RenderScale() {
 
 bool ResolutionNeedsRestart() {
     const auto& v = Get();
-    // TAA needs the live path (native guest targets): run.sh selects it on restart.
+    // TAA needs the live path (native guest targets): run.sh selects it on restart. Ultrawide
+    // outputs patch the camera and HUD at startup.
+    if (Ultrawide(v.output_res) != Ultrawide(v.startup_output_res)) return true;
+    if (Ultrawide(v.output_res) && v.hud_position != v.startup_hud_position) return true;
     return FixedRenderSession() &&
         ((v.upscaler == UpscalerXess ? v.xess_preset != v.startup_xess_preset
                                     : v.preset != v.startup_preset) ||
@@ -386,7 +422,7 @@ void Save() {
         std::fprintf(file, "show_resolution=%d\nbackground_mode=%s\n",
                      int(v.show_resolution.load()),
                      background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
-        std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : "off");
+        std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : v.frame_generation==FrameGenerationNativeFsr ? "native_fsr" : v.frame_generation==FrameGenerationNativeDlss ? "native_dlss" : "off");
         std::fprintf(file,"reflex=%s\nnvidia_generated_frames=%d\n",v.reflex==2 ? "boost" : v.reflex==1 ? "on" : "off",v.nvidia_generated_frames.load());
         std::fprintf(file,"nvidia_fg_preset=%s\n",NvidiaFgPresetKey(v.nvidia_fg_preset));
         std::fprintf(file,"nvidia_fg_mod=%d\n",int(v.nvidia_fg_mod.load()));
@@ -437,8 +473,13 @@ void Save() {
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
     }
+    std::fprintf(file, "frame_gen=%s\nframe_gen_multiplier=%d\nframe_gen_fit_display=%d\n",
+                 FrameGenName(v.frame_generation==FrameGenerationNativeDlss ? FrameGenDlss : v.frame_generation==FrameGenerationNativeFsr ? FrameGenFsr3 : FrameGenOff), v.frame_gen_multiplier.load(),
+                 int(v.frame_gen_fit_display.load()));
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
+    // Read by run.py at start (hud_layout.py).
+    std::fprintf(file, "hud_position=%d\n", v.hud_position.load());
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

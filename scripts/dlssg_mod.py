@@ -44,6 +44,9 @@ def ensure_config(folder):
     if not config.exists():
         atomic_write(config, (json.dumps({
             'frameGeneration': {'mode': 'game'},
+            # This integration opts into FG only. Neural Rendering is a separate
+            # Encore feature and its nvngx_dlssnr.dll is neither needed nor installed.
+            'neuralRendering': {'nrEnabled': False},
             'nativeMenuFeatures': {'reflexFrameLimit': 0, 'vsyncOff': False},
             'overlay': {'showOverlay': False},
             'keyboardShortcuts': {'disableKeybinds': True},

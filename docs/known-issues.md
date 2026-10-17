@@ -1,5 +1,11 @@
 # Current reports
 
+R45 is a targeted investigation build. The owner's R44 log still shows the
+69.88 ms cemetery hitch and the reported FG/reconstruction symptoms remain
+open. See `docs/investigations/2026-10-16-frame-pipeline.md` for the measured
+critical phase, inactive-helper caveat, upstream memory comparison and the
+single-run capture procedure. R45 does not claim a target-game fix.
+
 I keep confirmed problems, old reports and hardware coverage separate. A missing test on a different GPU does not mean that the feature is broken there. Likewise, a report from an older revision is useful, but it needs a current-build comparison before I call it a current regression.
 
 ## Launcher startup in Revision 26

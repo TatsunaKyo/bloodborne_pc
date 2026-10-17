@@ -48,11 +48,17 @@ namespace Vulkan {
 struct PipelineCache {
   Shader::Profile profile;
   struct Selection {
+    std::array<int,6> runtime_infos{};
     std::array<const int *, 6> infos{};
     std::array<void *, 6> modules{};
     std::optional<int> fetch_shader;
   } sel;
   unsigned loads = 0, successful = 0;
+  struct Queue { void Drain() {} };
+  Queue* build_queue=nullptr;
+  void LoadDriverCache() {}
+  void SaveDriverCache() {}
+  void PublishPreloads() {}
   void WarmUp();
   bool LoadComputePipeline(Serialization::Archive &ar) { return Load(ar); }
   bool LoadGraphicsPipeline(Serialization::Archive &ar) { return Load(ar); }

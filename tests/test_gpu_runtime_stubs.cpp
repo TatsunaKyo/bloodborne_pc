@@ -19,6 +19,7 @@ int runtime_file_translate(const char*, char*, size_t) { std::abort(); }
 uint64_t runtime_memory_clamp(uintptr_t, uint64_t) { std::abort(); }
 uint64_t runtime_process_time_us() { return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 uint64_t runtime_read_tsc() { return runtime_process_time_us() * 1000; }
+int runtime_memory_can_read_ahead(uintptr_t, uint64_t) { std::abort(); }
 int runtime_memory_region(uintptr_t, uintptr_t*, uintptr_t*, int*) { std::abort(); }
 void runtime_memory_set_gpu_hooks(void (*)(uintptr_t, uint64_t),
     void (*)(uintptr_t, uint64_t), void (*)(uintptr_t, uint64_t)) { std::abort(); }
@@ -30,3 +31,10 @@ int32_t* runtime_errno() { std::abort(); }
 int runtime_memory_write_backing(uintptr_t, const void*, uint64_t) { std::abort(); }
 }
 
+
+extern "C" void runtime_memory_gpu_protect_deferred(uintptr_t, uint64_t) { std::abort(); }
+extern "C" void runtime_memory_wait_page_protection() { std::abort(); }
+extern "C" void runtime_memory_wait_page_protection_range(uintptr_t, uint64_t) { std::abort(); }
+extern "C" void runtime_memory_set_range_protection_hook(void (*)(uintptr_t,uint64_t)) { std::abort(); }
+extern "C" void runtime_memory_apply_page_protection(uintptr_t, uint64_t, uint32_t) { std::abort(); }
+extern "C" void runtime_memory_set_protection_hooks(void (*)(uintptr_t,uint64_t,uint32_t,uintptr_t), void (*)()) { std::abort(); }
