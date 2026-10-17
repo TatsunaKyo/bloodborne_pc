@@ -8,6 +8,7 @@
 #include "common/logging/log.h"
 #include "sdl_window.h"
 #include "bbport_mouse.h"
+#include "bloodborne_cam.h"
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
 #include "bbport_background.h"

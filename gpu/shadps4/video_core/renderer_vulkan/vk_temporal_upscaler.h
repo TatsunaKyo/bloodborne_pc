@@ -65,6 +65,7 @@ public:
 
     /// Before a compute dispatch: the post-processing combine shader triggers the upscale.
     void OnDispatch(u64 cs_hash);
+    void SetFrameGenerator(FrameGenerator* value) { frame_generator = value; }
 
     /// Start of a frame in the command stream (display pass).
     bool OnFrameStart();
@@ -197,6 +198,11 @@ private:
     /// (output_image, or the 8-bit UI image with ldr) in General layout after the upscaler.
     void ExtraSharpen(vk::CommandBuffer cmdbuf, vk::Image target, bool ldr, u32 w, u32 h);
 
+    FrameGenerator* frame_generator = nullptr;
+    bool frame_gen_captured = false, hudless_pending = false;
+    void CaptureFrameGen();
+    void CaptureHudless(VideoCore::ImageId color);
+    void CaptureHudlessUi();
     const Instance& instance;
     Scheduler& scheduler;
     VideoCore::TextureCache& texture_cache;

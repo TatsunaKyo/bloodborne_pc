@@ -230,7 +230,9 @@ MENU_FLAGS = {'borderless_vsync', 'show_fps', 'show_dlss_preset', 'show_resoluti
 CHEAT_MULTIPLIERS = [('1', ('Off', 'Выключено'))] + [(str(n), (f'x{n}', f'x{n}')) for n in (2, 4, 8, 16)]
 MOVEMENT_MULTIPLIERS = [CHEAT_MULTIPLIERS[0], ('1.5', ('x1.5', 'x1.5'))] + CHEAT_MULTIPLIERS[1:]
 FRAME_GENERATORS = [('off', ('Off', 'Выключено')), ('fsr', ('FSR Frame Generation (2x)', 'FSR Frame Generation (2x)')),
-                    ('nvidia', ('NVIDIA DLSS Frame Generation / MFG', 'NVIDIA DLSS Frame Generation / MFG'))]
+                    ('nvidia', ('NVIDIA DLSS Frame Generation / MFG', 'NVIDIA DLSS Frame Generation / MFG')),
+                    ('native_fsr', ('FSR FG - Supermedo (SDR)', 'FSR FG - Supermedo (SDR)')),
+                    ('native_dlss', ('DLSS FG - Supermedo (SDR, restart)', 'DLSS FG - Supermedo (SDR, restart)'))]
 REFLEX_MODES = [('off', ('Off', 'Выключено')), ('on', ('On', 'Включено')), ('boost', ('On + Boost', 'Включено + Boost'))]
 NVIDIA_MULTIPLIERS = [(str(n-1), (f'{n}x', f'{n}x')) for n in range(2, 7)]
 NVIDIA_FG_PRESETS = [('default', ('Default (NVIDIA settings)', 'По настройкам NVIDIA')),

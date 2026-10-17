@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #pragma once
+#include <atomic>
+#include <chrono>
 
 #include <utility>
 
@@ -25,6 +27,10 @@ using LockType = std::mutex;
  */
 class RegionManager {
 public:
+    static u64 NowMillis() noexcept { return u64(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()); }
+    void NoteCpuWrite() noexcept { last_cpu_write.store(NowMillis(),std::memory_order_relaxed); }
+    bool QuietBefore(u64 before) const noexcept { return last_cpu_write.load(std::memory_order_relaxed)<=before; }
+
     explicit RegionManager(PageManager* tracker_, VAddr cpu_addr_)
         : tracker{tracker_}, cpu_addr{cpu_addr_},
           readbacks_mode{EmulatorSettings.GetReadbacksMode()} {
@@ -221,6 +227,8 @@ public:
     }
 
 private:
+    std::atomic<u64> last_cpu_write{NowMillis()};
+
     template <StateOp op>
     constexpr static u64 Apply(u64 word, u64 mask) {
         if constexpr (op == StateOp::Clear) {

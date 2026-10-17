@@ -366,9 +366,54 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
     pipeline_cache = std::move(cache);
+    if (const char* env=std::getenv("BB_PIPELINE_COMPILE_AHEAD"); !env || env[0]!='0')
+        build_queue=std::make_unique<Common::PipelineBuildQueue>(std::clamp(std::thread::hardware_concurrency()/4,1u,4u));
 }
 
-PipelineCache::~PipelineCache() = default;
+namespace {
+std::atomic<PipelineCache*> driver_cache_owner{};
+std::once_flag driver_cache_atexit;
+}
+void SaveDriverCaches() {
+    if (auto* cache = driver_cache_owner.load()) cache->SaveDriverCache();
+}
+PipelineCache::~PipelineCache() {
+    StopBuilds();
+    driver_cache_owner = nullptr;
+    SaveDriverCache();
+}
+void PipelineCache::LoadDriverCache() {
+    driver_cache_owner = this;
+    std::call_once(driver_cache_atexit, [] { std::atexit(SaveDriverCaches); });
+    const auto props = instance.GetPhysicalDevice().getProperties();
+    std::vector<u8> bytes;
+    const auto key = fmt::format("driver_{}_{}_{}", props.vendorID, props.deviceID, props.driverVersion);
+    Storage::DataBase::Instance().Load(Storage::BlobType::PipelineBinary, key, bytes);
+    if (bytes.size() < sizeof(VkPipelineCacheHeaderVersionOne)) return;
+    VkPipelineCacheHeaderVersionOne header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    if (header.headerSize < sizeof(header) || header.headerSize > bytes.size() ||
+        header.headerVersion != VK_PIPELINE_CACHE_HEADER_VERSION_ONE ||
+        header.vendorID != props.vendorID || header.deviceID != props.deviceID ||
+        std::memcmp(header.pipelineCacheUUID, props.pipelineCacheUUID.data(), VK_UUID_SIZE)) return;
+    std::unique_lock lock{DriverCacheMutex()};
+    auto [result, cache] = instance.GetDevice().createPipelineCacheUnique(
+        vk::PipelineCacheCreateInfo{.initialDataSize=bytes.size(),.pInitialData=bytes.data()});
+    if (result == vk::Result::eSuccess) pipeline_cache = std::move(cache);
+}
+void PipelineCache::SaveDriverCache() {
+    auto& db = Storage::DataBase::Instance();
+    if (!db.IsOpened() || !pipeline_cache) return;
+    std::unique_lock lock{DriverCacheMutex()};
+    auto [result, data] = instance.GetDevice().getPipelineCacheData(*pipeline_cache);
+    if (result == vk::Result::eSuccess && !data.empty()) {
+        const auto props = instance.GetPhysicalDevice().getProperties();
+        db.Save(Storage::BlobType::PipelineBinary,
+            fmt::format("driver_{}_{}_{}", props.vendorID, props.deviceID, props.driverVersion),
+            std::move(data));
+        db.Flush();
+    }
+}
 
 // bbport: shader/pipeline compile time on the GPU thread, reported by BB_FRAME_STATS.
 std::atomic<u64> g_bb_compile_ns;
@@ -388,12 +433,78 @@ struct CompileTimer {
 };
 } // namespace
 
+struct PipelineCache::PendingBuild {
+    std::array<std::optional<Shader::Info>,MaxShaderStages> owned;
+    std::array<std::vector<u32>,MaxShaderStages> user_data;
+    std::array<const Shader::Info*,MaxShaderStages> infos{},live{};
+    std::array<Shader::RuntimeInfo,MaxShaderStages> runtime{};
+    std::array<vk::ShaderModule,MaxShaderStages> modules{};
+    std::optional<Shader::Gcn::FetchShaderData> fetch;
+    GraphicsPipeline::SerializationSupport support;
+    std::promise<std::unique_ptr<GraphicsPipeline>> result;
+    std::future<std::unique_ptr<GraphicsPipeline>> ready{result.get_future()};
+    bool preloaded=false;
+    std::chrono::steady_clock::time_point queued=std::chrono::steady_clock::now();
+};
+void PipelineCache::QueueBuild(const PipelineSelection& selection,const GraphicsPipeline::SerializationSupport* cached) {
+    if (!build_queue || (!cached && !instance.IsVertexInputDynamicState())) return;
+    const auto key=selection.graphics_key;
+    {std::scoped_lock lock{builds_mutex};if(builds.contains(key)||published_builds.contains(key)||builds.size()>=128)return;}
+    auto job=std::make_shared<PendingBuild>();
+    job->runtime=selection.runtime_infos;job->modules=selection.modules;job->fetch=selection.fetch_shader;
+    job->live=selection.infos;job->preloaded=cached!=nullptr;if(cached)job->support=*cached;
+    for(size_t i=0;i<MaxShaderStages;++i) if(selection.infos[i]) {
+        job->owned[i]=*selection.infos[i];
+        job->user_data[i].assign(selection.infos[i]->user_data.begin(),selection.infos[i]->user_data.end());
+        job->owned[i]->user_data=job->user_data[i];job->infos[i]=&*job->owned[i];
+    }
+    std::scoped_lock lock{builds_mutex};
+    if(builds.contains(key)||published_builds.contains(key)||builds.size()>=128)return;
+    builds.emplace(key,job);
+    if(!build_queue->Submit([this,job,key] {
+        try {
+            auto pipeline=std::make_unique<GraphicsPipeline>(instance,scheduler,desc_heap,profile,key,
+                *pipeline_cache,job->infos,job->runtime,job->fetch ? &*job->fetch : nullptr,
+                job->modules,job->support,job->preloaded);
+            if(!pipeline->Handle())pipeline.reset();
+            job->result.set_value(std::move(pipeline));
+        } catch(...) {job->result.set_value(nullptr);}
+    }))builds.erase(key);
+}
+bool PipelineCache::FinishBuild(const GraphicsPipelineKey& key,bool wait) {
+    std::shared_ptr<PendingBuild> job;
+    {std::scoped_lock lock{builds_mutex};auto it=builds.find(key);if(it==builds.end())return false;
+     job=it->second;if(!wait && job->ready.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return false;
+     builds.erase(it);published_builds.insert(key);}
+    auto pipeline=job->ready.get();
+    if(!pipeline)return false; // A speculative failure falls back to the live synchronous path.
+    if(graphics_pipelines.contains(key))return true;
+    pipeline->UseLiveStages(job->preloaded ? job->live : sel.infos);
+    graphics_pipelines.try_emplace(key,std::move(pipeline));
+    if(!job->preloaded){RegisterPipelineData(key,std::hash<GraphicsPipelineKey>{}(key),job->support);++num_new_pipelines;}
+    return true;
+}
+void PipelineCache::PublishPreloads() {
+    if(!build_queue)return;
+    std::vector<GraphicsPipelineKey> keys;
+    {std::scoped_lock lock{builds_mutex};for(const auto& [key,job]:builds)if(job->preloaded && job->ready.wait_for(std::chrono::seconds(0))==std::future_status::ready)keys.push_back(key);}
+    for(const auto& key:keys)FinishBuild(key,false);
+}
+void PipelineCache::ReapBuilds() {
+    const auto now=std::chrono::steady_clock::now();
+    std::scoped_lock lock{builds_mutex};
+    std::erase_if(builds,[&](const auto& entry){const auto& job=entry.second;return !job->preloaded && now-job->queued>std::chrono::seconds(2) && job->ready.wait_for(std::chrono::seconds(0))==std::future_status::ready;});
+}
+void PipelineCache::StopBuilds(){if(build_queue)build_queue->Stop();}
+
 bool PipelineCache::PrepareGraphicsPipeline(PipelineSelection& worker_sel) {
     // Tessellation stages read constant buffers from memory at selection time: not prepared.
     if (worker_sel.regs->stage_enable.hs_en) {
         return false;
     }
-    return RefreshGraphicsKey(worker_sel) && !worker_sel.worker->failed;
+    if(!RefreshGraphicsKey(worker_sel) || worker_sel.worker->failed)return false;
+    QueueBuild(worker_sel);
+    return true;
 }
 
 const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& prepared) {
@@ -459,6 +570,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     if (!RefreshGraphicsKey(sel)) {
         return nullptr;
     }
+    FinishBuild(sel.graphics_key,true);
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
         const auto pipeline_hash = std::hash<GraphicsPipelineKey>{}(sel.graphics_key);

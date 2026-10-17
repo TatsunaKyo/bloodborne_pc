@@ -59,6 +59,7 @@ public:
     /// Mark region as modified from the CPU
     void MarkRegionAsCpuModified(VAddr cpu_addr, u64 size) noexcept {
         IteratePages(cpu_addr, size, [](RegionManager* manager, u64 offset, u64 size) {
+            manager->NoteCpuWrite();
             manager->template ChangeRegionState<StateOp::Set, StateOp::None>(offset, size);
         });
     }
@@ -67,6 +68,7 @@ public:
     /// pages there that hold no GPU-modified data (RegionManager::ExtendWriteFault).
     void ExtendWriteFault(VAddr cpu_addr, u64 size) noexcept {
         IteratePages(cpu_addr, size, [](RegionManager* manager, u64 offset, u64 size) {
+            manager->NoteCpuWrite();
             manager->ExtendWriteFault(offset, size);
         });
     }
@@ -78,6 +80,7 @@ public:
         }
         bool should_flush = false;
         IteratePages(cpu_addr, size, [&should_flush](RegionManager* manager, u64 offset, u64 size) {
+            manager->NoteCpuWrite();
             const auto bounds = manager->GetBounds(offset, size);
             manager->Lock(bounds);
             const bool modified = manager->template IsRegionModified<Type::GPU>(offset, size);
@@ -138,6 +141,14 @@ public:
         });
     }
 
+    bool IsPreuploadCandidate(VAddr address,u64 bytes,u64 quiet_before) {
+        bool dirty=false,eligible=true;
+        IteratePages(address,bytes,[&](RegionManager* manager,u64 offset,u64 size) {
+            dirty |= manager->template IsRegionModified<Type::CPU>(offset,size);
+            eligible &= manager->QuietBefore(quiet_before) && !manager->template IsRegionModified<Type::GPU>(offset,size);
+        });
+        return dirty && eligible;
+    }
 private:
     template <bool create_region_on_fail = false, typename Func>
     bool IteratePages(VAddr cpu_address, u64 size, Func&& func) {

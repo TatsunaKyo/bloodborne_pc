@@ -15,7 +15,7 @@
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
 // bbport: past R51 (11/7/5) and upstream 0.20.1 (9/6/3): rebuild incompatible records once.
-static constexpr u32 ShaderBinaryVersion = 12u;
+static constexpr u32 ShaderBinaryVersion = 13u;
 static constexpr u32 ShaderMetaVersion = 9u;
 static constexpr u32 PipelineKeyVersion = 7u;
 } // namespace Serialization
@@ -106,7 +106,7 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
 
     u32 binary_version{};
     meta.Read(binary_version);
-    if (binary_version != Serialization::ShaderBinaryVersion) {
+    if (binary_version != Serialization::ShaderBinaryVersion && binary_version != 12u) {
         return false;
     }
 
@@ -182,12 +182,6 @@ bool PipelineCache::LoadComputePipeline(Serialization::Archive& ar) {
     sel.infos.fill(nullptr);
     sel.modules.fill(nullptr);
 
-    // bbport: a cached pipeline the driver cannot create (a new driver, or one saved by a build
-    // that stopped on it) stopped every start here. It is compiled again when the game uses it.
-    if (!it.value()->IsValid()) {
-        compute_pipelines.erase(compute_key);
-        return false;
-    }
     return true;
 }
 
@@ -267,6 +261,11 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
         }
     }
 
+    PublishPreloads();
+    if(build_queue) {
+        QueueBuild(sel,&sdata);
+        {std::scoped_lock lock{builds_mutex};if(builds.contains(sel.graphics_key))return true;}
+    }
     if (graphics_pipelines.contains(sel.graphics_key)) return false;
     auto pipeline = std::make_unique<GraphicsPipeline>(
         instance, scheduler, desc_heap, profile, sel.graphics_key, *pipeline_cache, sel.infos,
@@ -279,11 +278,6 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
     sel.modules.fill(nullptr);
     sel.fetch_shader.reset();
 
-    // bbport: as for compute pipelines, a failed one is left to compile when the game uses it.
-    if (!it.value()->IsValid()) {
-        graphics_pipelines.erase(sel.graphics_key);
-        return false;
-    }
     return true;
 }
 
@@ -330,6 +324,7 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     spec.info = &it_pgm.value()->info;
     it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
 
+    sel.runtime_infos[stage] = it_pgm.value()->modules[perm_idx].spec.runtime_info;
     sel.infos[stage] = &it_pgm.value()->info;
     sel.modules[stage] = module;
     if (const auto& fetch = it_pgm.value()->modules[perm_idx].spec.fetch_shader_data;
@@ -346,6 +341,8 @@ void PipelineCache::WarmUp() {
     }
 
     Storage::DataBase::Instance().Open();
+    LoadDriverCache();
+    struct SaveOnReturn { PipelineCache* owner; ~SaveOnReturn() { owner->SaveDriverCache(); } } save{this};
 
     // Check if cache is compatible
     std::vector<u8> profile_data{};
@@ -389,6 +386,7 @@ void PipelineCache::WarmUp() {
         Storage::BlobType::PipelineKey, [&](std::vector<u8>&& data) {
             ++num_total_pipelines;
             const auto reset_selection = [&] {
+                sel.runtime_infos.fill({});
                 sel.infos.fill(nullptr);
                 sel.modules.fill(nullptr);
                 sel.fetch_shader.reset();
@@ -411,6 +409,7 @@ void PipelineCache::WarmUp() {
             reset_selection();
         });
 
+    if(build_queue) {build_queue->Drain();PublishPreloads();}
     LOG_INFO(Render, "Preloaded {} pipelines", num_pipelines);
     if (num_total_pipelines > num_pipelines) {
         LOG_WARNING(Render, "{} stale pipelines were found. Consider re-generating the cache",
@@ -421,6 +420,7 @@ void PipelineCache::WarmUp() {
 }
 
 void PipelineCache::Sync() {
+    SaveDriverCache();
     Storage::DataBase::Instance().Close();
 }
 

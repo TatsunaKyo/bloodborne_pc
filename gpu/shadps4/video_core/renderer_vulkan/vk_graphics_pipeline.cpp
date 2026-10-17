@@ -418,6 +418,7 @@ GraphicsPipeline::GraphicsPipeline(
         .layout = *pipeline_layout,
     };
 
+    std::shared_lock driver_lock{DriverCacheMutex()};
     auto [pipeline_result, pipe] =
         device.createGraphicsPipelineUnique(pipeline_cache, pipeline_info);
     if (preloading && pipeline_result != vk::Result::eSuccess) {

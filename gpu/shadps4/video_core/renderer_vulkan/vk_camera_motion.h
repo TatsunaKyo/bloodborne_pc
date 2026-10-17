@@ -63,6 +63,8 @@ public:
         return render_size;
     }
     /// Vertical field of view and near/far planes of the current camera.
+    bool ClipTransforms(std::array<float,16>&,std::array<float,16>&,std::array<float,16>&) const noexcept;
+    float FarPlane(float fallback) const noexcept;
     [[nodiscard]] float VerticalFov() const noexcept;
     [[nodiscard]] float Near() const noexcept;
     [[nodiscard]] std::array<float,12> InverseView() const noexcept { return current.inv_view; }

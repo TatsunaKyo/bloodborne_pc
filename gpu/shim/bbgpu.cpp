@@ -1,3 +1,4 @@
+#include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "bbport_write_log.h"
 // bbport: glue between the C loader and the vendored shadPS4 video core.
 #include "bbport_overlay.h"
@@ -283,6 +284,7 @@ extern "C" int bbgpu_init(const BbGpuConfig* config) {
         LOG_INFO(Frontend, "Window closed by user");
         BbHitch::Trace::FlushExporter();
         std::fflush(stdout);
+        Vulkan::SaveDriverCaches();
         std::_Exit(0);
     });
     g_window_thread.detach();

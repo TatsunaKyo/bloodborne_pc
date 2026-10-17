@@ -58,7 +58,8 @@ public:
         }
         u64 allocated = bytes < slab_bytes / 4 ? slab_bytes : bytes;
         const auto allocate = [&](u64 size) {
-            const vk::MemoryAllocateInfo info{.allocationSize = size, .memoryTypeIndex = type};
+            const vk::MemoryAllocateFlagsInfo flags{.flags=vk::MemoryAllocateFlagBits::eDeviceAddress};
+            const vk::MemoryAllocateInfo info{.pNext=&flags,.allocationSize = size, .memoryTypeIndex = type};
             BbHitch::Scope hitch{"vkAllocateMemory sparse backing"};
             return device.allocateMemory(info);
         };

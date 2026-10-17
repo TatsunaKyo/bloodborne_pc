@@ -31,7 +31,7 @@ int Dlss::QualityForScale(float scale) {
 #ifdef _WIN32
 
 namespace {
-constexpr wchar_t BridgeName[] = L"bbport_dlss.dll";
+const wchar_t* BridgeName() { return BbSettings::Get().startup_native_dlss ? L"bbport_dlss_native.dll" : L"bbport_dlss.dll"; }
 constexpr wchar_t NgxName[] = L"nvngx_dlss.dll";
 
 std::filesystem::path ExecutableDirectory() {
@@ -75,6 +75,8 @@ struct Dlss::Impl {
     const BbDlssApi* api{};
     std::vector<std::string> instance_extensions, device_extensions;
     std::optional<FeatureDesc> feature;
+    std::optional<FrameGenDesc> frame_gen;
+    int frame_gen_max = 0;
     std::string problem;
     bool eligible{true}, instance_ready{}, device_ready{}, initialized{}, available{};
 
@@ -92,7 +94,7 @@ Dlss* Dlss::Get() {
             return nullptr;
         }
         const auto directory = ExecutableDirectory();
-        if (!std::filesystem::is_regular_file(directory / BridgeName) ||
+        if (!std::filesystem::is_regular_file(directory / BridgeName()) ||
             !std::filesystem::is_regular_file(directory / NgxName)) {
             return nullptr;
         }
@@ -110,12 +112,12 @@ Dlss* Dlss::Get() {
 
 Dlss::Dlss() : impl{std::make_unique<Impl>()} {
     const auto directory = ExecutableDirectory();
-    impl->module = LoadLibraryW((directory / BridgeName).c_str());
+    impl->module = LoadLibraryW((directory / BridgeName()).c_str());
     const auto get_api =
         impl->module ? reinterpret_cast<BbDlssGetApiFn>(GetProcAddress(impl->module, "BbDlssGetApi"))
                      : nullptr;
     impl->api = get_api ? get_api() : nullptr;
-    if (!impl->api || impl->api->abi != BBPORT_DLSS_BRIDGE_ABI) {
+    if (!impl->api || (impl->api->abi < 1 || impl->api->abi > BBPORT_DLSS_BRIDGE_ABI)) {
         impl->Disable("bbport_dlss.dll is missing or from another version");
         return;
     }
@@ -184,6 +186,8 @@ void Dlss::Initialize(vk::Instance instance, vk::PhysicalDevice physical, vk::De
                                VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr)) {
         return impl->Disable("NVIDIA NGX initialization failed; see last_run.log for the NGX error");
     }
+    if (impl->api->abi >= 2) impl->frame_gen_max = std::max(0, impl->api->FrameGenMaxCount());
+    BbSettings::Get().dlssg_max_multiplier = impl->frame_gen_max + 1;
     impl->available = true;
     std::printf("DLSS: ready\n");
 }
@@ -245,6 +249,7 @@ void Dlss::ReleaseFeature() {
 }
 
 void Dlss::Shutdown() {
+    impl->frame_gen.reset();
     BbSettings::Get().dlss_active_preset = -1;
     impl->available = false;
     impl->feature.reset();
@@ -253,6 +258,64 @@ void Dlss::Shutdown() {
         impl->initialized = false;
     }
 }
+
+int Dlss::FrameGenMaxCount() const {
+    return impl->available ? impl->frame_gen_max : 0;
+}
+
+bool Dlss::HasFrameGen(const FrameGenDesc& desc) const {
+    return impl->frame_gen && *impl->frame_gen == desc;
+}
+
+bool Dlss::CreateFrameGen(vk::CommandBuffer command, const FrameGenDesc& desc) {
+    if (FrameGenMaxCount() < 1) {
+        return false;
+    }
+    impl->frame_gen.reset();
+    const BbDlssgFeature feature{desc.width, desc.height, static_cast<VkFormat>(desc.format),
+                                 desc.render_width, desc.render_height};
+    if (!impl->api->FrameGenCreate(command, &feature)) {
+        return false;
+    }
+    impl->frame_gen = desc;
+    return true;
+}
+
+bool Dlss::EvaluateFrameGen(vk::CommandBuffer command, const FrameGenFrame& frame) {
+    if (!impl->frame_gen) {
+        return false;
+    }
+    const auto image = [](const Resource& r) {
+        const vk::ImageSubresourceRange range{r.aspect, 0, 1, 0, 1};
+        return BbDlssImage{r.image,
+                           r.view,
+                           static_cast<VkImageSubresourceRange>(range),
+                           static_cast<VkFormat>(r.format),
+                           r.width,
+                           r.height};
+    };
+    BbDlssgEvaluate parameters{
+        image(frame.backbuffer), image(frame.depth),  image(frame.motion), image(frame.output),
+        frame.hudless.image ? image(frame.hudless) : BbDlssImage{},
+        frame.jitter_x,          frame.jitter_y,      frame.camera_near,   frame.camera_far,
+        frame.camera_fov,        frame.depth_inverted ? 1 : 0,             frame.reset ? 1 : 0,
+        frame.count,             frame.index};
+    parameters.has_matrices = frame.has_matrices ? 1 : 0;
+    std::memcpy(parameters.view_to_clip, frame.view_to_clip.data(), sizeof(parameters.view_to_clip));
+    std::memcpy(parameters.clip_to_prev_clip, frame.clip_to_prev_clip.data(),
+                sizeof(parameters.clip_to_prev_clip));
+    std::memcpy(parameters.prev_clip_to_clip, frame.prev_clip_to_clip.data(),
+                sizeof(parameters.prev_clip_to_clip));
+    return impl->api->FrameGenEvaluate(command, &parameters) != 0;
+}
+
+void Dlss::ReleaseFrameGen() {
+    impl->frame_gen.reset();
+    if (impl->api && impl->api->abi >= 2) {
+        impl->api->FrameGenRelease();
+    }
+}
+
 
 #else
 
@@ -282,6 +345,20 @@ bool Dlss::Evaluate(vk::CommandBuffer, const Frame&) {
     return false;
 }
 void Dlss::ReleaseFeature() {}
+
+int Dlss::FrameGenMaxCount() const {
+    return 0;
+}
+bool Dlss::HasFrameGen(const FrameGenDesc&) const {
+    return false;
+}
+bool Dlss::CreateFrameGen(vk::CommandBuffer, const FrameGenDesc&) {
+    return false;
+}
+bool Dlss::EvaluateFrameGen(vk::CommandBuffer, const FrameGenFrame&) {
+    return false;
+}
+void Dlss::ReleaseFrameGen() {}
 
 #endif
 

@@ -99,6 +99,8 @@ public:
     }
 
     void TickFrame();
+    void PreuploadResident();
+    u64 preupload_cursor=0;
 
     /// Invalidates any buffer in the logical page range.
     void InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks = false);
@@ -221,7 +223,6 @@ private:
     IntervalList<Backing> resident_ranges;
 
     u32 arena_memory_type_index{};
-    u32 arena_memory_type_bits{}; ///< bbport: the types the arena accepts (system memory fallback)
     u32 block_size{};
     u32 block_shift{};
     u32 blocks_per_arena_page{};

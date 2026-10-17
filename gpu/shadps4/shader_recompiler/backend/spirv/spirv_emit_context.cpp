@@ -780,25 +780,22 @@ void EmitContext::DefineOutputs() {
 }
 
 void EmitContext::DefinePushDataBlock() {
-    // Create push constants block for instance steps rates
-    // bbport: two more members after upstream's, the object motion parameter and the scene size
-    const Id struct_type{Name(
-        TypeStruct(F32[1], F32[1], F32[1], F32[1], U32[4], U32[4], U32[2], U32[1], U32[1]), "AuxData")};
+    // Each word stores four byte offsets. Derive the SPIR-V members from the host layout.
+    std::vector<Id> members{F32[1], F32[1], F32[1], F32[1]};
+    for (u32 first = 0; first < NUM_BUFFERS; first += 16) {
+        const u32 words = (std::min(16u, NUM_BUFFERS - first) + 3) / 4;
+        members.push_back(words == 1 ? TypeArray(U32[1], ConstU32(1u)) : U32[words]);
+        if (words == 1) Decorate(members.back(), spv::Decoration::ArrayStride, 4u);
+    }
+    members.push_back(U32[1]);
+    members.push_back(U32[1]);
+    const Id struct_type{Name(TypeStruct(members), "AuxData")};
     Decorate(struct_type, spv::Decoration::Block);
-    MemberName(struct_type, PushData::XOffsetIndex, "xoffset");
-    MemberName(struct_type, PushData::YOffsetIndex, "yoffset");
-    MemberName(struct_type, PushData::XScaleIndex, "xscale");
-    MemberName(struct_type, PushData::YScaleIndex, "yscale");
-    MemberName(struct_type, PushData::BufOffsetIndex + 0, "buf_offsets0");
-    MemberName(struct_type, PushData::BufOffsetIndex + 1, "buf_offsets1");
-    MemberName(struct_type, PushData::BufOffsetIndex + 2, "buf_offsets2");
-    MemberDecorate(struct_type, PushData::XOffsetIndex, spv::Decoration::Offset, 0U);
-    MemberDecorate(struct_type, PushData::YOffsetIndex, spv::Decoration::Offset, 4U);
-    MemberDecorate(struct_type, PushData::XScaleIndex, spv::Decoration::Offset, 8U);
-    MemberDecorate(struct_type, PushData::YScaleIndex, spv::Decoration::Offset, 12U);
-    MemberDecorate(struct_type, PushData::BufOffsetIndex + 0, spv::Decoration::Offset, 16U);
-    MemberDecorate(struct_type, PushData::BufOffsetIndex + 1, spv::Decoration::Offset, 32U);
-    MemberDecorate(struct_type, PushData::BufOffsetIndex + 2, spv::Decoration::Offset, 48U);
+    for (u32 i = 0; i < 4; ++i) MemberDecorate(struct_type, i, spv::Decoration::Offset, i * 4u);
+    for (u32 i = 0; i < (NUM_BUFFERS + 15) / 16; ++i) {
+        MemberName(struct_type, PushData::BufOffsetIndex + i, "buf_offsets" + std::to_string(i));
+        MemberDecorate(struct_type, PushData::BufOffsetIndex + i, spv::Decoration::Offset, 16u + i * 16u);
+    }
     // bbport: at the C++ struct's offsets, so the host can push PushData as it is
     MemberName(struct_type, PushData::MotionParamIndex, "motion_param");
     MemberDecorate(struct_type, PushData::MotionParamIndex, spv::Decoration::Offset,

@@ -4,6 +4,9 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
+#include <future>
+#include "common/pipeline_build_queue.h"
 #include <shared_mutex>
 #include <variant>
 #include <boost/container/static_vector.hpp>
@@ -124,6 +127,10 @@ public:
     ~PipelineCache();
 
     void WarmUp();
+    void StopBuilds();
+    void ReapBuilds();
+    void LoadDriverCache();
+    void SaveDriverCache();
     void Sync();
 
     bool LoadComputePipeline(Serialization::Archive& ar);
@@ -164,6 +171,10 @@ public:
     }
 
 private:
+    struct PendingBuild;
+    void QueueBuild(const PipelineSelection&,const GraphicsPipeline::SerializationSupport* cached=nullptr);
+    bool FinishBuild(const GraphicsPipelineKey&,bool wait);
+    void PublishPreloads();
     bool RefreshGraphicsKey(PipelineSelection& sel);
     bool RefreshGraphicsStages(PipelineSelection& sel);
     bool RefreshComputeKey();
@@ -183,6 +194,10 @@ private:
     }
 
 private:
+    std::unique_ptr<Common::PipelineBuildQueue> build_queue;
+    std::mutex builds_mutex;
+    std::unordered_map<GraphicsPipelineKey,std::shared_ptr<PendingBuild>> builds;
+    std::unordered_set<GraphicsPipelineKey> published_builds;
     const Instance& instance;
     Scheduler& scheduler;
     AmdGpu::Liverpool* liverpool;

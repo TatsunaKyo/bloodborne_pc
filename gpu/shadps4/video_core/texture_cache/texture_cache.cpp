@@ -6,7 +6,6 @@
 #include <xxhash.h>
 #include "bbport_hitch.h"
 
-#include "bbport_process_memory.h"
 #include "bbport_toggles.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -294,10 +293,6 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
         const auto new_image_id = slot_images.Insert(instance, runtime, slot_image_views, new_info);
         RegisterImage(new_image_id);
 
-        // insert() may have grown slot_images and moved every image: `cache_image` would then
-        // point at freed storage, so look it up again.
-        auto& old_image = slot_images[cache_image_id];
-
         // Inherit image usage
         auto& new_image = slot_images[new_image_id];
         const auto& old_image = slot_images[cache_image_id];
@@ -310,7 +305,7 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
         new_image.flags &= ~ImageFlagBits::Dirty;
         // When creating a depth buffer through overlap resolution don't clear it on first use.
         new_image.info.meta_info.htile_clear_mask = 0;
-        runtime.CopyColorAndDepth(&old_image, &new_image);
+        runtime.CopyColorAndDepth(&cache_image, &new_image);
 
         // Free the cache image.
         FreeImage(cache_image_id);

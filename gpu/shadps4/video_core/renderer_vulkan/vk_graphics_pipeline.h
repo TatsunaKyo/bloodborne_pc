@@ -93,6 +93,7 @@ public:
                      std::span<const vk::ShaderModule> modules, SerializationSupport& sdata,
                      bool preloading);
     ~GraphicsPipeline();
+    void UseLiveStages(std::span<const Shader::Info*,MaxShaderStages> live) { std::ranges::copy(live,stages.begin()); }
 
     const Shader::Gcn::FetchShaderData& GetFetchShader() const noexcept {
         return fetch_shader;

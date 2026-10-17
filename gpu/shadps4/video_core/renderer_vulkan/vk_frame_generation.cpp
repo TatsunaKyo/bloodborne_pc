@@ -54,16 +54,16 @@ bool FrameGeneration::Image::Create(VmaAllocator allocator_, vk::Format format, 
 }
 bool FrameGeneration::Image::Create(VmaAllocator allocator_, vk::Format format, u32 w, u32 h,
                                     vk::ImageUsageFlags image_usage) {
-    allocator=allocator_;
     const vk::ImageCreateInfo info{.imageType=vk::ImageType::e2D,.format=format,.extent={w,h,1},
         .mipLevels=1,.arrayLayers=1,.samples=vk::SampleCountFlagBits::e1,.usage=image_usage};
     const VkImageCreateInfo raw=info;
     const VmaAllocationCreateInfo allocation_info{
         .flags=VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,.usage=VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
-    VkImage handle{};
-    if (vmaCreateImage(allocator,&raw,&allocation_info,&handle,&allocation,nullptr)!=VK_SUCCESS)
+    VkImage handle{}; VmaAllocation next_allocation{};
+    if (vmaCreateImage(allocator_,&raw,&allocation_info,&handle,&next_allocation,nullptr)!=VK_SUCCESS)
         return false;
-    image=handle;
+    if (image) vmaDestroyImage(allocator,VkImage(image),allocation);
+    allocator=allocator_; allocation=next_allocation; image=handle;
     return true;
 }
 
@@ -206,7 +206,7 @@ void FrameGeneration::Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSou
     const bool nvidia=settings.frame_generation==BbSettings::FrameGenerationNvidia;
     const bool sdr_unorm=format==vk::Format::eR8G8B8A8Unorm || format==vk::Format::eB8G8R8A8Unorm;
     const bool hdr=format==vk::Format::eA2B10G10R10UnormPack32 || format==vk::Format::eA2R10G10B10UnormPack32;
-    if (settings.frame_generation == BbSettings::FrameGenerationOff ||
+    if (settings.frame_generation >= BbSettings::FrameGenerationNativeFsr || settings.frame_generation == BbSettings::FrameGenerationOff ||
         settings.upscaler==BbSettings::UpscalerOff ||
         (settings.frame_generation==BbSettings::FrameGenerationFsr && failed.load(std::memory_order_relaxed)) || !source.valid ||
         !source.depth_view || !source.motion_view || !source.render_width || !source.render_height || !w || !h ||

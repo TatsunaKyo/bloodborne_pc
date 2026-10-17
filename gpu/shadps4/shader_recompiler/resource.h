@@ -229,7 +229,7 @@ struct PushData {
     static constexpr u32 YScaleIndex = 3;
     static constexpr u32 BufOffsetIndex = 4;
     /// bbport: members after the three buf_offsets vectors (see spirv_emit_context.cpp)
-    static constexpr u32 MotionParamIndex = BufOffsetIndex + 3;
+    static constexpr u32 MotionParamIndex = BufOffsetIndex + (NUM_BUFFERS + 15) / 16;
     static constexpr u32 SceneSizeIndex = MotionParamIndex + 1;
 
     float xoffset;

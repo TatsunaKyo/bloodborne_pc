@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
+#include "video_core/renderer_vulkan/vk_native_frame_generation.h"
 #include <array>
 #include <atomic>
 #include <deque>

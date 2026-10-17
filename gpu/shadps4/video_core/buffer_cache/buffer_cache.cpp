@@ -117,7 +117,6 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
         FindMemoryType(instance.GetMemoryProperties(), vk::MemoryPropertyFlagBits::eDeviceLocal,
                        reqs.memoryTypeBits)
             .value();
-    arena_memory_type_bits = reqs.memoryTypeBits;
 
     const auto& memory_properties = instance.GetMemoryProperties();
     const u32 arena_heap = memory_properties.memoryTypes[arena_memory_type_index].heapIndex;
@@ -142,9 +141,36 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
 BufferCache::~BufferCache() = default;
 
 void BufferCache::TickFrame() {
+    PreuploadResident();
     if (std::exchange(fault_process_pending, false)) {
         fault_manager->ProcessFaultBuffer();
     }
+}
+
+// Only idle CPU-authored data already backed by an arena is eligible. No new sparse
+// bindings or allocations are made here; uploads retain the normal issue-time copy fences.
+void BufferCache::PreuploadResident() {
+    static const bool enabled=[] {const char* value=std::getenv("BB_PREUPLOAD");return !value||value[0]!='0';}();
+    if(!enabled)return;
+    const auto start=std::chrono::steady_clock::now();
+    const u64 now=RegionManager::NowMillis();
+    if(now<200)return;
+    u64 scanned=0,uploaded=0;
+    for(const auto& range:resident_ranges) {
+        const VAddr end=range.end<<block_shift;
+        VAddr address=std::max<VAddr>(range.start<<block_shift,preupload_cursor);
+        while(address<end) {
+            const u32 size=u32(std::min<u64>(64*1024,end-address));
+            preupload_cursor=address+size;
+            if(memory->CanReadAhead(address,size) && memory_tracker->IsPreuploadCandidate(address,size,now-200)) {
+                const auto* arena=address_space[address>>arena_page_bits];
+                if(arena) {SynchronizeMemory(arena,address,size,false,false);uploaded+=size;}
+            }
+            ++scanned;address+=size;
+            if(scanned>=256 || uploaded>=2*1024*1024 || std::chrono::steady_clock::now()-start>=std::chrono::microseconds(300))return;
+        }
+    }
+    preupload_cursor=0;
 }
 
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {

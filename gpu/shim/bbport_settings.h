@@ -25,7 +25,7 @@ enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugV
 enum MenuLanguage : int { MenuEnglish = 0, MenuRussian, MenuLanguageCount };
 enum WindowMode : int { WindowFromLauncher = -1, Windowed = 0, Borderless, Fullscreen };
 enum BackgroundMode : int { BackgroundRun = 0, BackgroundPause, Background30, Background60 };
-enum FrameGenerationMode : int { FrameGenerationOff=0, FrameGenerationFsr=1, FrameGenerationNvidia=2 };
+enum FrameGenerationMode : int { FrameGenerationOff=0, FrameGenerationFsr=1, FrameGenerationNvidia=2, FrameGenerationNativeFsr=3, FrameGenerationNativeDlss=4 };
 // NVIDIA NGX render-preset hints, separate from the upscaling quality/scene size.
 // Removed and reserved presets are deliberately excluded.
 inline constexpr int DlssPresetValues[] = {0, 5, 6, 10, 11, 13, 12};
@@ -78,6 +78,7 @@ inline bool Ultrawide(int output) {
 }
 
 struct Values {
+    bool startup_native_dlss = false;
     std::atomic<int> frame_generation{FrameGenerationOff}, frame_generation_active{0};
     // Negotiated multiplier for the cap, independent of delayed SDK statistics.
     std::atomic<int> frame_generation_cap_multiplier{0};
@@ -228,6 +229,7 @@ int ParseNvidiaFgPreset(std::string_view value);
 const char* NvidiaFgPresetKey(int preset);
 const char* NvidiaFgPresetName(int preset);
 const char* UpscalerName(int upscaler);
+int NativeProvider();
 const char* FrameGenName(int frame_gen);
 
 } // namespace BbSettings

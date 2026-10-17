@@ -20,6 +20,14 @@
 #endif
 
 namespace BbSettings {
+const char* FrameGenName(int mode) { return mode==FrameGenFsr3 ? "fsr3" : mode==FrameGenDlss ? "dlss" : "off"; }
+int NativeProvider() {
+    const auto& s = Get();
+    const int mode=s.frame_generation;
+    if (s.startup_native_dlss != (mode==FrameGenerationNativeDlss)) return FrameGenOff;
+    return mode==FrameGenerationNativeFsr ? FrameGenFsr3 : mode==FrameGenerationNativeDlss ? FrameGenDlss : FrameGenOff;
+}
+
 unsigned EffectiveFrameLimit(unsigned foreground_limit) {
     const auto& s = Get();
     const int requested = s.real_fps_limit;
@@ -33,6 +41,10 @@ unsigned EffectiveFrameLimit(unsigned foreground_limit) {
         if (s.limit_generated_fps && multiplier>1) {
             const unsigned real_cap=unsigned(std::clamp(s.generated_fps_limit.load(),30,1000))/multiplier;
             return foreground_limit ? std::min(foreground_limit,real_cap) : real_cap;
+        }
+        if (s.frame_gen_flip_limit > 0 && NativeProvider()!=FrameGenOff) {
+            const unsigned cap=unsigned(s.frame_gen_flip_limit.load());
+            foreground_limit=foreground_limit ? std::min(foreground_limit,cap) : cap;
         }
         return foreground_limit;
     }
@@ -230,7 +242,7 @@ void Load() {
                 v.background_mode = value == "pause" ? BackgroundPause
                     : value == "30" ? Background30 : value == "60" ? Background60 : BackgroundRun;
             } else if (key == "frame_generation") {
-                v.frame_generation = value == "fsr" ? FrameGenerationFsr : value == "nvidia" ? FrameGenerationNvidia : FrameGenerationOff;
+                v.frame_generation = value == "fsr" ? FrameGenerationFsr : value == "nvidia" ? FrameGenerationNvidia : value == "native_fsr" ? FrameGenerationNativeFsr : value == "native_dlss" ? FrameGenerationNativeDlss : FrameGenerationOff;
             } else if (key == "reflex") {
                 v.reflex=value=="boost" ? 2 : value=="on" ? 1 : 0;
             } else if (key == "amd_antilag") {
@@ -314,6 +326,7 @@ void Load() {
     v.startup_nvidia_fg_preset = v.nvidia_fg_preset;
     v.startup_nvidia_fg_mod = v.nvidia_fg_mod;
     UpdateCheatMask();
+    v.startup_native_dlss = v.frame_generation == FrameGenerationNativeDlss;
 }
 
 void ConfigureUpscalerSupport(bool fsr4, bool fsr411) {
@@ -402,7 +415,7 @@ void Save() {
         std::fprintf(file, "show_resolution=%d\nbackground_mode=%s\n",
                      int(v.show_resolution.load()),
                      background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
-        std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : "off");
+        std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : v.frame_generation==FrameGenerationNativeFsr ? "native_fsr" : v.frame_generation==FrameGenerationNativeDlss ? "native_dlss" : "off");
         std::fprintf(file,"reflex=%s\nnvidia_generated_frames=%d\n",v.reflex==2 ? "boost" : v.reflex==1 ? "on" : "off",v.nvidia_generated_frames.load());
         std::fprintf(file,"nvidia_fg_preset=%s\n",NvidiaFgPresetKey(v.nvidia_fg_preset));
         std::fprintf(file,"nvidia_fg_mod=%d\n",int(v.nvidia_fg_mod.load()));
