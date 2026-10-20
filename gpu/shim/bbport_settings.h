@@ -77,6 +77,14 @@ inline bool Ultrawide(int output) {
     return OutputWidths[output] * 9 > OutputHeights[output] * 16;
 }
 
+/// Button prompts (bbport_prompts.cpp): the game's icons switch with the device in use, or stay.
+enum Prompts : int {
+    PromptsAuto = 0, PromptsPlayStation = 1, PromptsKeyboard = 2, PromptsXbox = 3, PromptsSwitch = 4, PromptsCount
+};
+
+/// Field of view (fov.py): the game's camera has 43 degrees.
+inline constexpr int FovDefault = 43, FovMin = 30, FovMax = 90;
+
 struct Values {
     bool startup_native_dlss = false;
     std::atomic<int> frame_generation{FrameGenerationOff}, frame_generation_active{0};
@@ -136,6 +144,10 @@ struct Values {
     /// -1 follows BB_FULLSCREEN; explicit choices survive launcher config rewrites.
     std::atomic<int> window_mode{WindowFromLauncher};
     std::atomic<bool> borderless_vsync{false};
+    /// Silence the game while its window does not have focus (bbgpu_audio_muted).
+    std::atomic<bool> mute_unfocused{false};
+    /// Keyboard and mouse button prompts: with the device in use (auto), or always one kind.
+    std::atomic<int> button_prompts{PromptsAuto};
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};
@@ -148,6 +160,8 @@ struct Values {
     /// Ultrawide outputs: the HUD's corner groups, 0 centred in 16:9 .. 100 at the screen edges
     /// (hud_layout.py at start).
     std::atomic<int> hud_position{100};
+    /// Vertical field of view in degrees, 43 the game's (run.py, fov.py at start).
+    std::atomic<int> fov{FovDefault};
     /// Live resolution and preset changes (run.sh): 0 off by default (startup patch, fastest
     /// on the Steam Deck and older GPUs), -1 auto (strong discrete GPUs), 1 on. On restart.
     std::atomic<int> live_resolution{0};
@@ -189,6 +203,7 @@ struct Values {
     int startup_model_lod = 0;
     int startup_output_res = OutputDefault;
     int startup_hud_position = 100;
+    int startup_fov = FovDefault;
     int startup_live_resolution = 0;
 };
 

@@ -1,5 +1,7 @@
 #include "bbport_nvidia.h"
 // bbport: SDL3 window for the Vulkan swapchain (X11 or Wayland).
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <array>
@@ -8,6 +10,8 @@
 #include "common/logging/log.h"
 #include "sdl_window.h"
 #include "bbport_mouse.h"
+#include "bbport_overlay.h"
+#include "bbport_prompts.h"
 #include "bloodborne_cam.h"
 #include "bbport_overlay.h"
 #include "bbport_settings.h"
@@ -18,6 +22,23 @@
 #endif
 
 namespace Frontend {
+
+/// The buttons a controller has, for its prompts: SDL's type, by vendor and product.
+static BbPrompts::Device PadDevice(SDL_JoystickID id) {
+    switch (SDL_GetGamepadTypeForID(id)) {
+    case SDL_GAMEPAD_TYPE_PS3:
+    case SDL_GAMEPAD_TYPE_PS4:
+    case SDL_GAMEPAD_TYPE_PS5:
+        return BbPrompts::PlayStation;
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+        return BbPrompts::Switch;
+    default:
+        return BbPrompts::Xbox; // Xbox, and the many controllers that copy its buttons
+    }
+}
 
 namespace {
 // MOU-007: each wheel step keeps its direction's bit set for 33 ms (shadPS4's pulse length,
@@ -150,6 +171,7 @@ void WindowSDL::RefreshFocusState() {
         focused = GetForegroundWindow() == hwnd && IsWindowVisible(hwnd) && !IsIconic(hwnd);
     }
 #endif
+    window_focused.store(focused, std::memory_order_relaxed);
     auto& settings = BbSettings::Get();
     if (settings.window_focused.exchange(focused) == focused) return;
     SDL_Event event{};
@@ -178,9 +200,90 @@ bool WindowSDL::PollEvents() {
         if (event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST &&
             event.window.windowID != SDL_GetWindowID(window)) continue;
         if (event.type == SDL_EVENT_KEY_DOWN) {
-            // File triggers only. Vulkan commands stay on the renderer's command thread.
+            // F8 also reloads input.ini; capture must not consume that event.
             static BbCapture::GeometryKey capture;
-            if (capture.Press(event.key.scancode == SDL_SCANCODE_F8, event.key.repeat)) continue;
+            capture.Press(event.key.scancode == SDL_SCANCODE_F8, event.key.repeat);
+        }
+        // Button prompts follow the device that was used last: a key, a click, the wheel or a
+        // real mouse movement, or a controller button or a stick or trigger pushed past half.
+        switch (event.type) {
+        case SDL_EVENT_KEY_DOWN:
+            if (!event.key.repeat) BbPrompts::OnInput(BbPrompts::Keyboard);
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_WHEEL:
+            BbPrompts::OnInput(BbPrompts::Keyboard);
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+            if (std::abs(event.motion.xrel) + std::abs(event.motion.yrel) >= 3.0f) {
+                BbPrompts::OnInput(BbPrompts::Keyboard);
+            }
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            BbPrompts::OnInput(PadDevice(event.gbutton.which));
+            break;
+        case SDL_EVENT_GAMEPAD_ADDED:
+            // The game starts with the controller's prompts.
+            std::printf("Prompts: controller %s: %s\n", SDL_GetGamepadNameForID(event.gdevice.which),
+                        SDL_GetGamepadStringForType(SDL_GetGamepadTypeForID(event.gdevice.which)));
+            BbPrompts::OnControllerConnected(PadDevice(event.gdevice.which));
+            break;
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+            if (std::abs(int(event.gaxis.value)) > 16000) BbPrompts::OnInput(PadDevice(event.gaxis.which));
+            break;
+        default:
+            break;
+        }
+        // HOT-003: the toggle/reload hotkeys work regardless of the menu or text dialog (F8
+        // must reload input.ini even with the menu open), so they are handled before anything
+        // else gets a chance to consume the key event. Held-down repeats are ignored the same
+        // way the menu's own Insert/Escape toggle already is (!event.key.repeat).
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+            const int32_t scancode = static_cast<int32_t>(event.key.scancode);
+            if (scancode == toggle_scancode.load(std::memory_order_relaxed) &&
+                mouse_mode_available.load(std::memory_order_relaxed)) {
+                mouse_mode_on.store(!mouse_mode_on.load(std::memory_order_relaxed), std::memory_order_relaxed);
+                continue;
+            }
+            if (scancode == reload_scancode.load(std::memory_order_relaxed)) {
+                reload_requested.store(true, std::memory_order_relaxed);
+                continue;
+            }
+        }
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+            window_focused = true;
+        } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+            window_focused = false;
+        }
+        // Mouse motion/buttons/wheel feed the pad only while captured (MOU-002..006); the
+        // overlay (menu) gets its own mouse handling below via BbOverlay::HandleEvent and is
+        // mutually exclusive with capture (WantsMouseCapture() is false whenever the menu is
+        // open), so there is no double consumption of the same event by both paths. Note:
+        // mouse_captured_last only updates once per PollEvents call (below the event loop), so
+        // a menu-opening event (L3+R3, Insert) followed within the same batch by a mouse event
+        // can still see the old captured state for one iteration; accepted as a one-frame
+        // edge case rather than re-evaluating capture per event for a cosmetic gain.
+        if (mouse_captured_last) {
+            // Direct camera: the BbMouse thread turns motion into camera angles, so it must not
+            // also reach the stick -- except while locked on, where a flick switches targets.
+            const Core::BloodborneCam& cam = Core::BloodborneCam::Instance();
+            const bool motion_to_stick = !cam.IsEnabled() || cam.IsLockedOn();
+            if (event.type == SDL_EVENT_MOUSE_MOTION && motion_to_stick) {
+                std::scoped_lock lock{mouse_mutex};
+                mouse.dx += event.motion.xrel;
+                mouse.dy += event.motion.yrel;
+            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                std::scoped_lock lock{mouse_mutex};
+                const uint32_t mask = SDL_BUTTON_MASK(event.button.button);
+                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) mouse.buttons |= mask;
+                else mouse.buttons &= ~mask;
+            } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                const uint64_t expiry = SDL_GetTicks() + kWheelPulseMs;
+                if (event.wheel.y > 0) g_wheel_expiry_ms[0] = expiry; // WHEEL_UP
+                else if (event.wheel.y < 0) g_wheel_expiry_ms[1] = expiry; // WHEEL_DOWN
+                if (event.wheel.x > 0) g_wheel_expiry_ms[3] = expiry; // WHEEL_RIGHT
+                else if (event.wheel.x < 0) g_wheel_expiry_ms[2] = expiry; // WHEEL_LEFT
+            }
         }
         if (text_active && (event.type == SDL_EVENT_TEXT_INPUT || event.type == SDL_EVENT_KEY_DOWN)) {
             std::scoped_lock lock{text_mutex};
@@ -237,6 +340,12 @@ bool WindowSDL::PollEvents() {
         BbNvidia::BeforeSwapchainChange();
     BbBackground::Update(is_open && !settings.window_focused &&
                          settings.background_mode == BbSettings::BackgroundPause);
+    // MOU-004: re-evaluated every PollEvents (not only on the events that could change it),
+    // because the menu can also close from the render thread (bbport_overlay.cpp's "Close"
+    // button sets menu_open there, not through an SDL event here).
+    UpdateMouseCapture();
+    BbPrompts::Apply();
+    UpdateMouseCamera();
     return is_open;
 }
 

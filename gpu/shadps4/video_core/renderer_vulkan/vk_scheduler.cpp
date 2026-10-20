@@ -491,6 +491,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         BbHitch::Record("Vulkan queue lock",lock_started);
         BbHitch::Scope hitch{"Vulkan queue submit"};
         const auto submit_result = submission_queue.submit(submit_info, info.fence);
+        if (submit_result == vk::Result::eErrorDeviceLost) instance.ReportDeviceLost("submit");
         ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
     }
 

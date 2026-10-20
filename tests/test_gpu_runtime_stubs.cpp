@@ -1,3 +1,5 @@
+#include <thread>
+#include <chrono>
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <cstdlib>
 #include <chrono>
@@ -6,14 +8,16 @@
 #include <setjmp.h>
 // Renderer tests have no guest process. Clock/host-thread services work; guest accesses abort.
 // A headless fixture has no SDL display; do not pull the game frontend into it.
+#ifndef BB_TEST_LINKED_GPU
 uint32_t BbDisplayRefreshHz() { return 60; }
+#endif
 extern "C" {
 #ifdef _WIN32
 thread_local jmp_buf* runtime_fault_recover = nullptr;
 #else
 thread_local sigjmp_buf* runtime_fault_recover = nullptr;
 #endif
-uint32_t runtime_disabled_optimizations = 0;
+uint64_t runtime_disabled_optimizations = 0;
 uint64_t runtime_tsc_frequency() { return 1000000000; }
 int runtime_file_translate(const char*, char*, size_t) { std::abort(); }
 uint64_t runtime_memory_clamp(uintptr_t, uint64_t) { std::abort(); }
@@ -38,3 +42,14 @@ extern "C" void runtime_memory_wait_page_protection_range(uintptr_t, uint64_t) {
 extern "C" void runtime_memory_set_range_protection_hook(void (*)(uintptr_t,uint64_t)) { std::abort(); }
 extern "C" void runtime_memory_apply_page_protection(uintptr_t, uint64_t, uint32_t) { std::abort(); }
 extern "C" void runtime_memory_set_protection_hooks(void (*)(uintptr_t,uint64_t,uint32_t,uintptr_t), void (*)()) { std::abort(); }
+
+extern "C" {
+int runtime_memory_is_mapped(uintptr_t, uint64_t) { abort(); }
+int32_t runtime_thread_spawn(void**, void*(__attribute__((sysv_abi))*)(void*), void*, uint64_t, const char*) { abort(); }
+int32_t runtime_thread_join_spawned(void*, void**) { abort(); }
+[[noreturn]] void runtime_thread_exit(void*) { abort(); }
+#ifdef _WIN32
+int bb_setjmp(unsigned long long*) { abort(); }
+void compat_sleep_ns(uint64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); }
+#endif
+}

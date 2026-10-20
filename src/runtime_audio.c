@@ -9,6 +9,7 @@
 #define _GNU_SOURCE
 #include "runtime.h"
 #include "../gpu/bbgpu.h"
+extern int bbgpu_audio_muted(void) __attribute__((weak));
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -257,13 +258,16 @@ static int32_t output_port(int32_t handle, const void *data, int pace) {
         /* Per-channel volume. When the device has fewer channels than the port,
          * fold here with fronts at unity. Otherwise map PS4 8ch (L R C LFE SL SR BL BR) to SDL 7.1. */
         unsigned char converted[2048*8*4];
+        /* mute_unfocused: silence while the window is in the background; the port keeps its
+         * pace, so the game's audio threads run on as before. */
+        const float gain_all=bbgpu_audio_muted && bbgpu_audio_muted() ? 0.f : master_gain;
         if (p->out_channels!=p->channels) {
             static const int from_std[8]={0,1,2,3,6,7,4,5}; /* SDL order -> PS4 L R C LFE SL SR BL BR */
             for (size_t f=0;f<(size_t)p->frames;++f) {
                 float in[8]={0}, out[8]={0};
                 for (int s=0;s<p->channels && s<8;++s) {
                     int guest=p->channels==8 && p->std_layout ? from_std[s] : s;
-                    float gain=(float)p->volume[guest]/VOLUME_0DB*master_gain;
+                    float gain=(float)p->volume[guest]/VOLUME_0DB*gain_all;
                     in[s]=take(data,p->is_float,f*(size_t)p->channels+(size_t)guest,gain);
                 }
                 fold8(in,out,p->out_channels);
@@ -274,7 +278,7 @@ static int32_t output_port(int32_t handle, const void *data, int pace) {
             for (size_t f=0;f<(size_t)p->frames;++f) for (int c=0;c<p->channels;++c) {
                 int target=p->channels==8 && !p->std_layout ? remap[c] : c;
                 size_t from=f*(size_t)p->channels+(size_t)c, to=f*(size_t)p->channels+(size_t)target;
-                float gain=(float)p->volume[c]/VOLUME_0DB*master_gain;
+                float gain=(float)p->volume[c]/VOLUME_0DB*gain_all;
                 put(converted,p->is_float,to,take(data,p->is_float,from,gain));
             }
         }

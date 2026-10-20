@@ -2031,7 +2031,10 @@ void Rasterizer::EmitIndexBuffer() {
     scheduler.Record([handle = index_bind.handle, offset = index_bind.offset,
                       size = index_bind.size, type = index_bind.type,
                       maintenance5 = instance.IsMaintenance5Supported()](vk::CommandBuffer cmdbuf) {
-        if (maintenance5) {
+        // bbport: a real buffer is bound without a size (VK_WHOLE_SIZE), as up to 1.8.2. With
+        // the count as its size, drivers that check index reads (GTX 16, RTX 20, Intel) read
+        // the indices past it as 0: triangles stretched to vertex 0 ("vertex explosion", 1.9).
+        if (maintenance5 && !handle) {
             cmdbuf.bindIndexBuffer2KHR(handle, offset, size, type);
         } else {
             cmdbuf.bindIndexBuffer(handle, offset, type);
@@ -2058,8 +2061,9 @@ void Rasterizer::ResolveIndexBuffer(u32 index_offset, bool is_indirect) {
 
     // Bind index buffer: indirect draws may read up to the buffer capacity, direct ones their
     // count within it. Unmapped tails are dropped and a null base binds no memory.
-    const u32 num_indices =
-        is_indirect ? regs.max_index_size : std::min(regs.num_indices, regs.max_index_size);
+    // bbport: direct draws read their own count, as up to 1.8.2: the capacity register can be
+    // left from an earlier draw and smaller (upstream clamps to it since #5278).
+    const u32 num_indices = is_indirect ? regs.max_index_size : regs.num_indices;
     const u64 requested_size = u64(num_indices) * index_size;
     const u64 mapped_size =
         base_address != 0 ? memory->ClampRangeSize(index_address, requested_size) : 0;

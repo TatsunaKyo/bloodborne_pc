@@ -688,6 +688,7 @@ void WindowSettings() {
     }
 
     Section(Text("Background behavior", "Работа в фоне"));
+    Checkbox("Mute when the game is in the background###mute_unfocused", s.mute_unfocused);
     const char* background_modes[] = {
         Text("Keep running###background_run", "Продолжать работу###background_run"),
         Text("Pause game and rendering###background_pause", "Приостановить игру и рендер###background_pause"),
@@ -863,6 +864,14 @@ void AdvancedSettings() {
 
 void EffectSettings() {
     auto& s = BbSettings::Get();
+    static const char* prompt_modes[] = {"Follow the device in use", "PlayStation", "Keyboard and mouse", "Xbox", "Nintendo Switch"};
+    const int prompts = std::clamp(s.button_prompts.load(), 0, BbSettings::PromptsCount - 1);
+    if (ImGui::BeginCombo("Button prompts", prompt_modes[prompts])) {
+        for (int i = 0; i < BbSettings::PromptsCount; ++i) {
+            if (ImGui::Selectable(prompt_modes[i], i == prompts)) Store(s.button_prompts, i, true);
+        }
+        ImGui::EndCombo();
+    }
     Section(Text("Game effects (restart required)", "Эффекты игры (после перезапуска)"));
     Hint(Text("The game's AA preference is used with the upscaler off. Temporal upscalers use their own AA. Switching between Off and a temporal upscaler requires a restart.",
               "Собственное сглаживание игры используется без апскейлера. Временные апскейлеры используют своё сглаживание. Для переключения между Off и временным апскейлером нужен перезапуск."));
@@ -885,6 +894,11 @@ void EffectSettings() {
         }
         ImGui::EndCombo();
     }
+    int fov = s.fov;
+    const bool fov_changed = ImGui::SliderInt("Field of view", &fov, BbSettings::FovMin, BbSettings::FovMax,
+                                           fov == BbSettings::FovDefault ? "%d (game)" : "%d");
+    Store(s.fov, fov, fov_changed);
+    Hint("Vertical field of view in degrees. Camera changes apply after restart.");
     const int columns = ImGui::GetContentRegionAvail().x >= ImGui::GetFontSize() * 34.0f ? 2 : 1;
     if (ImGui::BeginTable("###effects_grid", columns, ImGuiTableFlags_SizingStretchSame)) {
         for (int e = 0; e < BbSettings::EffectCount; ++e) {
@@ -1016,6 +1030,7 @@ void Menu() {
                    s.nvidia_fg_mod != s.startup_nvidia_fg_mod ||
                    s.nvidia_fg_preset != s.startup_nvidia_fg_preset ||
                    s.model_lod != s.startup_model_lod ||
+                   s.fov != s.startup_fov ||
                    s.live_resolution != s.startup_live_resolution ||
                    BbSettings::ResolutionNeedsRestart();
     for (int e = 0; e < BbSettings::EffectCount; ++e) {
@@ -1034,6 +1049,24 @@ void Menu() {
             BbSettings::Save();
             runtime_restart();
         }
+    }
+    // Issues #74, #116: leaving the game from the pad (this menu opens with L3+R3). A second
+    // press confirms; the window thread then closes like the window's own close button.
+    // (From bbport 0.51.)
+    static bool quit_armed;
+    ImGui::SameLine();
+    // One ID for both labels ("###bb_quit"): with a new ID the button lost the pad's or keyboard's
+    // focus at the first press, which disarmed it at once.
+    if (ImGui::Button(quit_armed ? "Press again to quit###bb_quit" : "Quit game###bb_quit")) {
+        if (quit_armed) {
+            SDL_Event quit{};
+            quit.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit);
+        }
+        quit_armed = !quit_armed;
+    }
+    if (quit_armed && !ImGui::IsItemFocused() && !ImGui::IsItemHovered()) {
+        quit_armed = false;
     }
     ImGui::SameLine();
     ImGui::TextDisabled("Insert / L3+R3");

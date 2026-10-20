@@ -246,6 +246,13 @@ void EmitContext::DefineBufferProperties() {
             continue;
         }
 
+        // bbport: bindings 40 and up read their offset out of bounds before ShaderBinaryVersion
+        // 11 (stretched polygons on NVIDIA/Intel): logged to tell such shaders in reports.
+        static std::atomic<int> high_bindings{0};
+        if (binding >= 40 && high_bindings.fetch_add(1) < 8) {
+            std::printf("Shader %016llx: buffer binding %u uses its offset (past binding 40)\n",
+                        static_cast<unsigned long long>(info.pgm_hash), binding);
+        }
         const u32 half = PushData::BufOffsetIndex + (binding >> 4);
         const u32 comp = (binding & 0xf) >> 2;
         const u32 offset = (binding & 0x3) << 3;

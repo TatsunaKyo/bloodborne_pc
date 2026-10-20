@@ -3,6 +3,7 @@
 
 #include "bbport_toggles.h"
 #include "bbport_hitch.h"
+#include <atomic>
 #include <ranges>
 #include <memory>
 #include "common/assert.h"
@@ -20,45 +21,6 @@ namespace VideoCore {
 using namespace Vulkan;
 
 Common::IncrementalIdProvider<u64> Image::global_image_uid{};
-
-namespace {
-
-/// bbport: discrete GPUs: the memory types outside VRAM, when VRAM is within `reserve` of the
-/// driver's budget; 0 otherwise. The buffer cache backs guest memory in VRAM as areas load, and
-/// on NVIDIA that backing cannot go anywhere else: textures made near the limit go to system
-/// memory instead (slower, but the next area still finds room; ErrorOutOfDeviceMemory on 4 GB
-/// cards otherwise). Integrated GPUs (Steam Deck) keep their own rules.
-u32 SystemMemoryTypesNearVramLimit(VmaAllocator allocator) {
-    const VkPhysicalDeviceProperties* device{};
-    vmaGetPhysicalDeviceProperties(allocator, &device);
-    if (device->deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-        return 0;
-    }
-    const VkPhysicalDeviceMemoryProperties* memory{};
-    vmaGetMemoryProperties(allocator, &memory);
-    VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
-    vmaGetHeapBudgets(allocator, budgets);
-    bool near_limit = false;
-    for (u32 heap = 0; heap < memory->memoryHeapCount; ++heap) {
-        if (memory->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
-            const u64 reserve = std::min<u64>(512ull << 20, memory->memoryHeaps[heap].size / 8);
-            near_limit |= budgets[heap].usage + reserve > budgets[heap].budget;
-        }
-    }
-    if (!near_limit) {
-        return 0;
-    }
-    u32 types = 0;
-    for (u32 type = 0; type < memory->memoryTypeCount; ++type) {
-        const u32 heap = memory->memoryTypes[type].heapIndex;
-        if (!(memory->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)) {
-            types |= 1u << type;
-        }
-    }
-    return types;
-}
-
-} // namespace
 
 static vk::ImageUsageFlags ImageUsageFlags(const Vulkan::Instance& instance,
                                            const ImageInfo& info) {
@@ -143,6 +105,12 @@ void UniqueImage::Destroy() {
 }
 
 void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
+    const bool created = TryCreate(image_ci);
+    ASSERT_MSG(created, "Failed allocating image with error {}",
+               vk::to_string(vk::Result::eErrorOutOfDeviceMemory));
+}
+
+bool UniqueImage::TryCreate(const vk::ImageCreateInfo& image_ci) {
     BbHitch::Scope hitch{"Vulkan image allocation"};
     this->image_ci = image_ci;
     ASSERT(!image);
@@ -158,20 +126,8 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     const VkImageCreateInfo image_ci_unsafe = static_cast<VkImageCreateInfo>(image_ci);
     VkImage unsafe_image{};
     VmaAllocationInfo alloc_info{};
-    VkResult result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    if (const u32 system_types = SystemMemoryTypesNearVramLimit(allocator)) {
-        VmaAllocationCreateInfo system = alloc_ci;
-        system.memoryTypeBits = system_types;
-        result = vmaCreateImage(allocator, &image_ci_unsafe, &system, &unsafe_image, &allocation,
-                                &alloc_info);
-        if (result == VK_SUCCESS) {
-            Vulkan::NoteOverBudget("image");
-        }
-    }
-    if (result != VK_SUCCESS) {
-        result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
-                                &allocation, &alloc_info);
-    }
+    VkResult result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
+                                     &allocation, &alloc_info);
     if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
         // bbport: VRAM full (6 GB cards, high resolutions). Past the budget the driver keeps the
         // image in system memory, which is slower but no crash.
@@ -181,10 +137,17 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
         result = vmaCreateImage(allocator, &image_ci_unsafe, &over_budget, &unsafe_image,
                                 &allocation, &alloc_info);
     }
+    // bbport: out of memory past the budget too (AMD keeps render targets in VRAM only, so a
+    // 4 GB card has no system memory to fall back on): the caller frees memory and tries again.
+    if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
+        allocation = {};
+        return false;
+    }
     ASSERT_MSG(result == VK_SUCCESS, "Failed allocating image with error {}",
                vk::to_string(vk::Result{result}));
     image = vk::Image{unsafe_image};
     size_bytes = alloc_info.size;
+    return true;
 }
 
 Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
@@ -272,7 +235,22 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     backing = &backing_images.emplace_back();
     backing->num_samples = info.num_samples;
     backing->image = UniqueImage{instance.GetDevice(), instance.GetAllocator()};
-    backing->image.Create(image_ci);
+    // bbport: BB_IMAGE_FAIL_EVERY=N (tests): every Nth image finds no memory once, as on a full
+    // 4 GB card, so TextureCache::InsertImage's freeing runs often on any GPU.
+    static const u32 fail_every = [] {
+        const char* env = std::getenv("BB_IMAGE_FAIL_EVERY");
+        return env ? u32(std::strtoul(env, nullptr, 10)) : 0u;
+    }();
+    static std::atomic<u32> num_created{0};
+    if (fail_every && (num_created.fetch_add(1, std::memory_order_relaxed) + 1) % fail_every == 0) {
+        backing->image.image_ci = image_ci;
+        allocation_failed = true;
+        return;
+    }
+    if (!backing->image.TryCreate(image_ci)) {
+        allocation_failed = true; // TextureCache::InsertImage frees memory and retries
+        return;
+    }
 
     Vulkan::SetObjectName(instance.GetDevice(), GetImage(),
                           "Image {}x{}x{} {} {} {:#x}:{:#x} L:{} M:{} S:{}", info.size.width,
@@ -282,6 +260,14 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
 }
 
 Image::~Image() = default;
+
+bool Image::RetryAllocation() {
+    if (!backing->image.TryCreate(backing->image.image_ci)) {
+        return false;
+    }
+    allocation_failed = false;
+    return true;
+}
 
 ImageView& Image::FindView(const ImageViewInfo& view_info, bool ensure_guest_samples) {
     if (ensure_guest_samples && backing->num_samples > 1 != info.num_samples > 1) {

@@ -469,13 +469,14 @@ void PipelineCache::QueueBuild(const PipelineSelection& selection,const Graphics
             if(!pipeline->Handle())pipeline.reset();
             job->result.set_value(std::move(pipeline));
         } catch(...) {job->result.set_value(nullptr);}
-    }))builds.erase(key);
+    }, job.get()))builds.erase(key);
 }
 bool PipelineCache::FinishBuild(const GraphicsPipelineKey& key,bool wait) {
     std::shared_ptr<PendingBuild> job;
     {std::scoped_lock lock{builds_mutex};auto it=builds.find(key);if(it==builds.end())return false;
      job=it->second;if(!wait && job->ready.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return false;
      builds.erase(it);published_builds.insert(key);}
+    if (wait && build_queue) build_queue->RunPending(job.get());
     auto pipeline=job->ready.get();
     if(!pipeline)return false; // A speculative failure falls back to the live synchronous path.
     if(graphics_pipelines.contains(key))return true;

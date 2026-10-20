@@ -129,6 +129,9 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     backing_pool.Initialize(device, arena_memory_type_index, block_size,
                             instance.MaxMemoryAllocationSize(),
                             memory_properties.memoryHeaps[arena_heap].size,std::move(compatible_host_types));
+    if (!instance.IsIntegrated()) {
+        backing_pool.TryReserve(std::min<u64>(512_MB, memory_properties.memoryHeaps[arena_heap].size / 8));
+    }
 
     const u64 bda_pagetable_size =
         (blocks_per_arena_page * num_arena_pages) * sizeof(vk::DeviceAddress);
@@ -630,6 +633,7 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
 
     const auto physical = Vulkan::Check(backing_pool.Allocate(u64{resident_blocks} << block_shift));
     const auto device_memory = physical.memory;
+    arena_backed += u64{resident_blocks} << block_shift;
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =
@@ -913,6 +917,7 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
         BbHitch::Record("sparse queue lock", started);
         BbHitch::Scope hitch{"vkQueueBindSparse"};
         const auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
+        if (submit_result == vk::Result::eErrorDeviceLost) instance.ReportDeviceLost("sparse binding");
         ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
     }
 

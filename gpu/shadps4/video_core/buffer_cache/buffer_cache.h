@@ -136,6 +136,12 @@ public:
     /// Mark region as modified from the GPU
     void MarkRegionAsGpuModified(VAddr addr, size_t size);
 
+    /// bbport: memory backing guest memory for the GPU (never freed), the reserve kept for it,
+    /// and the part of the reserve used (for the memory report).
+    [[nodiscard]] u64 ArenaBackedBytes() const { return arena_backed; }
+    [[nodiscard]] u64 ArenaReserveBytes() const { return backing_pool.ReserveBytes(); }
+    [[nodiscard]] u64 ArenaReserveUsedBytes() const { return backing_pool.ReserveUsedBytes(); }
+
     /// Synchronizes all buffers needed for DMA.
     void SynchronizeDmaBuffers();
 
@@ -223,6 +229,7 @@ private:
     IntervalList<Backing> resident_ranges;
 
     u32 arena_memory_type_index{};
+    u64 arena_backed{};
     u32 block_size{};
     u32 block_shift{};
     u32 blocks_per_arena_page{};
