@@ -92,6 +92,7 @@ class UpdateArchive(unittest.TestCase):
                     update_button=types.SimpleNamespace(configure=lambda **kw: None),
                     update_label=types.SimpleNamespace(configure=lambda **kw: None),
                     root=types.SimpleNamespace(destroy=lambda: closed.append(True)))
+                obj.install_version = types.MethodType(launcher.Launcher.install_version, obj)
 
                 class Thread:
                     def __init__(self, *, target, daemon): self.target = target

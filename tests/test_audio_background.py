@@ -62,6 +62,8 @@ struct SDL_AudioSpec{int format,channels,freq;};
 bool SDL_GetAudioDeviceFormat(int,SDL_AudioSpec* spec,void*){spec->channels=8;return true;}
 struct SDL_AudioStream {std::mutex mutex;bool paused=true,closed=false;std::vector<unsigned char> queued;};
 static bool open_fail;
+static bool muted_for_test;
+extern "C" int bbgpu_audio_muted(void) { return muted_for_test; }
 bool SDL_InitSubSystem(int){return true;}
 const char* SDL_GetCurrentAudioDriver(){return "recording";}
 const char* SDL_GetError(){return "fixture open failure";}
@@ -156,6 +158,17 @@ int main(int argc,char**argv){
     int32_t volume[8]={16384,32768,32768,32768,32768,32768,32768,32768};
     assert(audio_volume(a,1,volume)==0 && audio_output(a,pcm.data())==512);
     auto data=Queued(ports[a&0xff].stream);
+    if(!data.empty()){
+        int16_t left,right;std::memcpy(&left,data.data()+data.size()-1024,2);
+        std::memcpy(&right,data.data()+data.size()-1022,2);assert(left==617 && right==1234);
+    }
+    muted_for_test=true;
+    assert(audio_output(a,pcm.data())==512);
+    data=Queued(ports[a&0xff].stream);
+    if(!data.empty())assert(std::all_of(data.end()-1024,data.end(),[](unsigned char v){return v==0;}));
+    muted_for_test=false;
+    assert(audio_output(a,pcm.data())==512);
+    data=Queued(ports[a&0xff].stream);
     if(!data.empty()){
         int16_t left,right;std::memcpy(&left,data.data()+data.size()-1024,2);
         std::memcpy(&right,data.data()+data.size()-1022,2);assert(left==617 && right==1234);

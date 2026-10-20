@@ -40,6 +40,14 @@ def main():
     run([sys.executable,'tests/test_present_queue_scope.py'])
     run([sys.executable,'tests/test_swapchain_recovery.py'])
     run([sys.executable,'tests/test_cpu_integrations.py'])
+    for file in ('test_pipeline_compile_ahead.py','test_sparse_backing_pool.py',
+                 'test_renderer_memory_refresh.py','test_object_motion_targets.py',
+                 'test_texture_refresh_hashes.py','test_readback_policy.py',
+                 'test_native_fg_policy.py','test_temporal_draw_policy.py'):
+        run([sys.executable,'tests/'+file])
+    subprocess.run(['g++','-std=c++20','-O1','-UNDEBUG','-pthread','-Igpu/shadps4',
+                    'tests/test_pipeline_priority.cpp','-o','out/verification/pipeline-priority'],cwd=ROOT,check=True)
+    subprocess.run([str(ROOT/'out/verification/pipeline-priority')],cwd=ROOT,check=True)
     run([sys.executable,'tests/test_streaming_write_prepare.py'])
     run([sys.executable,'tests/test_window_focus.py'])
     run([sys.executable,'tests/test_audio_background.py'])

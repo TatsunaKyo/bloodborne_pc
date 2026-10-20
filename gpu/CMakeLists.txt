@@ -311,6 +311,9 @@ target_compile_options(command-buffer-test PRIVATE -UNDEBUG -Wall -Wextra -Werro
 target_include_directories(command-buffer-test PRIVATE ..)
 
 add_executable(motion-history-test EXCLUDE_FROM_ALL ../tests/test_motion_history.cpp)
+add_executable(pipeline-priority-test EXCLUDE_FROM_ALL ../tests/test_pipeline_priority.cpp)
+target_include_directories(pipeline-priority-test PRIVATE shadps4)
+target_compile_options(pipeline-priority-test PRIVATE -UNDEBUG)
 add_executable(temporal-history-test EXCLUDE_FROM_ALL ../tests/test_temporal_history.cpp)
 target_include_directories(temporal-history-test PRIVATE ..)
 target_compile_options(temporal-history-test PRIVATE -UNDEBUG)
@@ -343,10 +346,12 @@ add_executable(camera-motion-test EXCLUDE_FROM_ALL ../tests/test_camera_motion.c
 target_include_directories(camera-motion-test PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include)
 target_compile_options(camera-motion-test PRIVATE -UNDEBUG -fPIC)
 target_link_libraries(camera-motion-test PRIVATE bbgpu)
-target_compile_definitions(camera-motion-test PRIVATE BB_TEST_LINKED_GPU=1)
-if(WIN32)
-    target_link_libraries(camera-motion-test PRIVATE onecore)
-endif()
+foreach(test_target camera-motion-test motion-shader-test scene-resolution-test taa-shader-test)
+    target_compile_definitions(${test_target} PRIVATE BB_TEST_LINKED_GPU=1)
+    if(WIN32)
+        target_link_libraries(${test_target} PRIVATE onecore)
+    endif()
+endforeach()
 add_dependencies(camera-motion-test host_shaders)
 
 # bbport: keyboard and mouse button prompt icons: ninja -C out/gpu prompt-icons-test, then run it

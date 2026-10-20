@@ -72,7 +72,7 @@ public:
  __BACKING__
  struct ArenaBinds{const Buffer* arena;std::vector<vk::SparseMemoryBind> binds;};
  Instance instance{};u32 block_shift=16,block_size=1<<16,arena_memory_type_index=3;
- u64 arena_page_bits=24,arena_page_size=1<<24,blocks_per_arena_page=256,blocks_per_arena_page_shift=8;
+ u64 arena_page_bits=24,arena_page_size=1<<24,blocks_per_arena_page=256,blocks_per_arena_page_shift=8,arena_backed=0;
  SparseMemoryPool backing_pool;std::deque<Buffer> arenas;
  std::array<const Buffer*,64> address_space{};std::deque<ArenaBinds> pending_binds;
  IntervalList<Backing> resident_ranges;
@@ -104,6 +104,22 @@ int main(){
  {SparseMemoryPool pool;reject_type=3;pool.Initialize(vk::Device(reinterpret_cast<VkDevice>(1)),3,65536,1ull<<32,8ull<<30,{7});
   auto result=pool.Allocate(65536);assert(result.result==vk::Result::eSuccess && physical.begin()->second.type==7);}
  reject_type=~u32{};Reset();
+ {SparseMemoryPool pool;pool.Initialize(vk::Device(reinterpret_cast<VkDevice>(1)),3,65536,1ull<<32,8ull<<30,{7});
+  pool.TryReserve(4*MiB);assert(calls==0 && pool.ReserveBytes()==0);}
+ Reset();{
+  SparseMemoryPool pool;pool.Initialize(vk::Device(reinterpret_cast<VkDevice>(1)),3,65536,1ull<<32,8ull<<30);
+  pool.TryReserve(4*MiB);assert(calls==1 && pool.ReserveBytes()==4*MiB && pool.ReserveUsedBytes()==0);
+  reject_type=3;auto first=pool.Allocate(65536);auto second=pool.Allocate(65536);
+  assert(first.result==vk::Result::eSuccess && second.result==vk::Result::eSuccess);
+  assert(first.value.memory==second.value.memory && first.value.offset==0 && second.value.offset==65536);
+  assert(pool.ReserveUsedBytes()==131072);
+  auto fail=pool.Allocate(4*MiB);assert(fail.result==vk::Result::eErrorOutOfDeviceMemory && pool.ReserveUsedBytes()==131072);
+ }assert(physical.empty());reject_type=~u32{};
+ Reset();{
+  SparseMemoryPool pool;pool.Initialize(vk::Device(reinterpret_cast<VkDevice>(1)),3,65536,1ull<<32,8ull<<30);
+  reject_count=1;pool.TryReserve(4*MiB);assert(pool.ReserveBytes()==0);
+  auto next=pool.Allocate(65536);assert(next.result==vk::Result::eSuccess);
+ }assert(physical.empty());
  for(u64 alignment:{16ull*1024,64ull*1024,256ull*1024}){
   Reset();{
    SparseMemoryPool pool;pool.Initialize(vk::Device(reinterpret_cast<VkDevice>(1)),3,alignment,1ull<<32,8ull<<30);

@@ -18,7 +18,8 @@ auto* upscaler=&up;auto* camera_motion=&camera;
 struct {unsigned first;} db_desc;
 struct Count{unsigned n=1;unsigned NumInstances(){return n;}};
 struct {unsigned num_indices{};Count num_instances;bool screen_space{};bool IsClipDisabled(){return screen_space;}} regs;
-struct Pipeline{bool attributes=true;std::optional<int> GetFetchShader(){return attributes?std::optional<int>(1):std::nullopt;}} gpu_pipeline;
+struct FetchShader {bool empty;bool Empty()const{return empty;}};
+struct Pipeline{bool attributes=true;FetchShader GetFetchShader(){return {!attributes};}} gpu_pipeline;
 auto* pipeline=&gpu_pipeline;
 std::array<float,2> draw_jitter;bool gbuffer_draw;
 void Select(){

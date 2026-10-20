@@ -1,7 +1,10 @@
 # The Crowned Workshop — Release notes
 
-Revision 23 is the latest published stable release, with Support Report and Save Manager. Revision 24 begins the next renderer work with safer shader-cache loading and complete cache-write draining at shutdown. I keep the older dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.
+R55 is the current integration candidate. Each dated record states what changed, what was verified and which target-hardware results remain unverified. Use the [current guides](../index.md) for settings and [current reports](../known-issues.md) for their latest status.
 
+- [Revision 55 — Supermedo 1.9.2 and renderer resource/compilation work](windows-v1.6-tatsunakyo.55.md)
+- [Revision 54 — repair complete packaged FPS patch data](windows-v1.6-tatsunakyo.54.md)
+- [Revision 53 — renderer ordering and resource work](windows-v1.6-tatsunakyo.53.md)
 - [Revision 52 — renderer 0.20.1, stable cache storage and texture retention (preview)](windows-v1.6-tatsunakyo.52.md)
 - [Revision 51 — direct vertex upload footprints and complete timeline export (preview)](windows-v1.6-tatsunakyo.51.md)
 - [Revision 50 — source-range dependencies and issue-time copy fences (preview)](windows-v1.6-tatsunakyo.50.md)

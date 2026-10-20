@@ -69,6 +69,9 @@ BbFrameMetrics::RealFrameHistory real_frame_history;
 std::mutex imgui_mutex;
 bool initialized=true,l3_down=false,r3_down=false;
 constexpr int SDL_EVENT_WINDOW_FOCUS_GAINED=1,SDL_EVENT_WINDOW_FOCUS_LOST=2;
+constexpr int SDL_EVENT_QUIT=3;
+struct SDL_Event {int type;};
+int SDL_PushEvent(SDL_Event* event){assert(event->type==SDL_EVENT_QUIT);return 1;}
 int restart_calls=0;
 extern "C" void runtime_restart() { ++restart_calls; }
 ImRect language_rect, russian_rect, english_rect, window_rect, borderless_rect, windowed_rect, vsync_rect;

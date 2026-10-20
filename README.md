@@ -5,7 +5,7 @@
 <p align="center">Experience Bloodborne natively on Windows, enhanced with modern rendering technologies, customizable gameplay and a redesigned launcher.</p>
 
 <p align="center">
-  <a href="docs/releases/windows-v1.6-tatsunakyo.44.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 45" height="28"></a>
+  <a href="docs/releases/windows-v1.6-tatsunakyo.55.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 55" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/windows.svg" alt="Windows 10 / 11" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/vulkan.svg" alt="Vulkan 1.3" height="28"></a>
   <a href="LICENSE"><img src="docs/assets/readme/license.svg" alt="GPL-2.0+" height="28"></a>
@@ -18,7 +18,7 @@
     <td align="center"><a href="docs/launcher-and-menu.md#installation"><strong>▤ Installation guide&nbsp;↗</strong></a><br>Requirements and setup</td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><a href="docs/compatibility.md">Compatibility</a> · <a href="docs/known-issues.md">Current reports</a> · <a href="#roadmap">Roadmap</a> · <a href="docs/index.md">All guides</a> · <a href="docs/releases/index.md">Release notes</a></td>
+    <td colspan="2" align="center"><a href="docs/compatibility.md">Compatibility</a> · <a href="docs/known-issues.md">Current reports</a> · <a href="#roadmap">Roadmap</a> · <a href="docs/index.md">All guides</a> · <a href="docs/releases/windows-v1.6-tatsunakyo.55.md">Release notes</a></td>
   </tr>
 </table>
 </div>
@@ -37,7 +37,7 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 3. Choose your resolution and graphics settings, then press **PLAY**.
 4. Press **Insert** or **L3+R3** in-game to change the port's settings.
 
-**Play Bloodborne.exe** starts with your saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each release includes its **SHA256 checksum**. The optional **Developer** archive keeps the verification scripts, source records and regression programs; you only need the ordinary game ZIP to play. [Installation and settings](docs/launcher-and-menu.md)
+**Play Bloodborne.exe** starts with your saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each release includes its **SHA256 checksum**. The single game ZIP includes the required runtime, licenses, source material and compact recovery data; no separate Developer archive is needed. [Installation and settings](docs/launcher-and-menu.md)
 
 ## What this fork adds
 

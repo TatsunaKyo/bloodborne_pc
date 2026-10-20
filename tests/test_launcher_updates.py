@@ -67,6 +67,23 @@ class ForkUpdates(unittest.TestCase):
         self.assertEqual((version, url), (future_version, 'https://example.invalid/windows.zip'))
         self.assertTrue(page.endswith('/windows-v' + future_version))
 
+    def test_other_versions_reuses_fork_asset_validation(self):
+        current=self.release()
+        oldest=self.release('windows-v1.6-tatsunakyo.54', assets=[
+            {'name':'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-54.zip',
+             'browser_download_url':'https://example.invalid/r54.zip'}])
+        candidates=[self.release('windows-v1.9.2'), {}, None, current,
+                    {**current,'draft':True}, {**current,'prerelease':True}, oldest,
+                    self.release('windows-v1.6-tatsunakyo.53'), current]
+        with patch.object(launcher.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps(candidates).encode())) as request:
+            found=launcher.installable_releases()
+        self.assertEqual([item[0] for item in found],[future_version,'1.6-tatsunakyo.54'])
+        self.assertEqual(request.call_args.args[0].full_url,
+                         'https://api.github.com/repos/TatsunaKyo/bloodborne_pc/releases?per_page=100')
+        for value in ({},None,'wrong'):
+            with patch.object(launcher.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps(value).encode())), self.assertRaises(ValueError):
+                launcher.installable_releases()
+
     def test_published_stable_preview_tags(self):
         release = json.loads((source.parents[1] / 'tests/fixtures/release21-stable.json').read_text())
         version, url, _page = self.latest(release)
