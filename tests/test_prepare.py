@@ -1,4 +1,5 @@
-from paths import ROOT
+from paths import setup_imports
+setup_imports()
 import struct
 import unittest
 import tempfile

@@ -31,3 +31,6 @@ In Revision 9, I added the remaining continuous movement, direct character/scrip
 For a new cheat-related report, turn on Advanced → Diagnostics → Developer profiling and crash diagnostics in the launcher before reproducing it. Each run keeps its own log/settings/exit code folder, and fatal Windows faults try to write a minidump with registers and active cheat values. I leave this off by default for ordinary play.
 
 Revision by TatsunaKyo. The original port, shadPS4, Dear ImGui and the existing community patches retain their own credits and licenses.
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

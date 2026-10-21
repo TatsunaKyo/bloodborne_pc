@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # TatsunaKyo Revision 39 — streaming readbacks and isolated DLSSG mods
 
 - Group texture readbacks into bounded synchronous batches (16 copies / 32 MiB). Every backing write finishes before any image in that group releases its protected guest pages. This removes one GPU wait per downloaded image from texture collection and pending readback processing. Slow collection calls report their duration and wait count in the normal launch log.

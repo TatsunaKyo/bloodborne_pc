@@ -1,5 +1,13 @@
 # Testing The Crowned Workshop
 
+## R55 evidence and source maintenance
+
+The published R55 record contains 23 cross-compiled Windows targets, 69 verification logs, six compiled-launcher checks and 1,960 ImGui layouts. These are compilation/component/UI/package evidence. They do not mean the cemetery route, NVIDIA inference or physical display cadence ran on this host. [R55 integration record](investigations/2026-10-20-upstream-integration.md) · [Post-R55 changes](maintenance.md)
+
+Current source checks first-party Python, every first-party Markdown destination/anchor and the revision badge before the portable suite. Install `tools/requirements-checks.txt` in your test environment. `--gui` enables real Tk checks, including Achievements in English/Russian at three scales. `--glm-include`, `--glslang` and `--validator` accept explicit tool paths. Add `--vulkan` only to request actual camera-shader execution on a Vulkan device/ICD; hosted Linux CI explicitly requests it with Mesa installed. The default suite needs no GPU.
+
+The output-selector fixture clicks/reloads all ten choices and checks all 100 output transitions in both languages. The assembler fixture verifies actual ZIP assembly/source replay with fixture Windows/toolchain boundaries. Neither is Windows/NVIDIA gameplay.
+
 I test gameplay on my Windows 11 / RTX 5070 Ti PC and keep those results separate from automated checks. Current reports are in [their own page](known-issues.md), and [Compatibility](compatibility.md) records which hardware has gameplay evidence.
 
 ## Portable regressions
@@ -10,7 +18,7 @@ The suite executes settings and updater behavior, altered-package rejection, pro
 
 `tests/test_camera_motion_kernel.py` executes the production GLSL body with float32 GLM vectors and bounded image adapters. Its eight cases cover matched/new/untracked history, overwritten surfaces, invalid vectors and behind-camera points. This catches the arithmetic and history-selection cases without a GPU; `camera-motion-test.exe` remains the Vulkan counterpart.
 
-`tests/test_release_split.py` verifies that the original complete candidate is preserved, all its files survive the separation, runtime validation still passes and an interrupted export leaves no partial outputs. It also checks explicit ZIP dates in the local and central headers, writable Windows attributes, reproducible exports with a fixed timestamp and rejection of invalid dates. Release preparation and the published-release tests also check Developer provenance, sidecars, missing/corrupted companions and delayed uploads. The release-integrity and split tests run on Windows as well as Linux.
+`tests/test_release_split.py` retains historical split-layout compatibility tests and rejects modern split exports before creating outputs. In the legacy cases it verifies that the original complete candidate is preserved, all its files survive the separation, runtime validation still passes and an interrupted export leaves no partial outputs. It also checks explicit ZIP dates in the local and central headers, writable Windows attributes, reproducible exports with a fixed timestamp and rejection of invalid dates. Release preparation and the published-release tests also check Developer provenance, sidecars, missing/corrupted companions and delayed uploads. The release-integrity and split tests run on Windows as well as Linux.
 
 `tests/test_launcher_startup.py` runs the real main function with frozen startup behavior, in English and Russian, including the `--play` fallback when no game files are configured. Pass the compiled `Bloodborne.exe` to test its actual entry-point bytecode. On Windows, the same test also starts the executable as a separate process through its normal entry point, checks the window and closes it with the normal Windows close message. This catches startup failures that a constructor-only layout test or a `--script` runtime test can miss. All settings and file operations use disposable folders.
 
@@ -41,3 +49,6 @@ The two actual Tk dialog tests exercise inspection/export, named snapshots, rest
 Portable CI now also runs the twelve existing CPU/provider fixtures through `tests/test_cpu_integrations.py`: real/FG caps, timer phase, background gates, output counts/Reflex reports, raw frametimes, camera/object history, settings, FSR support, XeSS quality/SDK contracts and AMD input/present contracts. It adds the swapchain recovery fixture, which executes the production failure/drain blocks against competing queue work. Windows CI compiles that fixture with MSVC as well.
 
 `tests/test_update_archive.py` exercises the actual updater worker: a rejected checksum does not extract or execute a candidate, while a complete verified package reaches the expected launcher path. Altered binaries, wrong metadata/version, missing runtimes, malformed checksums, Windows aliases and truncated ZIPs are rejected. The frozen Windows runtime also imports the same release/dependency validators. [Code review](code-review-2026-10-13.md) records the findings and remaining hardware comparisons.
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

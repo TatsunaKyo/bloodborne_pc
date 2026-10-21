@@ -16,6 +16,7 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_frame_generation.h"
+#include "video_core/renderer_vulkan/vk_native_frame_generation.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
 #include "video_core/texture_cache/texture_cache.h"
@@ -30,6 +31,13 @@ struct Liverpool;
 
 namespace Vulkan {
 
+struct NativeFrames {
+    FrameGeneration::Image color, hudless;
+    std::array<FrameGeneration::Image, FrameGenerator::MaxGenerated> outputs;
+    vk::UniqueImageView color_view, hudless_view;
+    std::array<vk::UniqueImageView, FrameGenerator::MaxGenerated> output_views;
+    u32 width=0, height=0;
+};
 struct Frame {
     u32 width;
     u32 height;
@@ -48,6 +56,8 @@ struct Frame {
     u64 nvidia_fence_value{};
     u64 nvidia_fence_epoch{};
     BbHitch::FramePath hitch_path;
+    std::unique_ptr<NativeFrames> native;
+    u32 native_count=0;
 
 };
 
@@ -114,6 +124,8 @@ public:
 
 private:
     Frame* GetRenderFrame();
+    void PrepareNativeFrame(Frame*, vk::CommandBuffer, vk::ImageView, vk::Extent2D, vk::Format);
+    void UpdateFrameGenLimit(bool wanted, double present_ms);
 
     void RecreateFrame(Frame* frame, u32 width, u32 height);
 
@@ -148,6 +160,15 @@ private:
     std::condition_variable_any frame_cv;
     std::vector<VAddr> vo_buffers_addr;
     std::unique_ptr<FrameGeneration> frame_generation;
+    std::unique_ptr<FrameGenerator> native_frame_generator;
+    HostPasses::PostProcessingPass native_pp_pass;
+    std::atomic<u32> frame_gen_limit{FrameGenerator::MaxGenerated};
+    std::atomic<double> game_frame_ms{16.6667};
+    double present_busy=0;
+    std::chrono::steady_clock::time_point limit_window{};
+    u32 limit_frames=0,limit_up_seconds=0;
+    std::chrono::steady_clock::time_point last_game_present{}, frame_gen_last_adjust{}, frame_gen_hold_until{};
+    int frame_gen_hold_seconds=5;
 };
 
 } // namespace Vulkan

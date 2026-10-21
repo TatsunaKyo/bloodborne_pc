@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 <!-- crowned-workshop-navigation -->
 > Original upstream reference. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
 
@@ -12,7 +14,7 @@
 > где все настройки собраны в одном окне, на 13 языках. Готовый архив лежит в
 > [Releases](https://github.com/Supermedo/bloodborne_pc/releases): распакуйте, запустите
 > `Bloodborne.exe` и укажите папку с игрой. Сборка и отличия от Linux:
-> [packaging/windows/README.md](packaging/windows/README.md).
+> [packaging/windows/README.md](../../packaging/windows/README.md).
 >
 > Порт для Linux и почти вся работа над ним — [deadinside28](https://github.com/deadinside28/bloodborne_pc);
 > порт для Windows — [Supermedo](https://github.com/Supermedo).
@@ -124,7 +126,7 @@ Turing). Вывод 1080p и TAA всегда идут живым путём.
 **Моды:** лаунчер подключает распакованные моды из отдельных папок (с `dvdroot_ps4/`, с лишней
 папкой-обёрткой или сразу с папками игры вроде `chr/`; регистр имён не важен), с переключателями
 и порядком загрузки. **Сторонние патчи:** XML-файлы в формате shadPS4 в папке `patches/` каталога
-данных, включаются в лаунчере. Подробнее — [моды и патчи](docs/MODS.md).
+данных, включаются в лаунчере. Подробнее — [моды и патчи](../MODS.md).
 
 **Язык лаунчера:** русский или английский (по умолчанию — как в системе).
 
@@ -200,8 +202,8 @@ MangoHud включён в AppImage; включи его галочку в ла�
 `BB_PAD_RECORD=файл` / `BB_PAD_REPLAY=файл` (запись маршрута по F9 и его повтор в тестах),
 `BB_GC_BUDGET_MB=N` (бюджет кэша текстур, как на встроенных GPU), `BB_PRESENT_DUMP_TRIGGER=файл`
 с `BB_PRESENT_DUMP_COUNT=N` (снимок N показанных кадров подряд).
-Подробнее — в [docs/](docs); последние изменения — [docs/CHANGES_2026-10-02.md](docs/CHANGES_2026-10-02.md),
-[docs/CHANGES_2026-10-03.md](docs/CHANGES_2026-10-03.md).
+Подробнее — в [docs/](..); последние изменения — [docs/CHANGES_2026-10-02.md](../CHANGES_2026-10-02.md),
+[docs/CHANGES_2026-10-03.md](../CHANGES_2026-10-03.md).
 
 ## Устройство репозитория
 
@@ -214,7 +216,7 @@ MangoHud включён в AppImage; включи его галочку в ла�
 | `patches/` | Патчи сообщества для Bloodborne |
 | `tools/` | Утилиты разработчика: скриптовые запуски, A/B-переключатели, бенчмарк FSR, переписывание шейдеров FSR 4, `fsr4cap` (запись и извлечение FSR 4.1.1) |
 | `tests/` | Тесты загрузчика, рантайма, патчей и рендерера |
-| `docs/` | Заметки и замеры ([апскейлер](docs/upscaler.md), [многопоточный GPU](docs/parallel_gpu.md), [векторы движения](docs/motion_vectors.md), [план](docs/ROADMAP.md), [журнал разработки](docs/DEVELOPMENT_LOG.ru.md)) |
+| `docs/` | Заметки и замеры ([апскейлер](../upscaler.md), [многопоточный GPU](../parallel_gpu.md), [векторы движения](../motion_vectors.md), [план](../ROADMAP.md), [журнал разработки](../DEVELOPMENT_LOG.ru.md)) |
 
 Тесты: `bash build.sh --test`, `python3 -m unittest discover -s tests` и
 `ninja -C out/gpu motion-history-test ui-composition-test scene-resolution-test motion-shader-test`.
@@ -234,7 +236,7 @@ MangoHud включён в AppImage; включи его галочку в ла�
 
 ## Благодарности и лицензии
 
-bbport распространяется по **GNU GPL v2 или новее** ([LICENSE](LICENSE)) — в нём код shadPS4
+bbport распространяется по **GNU GPL v2 или новее** ([LICENSE](../../LICENSE)) — в нём код shadPS4
 (GPL-2.0-or-later). Сторонние компоненты сохраняют свои лицензии:
 видеоядро и рекомпилятор шейдеров [shadPS4](https://github.com/shadps4-emu/shadPS4) (GPL-2.0+),
 [sirit](https://github.com/shadps4-emu/sirit), [half](https://half.sourceforge.net/),

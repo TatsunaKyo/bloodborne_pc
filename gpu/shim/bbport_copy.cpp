@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "bbport_copy.h"
+#include "bbport_hitch_trace.h"
 #include "bbport_threads.h"
 
 #include <algorithm>
@@ -186,6 +187,7 @@ private:
 
     void Loop(unsigned index) {
         Common::SetCurrentThreadName(("bb:Copy" + std::to_string(index)).c_str());
+        BbHitch::Trace::SetRole("host copy");
         u64 seen = 0;
         std::unique_lock lk{mutex};
         while (true) {

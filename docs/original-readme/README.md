@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 <!-- crowned-workshop-navigation -->
 > Original upstream reference. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
 
@@ -13,7 +15,7 @@ THIS PROJECT IS NOT RELATED TO SHADPS4. ALL QUESTIONS RELATED TO THIS PROJECT SH
 > that holds every setting in one window, in 13 languages. Download the ready-to-play zip from
 > [Releases](https://github.com/Supermedo/bloodborne_pc/releases), unpack it, start
 > `Bloodborne.exe` and pick your game folder. Building it yourself and what changed for Windows:
-> [packaging/windows/README.md](packaging/windows/README.md).
+> [packaging/windows/README.md](../../packaging/windows/README.md).
 >
 > The Linux port and almost all of the work behind it are by
 > [deadinside28](https://github.com/deadinside28/bloodborne_pc); the Windows port is by
@@ -109,7 +111,7 @@ bash launcher/bb-launcher.sh         # launcher/install-desktop.sh adds it to th
 (`launcher/bbport_launcher_win.py`), and `bash packaging/windows/package.sh` makes a
 self-contained folder with `Bloodborne.exe` (players need no Python). Details and the
 differences from Linux (TLS, guest memory, exceptions):
-[packaging/windows/README.md](packaging/windows/README.md). Tested on an NVIDIA RTX 5080
+[packaging/windows/README.md](../../packaging/windows/README.md). Tested on an NVIDIA RTX 5080
 (FSR 3.1 and FSR 4, game versions 1.00 and 1.09).
 
 By default the game folder is expected next to the repository (`../CUSA03173`). Saves and the
@@ -139,7 +141,7 @@ wrapper folder, or the game folders such as `chr/` directly; file name case does
 with enable switches and load order. A sibling `CUSA03173-mods/` overlay also works.
 The original game is preserved; later mods override conflicting files.
 **Third-party patches:** shadPS4-format XML patch files in the data directory's `patches/`,
-switched on and off in the launcher. See [mods and patches](docs/MODS.md).
+switched on and off in the launcher. See [mods and patches](../MODS.md).
 
 **Launcher language:** Russian or English (follows the system language by default).
 
@@ -217,8 +219,8 @@ pass), `BB_FSR4_PROFILE=1` (GPU time per FSR 4 pass), `BB_UPSCALER=taa|fsr3|fsr4
 `BB_PAD_RECORD=file` / `BB_PAD_REPLAY=file` (record a route with F9, replay it in scripted tests),
 `BB_GC_BUDGET_MB=N` (texture cache budget, as on integrated GPUs), `BB_PRESENT_DUMP_TRIGGER=file`
 with `BB_PRESENT_DUMP_COUNT=N` (dump N consecutive presented frames).
-More in [docs/](docs); recent changes: [docs/CHANGES_2026-10-02.md](docs/CHANGES_2026-10-02.md),
-[docs/CHANGES_2026-10-03.md](docs/CHANGES_2026-10-03.md).
+More in [docs/](..); recent changes: [docs/CHANGES_2026-10-02.md](../CHANGES_2026-10-02.md),
+[docs/CHANGES_2026-10-03.md](../CHANGES_2026-10-03.md).
 
 ## Repository layout
 
@@ -231,7 +233,7 @@ More in [docs/](docs); recent changes: [docs/CHANGES_2026-10-02.md](docs/CHANGES
 | `patches/` | Community patches for Bloodborne |
 | `tools/` | Developer tools: scripted runs, A/B toggles, FSR benchmark helpers, FSR 4 shader rewrites, `fsr4cap` (FSR 4.1.1 recording/extraction) |
 | `tests/` | Loader, runtime, patch and renderer tests |
-| `docs/` | Design notes and measurements ([upscaler](docs/upscaler.md), [parallel GPU](docs/parallel_gpu.md), [motion vectors](docs/motion_vectors.md), [roadmap](docs/ROADMAP.md)) |
+| `docs/` | Design notes and measurements ([upscaler](../upscaler.md), [parallel GPU](../parallel_gpu.md), [motion vectors](../motion_vectors.md), [roadmap](../ROADMAP.md)) |
 
 Tests: `bash build.sh --test`, `python3 -m unittest discover -s tests`, and
 `ninja -C out/gpu motion-history-test ui-composition-test scene-resolution-test motion-shader-test`.
@@ -251,7 +253,7 @@ Tests: `bash build.sh --test`, `python3 -m unittest discover -s tests`, and
 
 ## Credits and licenses
 
-bbport is licensed under the **GNU GPL v2 or later** ([LICENSE](LICENSE)) — it contains code
+bbport is licensed under the **GNU GPL v2 or later** ([LICENSE](../../LICENSE)) — it contains code
 from shadPS4 (GPL-2.0-or-later). Third-party components keep their licenses:
 [shadPS4](https://github.com/shadps4-emu/shadPS4) video core and shader recompiler (GPL-2.0+),
 [sirit](https://github.com/shadps4-emu/sirit), [half](https://half.sourceforge.net/),

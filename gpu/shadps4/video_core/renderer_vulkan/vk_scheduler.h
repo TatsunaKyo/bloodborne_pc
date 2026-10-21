@@ -18,6 +18,7 @@
 #include <queue>
 
 #include "bbport_toggles.h"
+#include "bbport_hitch_trace.h"
 #include "common/assert.h"
 #include "common/interval_set.h"
 #include "common/unique_function.h"
@@ -25,6 +26,7 @@
 #include "video_core/amdgpu/regs_primitive.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
+#include "vulkan/vulkan.hpp"
 
 namespace tracy {
 class VkCtxScope;
@@ -735,7 +737,21 @@ public:
     /// Records `func(vk::CommandBuffer)` in order with other commands. The closure must own
     /// everything it uses (capture by value): it may run later on the recording thread.
     template <typename Func>
-    void Record(Func&& func) {
+    void Record(Func&& func, const char* caller = __builtin_FUNCTION()) {
+        if (BbHitch::Trace::Enabled()) {
+            // Carry the producer's operation name to the actual Vulkan thread.
+            // Keep the normal command layout/captures unchanged when tracing is off.
+            RecordImpl([operation = std::forward<Func>(func), caller](vk::CommandBuffer command) mutable {
+                BbHitch::Trace::Scope scope{caller};
+                operation(command);
+            });
+            return;
+        }
+        RecordImpl(std::forward<Func>(func));
+    }
+
+    template <typename Func>
+    void RecordImpl(Func&& func) {
         if (!recording_threaded || direct_mode) {
             func(current_cmdbuf);
             return;
@@ -747,11 +763,18 @@ public:
             return;
         }
         if (!record_chunk->Push(std::forward<Func>(func))) {
-            full_chunks.push_back(std::move(record_chunk));
-            record_chunk = AcquireChunk();
+            RetireChunk();
             const bool pushed = record_chunk->Push(std::forward<Func>(func));
             ASSERT(pushed);
         }
+    }
+
+    /// bbport: replaces the current chunk with a fresh one. The replacement is taken first, so
+    /// `record_chunk` is never null: code that re-enters the recording side (a guest memory
+    /// fault handled inline on this thread) used to find it null between the two steps.
+    void RetireChunk() {
+        auto next = AcquireChunk();
+        full_chunks.push_back(std::exchange(record_chunk, std::move(next)));
     }
 
     /// True when Record() defers commands (and RecordData() copies into chunks).
@@ -768,8 +791,7 @@ public:
         }
         ASSERT(bytes + 1024 <= RecordChunk::Capacity);
         if (RecordChunk::Capacity - record_chunk->Size() < bytes + 1024) {
-            full_chunks.push_back(std::move(record_chunk));
-            record_chunk = AcquireChunk();
+            RetireChunk();
         }
     }
 

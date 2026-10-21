@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 22
 
 I have focused this revision on updating, releases and documentation. It keeps the renderer and gameplay changes from Revision 21, including the Hunter's Dream flashing fixes and the shared launcher/in-game settings categories.

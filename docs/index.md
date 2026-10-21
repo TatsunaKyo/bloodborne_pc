@@ -1,29 +1,37 @@
 # The Crowned Workshop guides
 
-I keep the main README focused on what the fork adds. These pages explain the settings, installation and technical work in more detail.
+**Latest published release: [Revision 55](https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/windows-v1.6-tatsunakyo.55-preview), 21 October 2026 (CEST).** R55 integrates Supermedo Windows 1.9.2 and the changes since the previously published R40. Download one complete ZIP and its matching SHA256. [Release notes](releases/index.md) · [Source maintenance after R55](maintenance.md)
 
-| Start here | What you will find |
+The [README](../README.md) introduces the features. Dated release and investigation pages retain the results from their own revision.
+
+| Guide | Contents |
 |---|---|
-| [Installation and settings](launcher-and-menu.md) | Game folder, saves, the launcher and seven shared menu categories. |
-| [Live editing](live-settings.md) | What can change during play and which choices need a restart. |
-| [Hardware compatibility](compatibility.md) | Confirmed gameplay evidence, partial checks and unverified configurations. |
-| [Current reports](known-issues.md) | Current problems, earlier reports to recheck and resolved reports. |
-| [Development roadmap](tatsunakyo-next.md) | Gameplay and infrastructure priorities, with implementation references. |
+| [Installation and launcher](launcher-and-menu.md) | Game files, saves, updates, Controls and shared settings. |
+| [Live settings](live-settings.md) | Runtime choices and startup/restart requirements. |
+| [Current reports](known-issues.md) | Cemetery hitch, cadence, reconstruction and open checks. |
+| [Compatibility](compatibility.md) | Hardware evidence and unverified configurations. |
+| [Upscaling](upscaling.md) | DLSS model hints, FSR and seven XeSS ratios. |
+| [Frame Generation](frame-generation.md) | Four provider routes, SDR/HDR and model evidence. |
+| [Latency](latency.md) | Reflex and AMD Anti-Lag 2. |
+| [Display and overlay](display-and-overlay.md) | Both FPS caps, windows, background and real-frame graph. |
+| [Input](INPUT.md) | Bindings, combinations, prompts and mouse camera. |
+| [Cheats](cheats.md) | Current choices and hook limitations. |
+| [Save Manager](save-manager.md) | Backups, verified restore and rollback. |
+| [Mods](MODS.md) | Loose-file mods and external patches. |
+| [Image quality](quality-and-performance.md) | Temporal history and renderer changes. |
+| [Shader cache](shader-cache.md) | Persistence, invalidation and recovery. |
+| [Performance capture](performance.md) | Traversal and NVIDIA diagnostics. |
+| [Support Report](support-reports.md) | Inspect and export sanitized diagnostics. |
+| [Roadmap](tatsunakyo-next.md) | Included features and remaining work. |
 
-| Feature | Detailed guide |
-|---|---|
-| Upscaling | [DLSS presets, FSR and XeSS ratios](upscaling.md) |
-| Frame Generation | [FSR FG, NVIDIA FG/MFG and HDR](frame-generation.md) |
-| Latency | [Reflex and AMD Anti-Lag 2](latency.md) |
-| Window, frame limits and overlay | [Both caps, background modes and frametime graph](display-and-overlay.md) |
-| Cheats | [Choices and behavior](cheats.md) |
-| Image quality | [Temporal history and renderer changes](quality-and-performance.md) |
-| Code review | [Integration checks, corrections and remaining work](code-review-2026-10-13.md) |
-| Shader cache | [Recovery, write completion and compatibility](shader-cache.md) |
-| Diagnostics | [Performance comparisons and useful evidence](performance.md) |
-| Support Report | [Inspect and export sanitized diagnostics](support-reports.md) |
-| Save Manager | [Backups, named snapshots and verified restore/rollback](save-manager.md) |
+## Development and publication
 
-For development: [Contributing](../CONTRIBUTING.md), [test coverage](testing.md), [Windows builds](../packaging/windows/README.md), [release preparation](releasing.md), [repository setup](repository-setup.md) and [the infrastructure plan](infrastructure-plan.md).
+[Contributing](../CONTRIBUTING.md) · [Testing and limits](testing.md) · [Windows build](../packaging/windows/README.md) · [One-ZIP releases](releasing.md) · [Repository settings](repository-setup.md) · [Infrastructure plan](infrastructure-plan.md)
 
-[Release notes](releases/index.md) retain what changed in each revision. [Development history](history/index.md) and [original upstream documents](original-readme/README.md) are preserved as records; they describe the project at their original dates.
+The published R55 source is [6f8564d](https://github.com/TatsunaKyo/bloodborne_pc/tree/6f8564dc973dd35d70438c43f0140fb0531949a3). Current source also carries later maintenance; downloading the published ZIP and building the default branch can therefore give different fixes.
+
+## Design and history
+
+[R55 integration decisions](investigations/2026-10-20-upstream-integration.md) · [Earlier investigations](investigations/2026-10-16-frame-pipeline.md) · [Renderer parallelism](parallel_gpu.md) · [Motion vectors](motion_vectors.md) · [Upscaler design](upscaler.md) · [Code review](code-review-2026-10-13.md) · [History](history/index.md) · [Original upstream README](original-readme/README.md)
+
+[Workshop identity](assets/identity.md) and [artwork prompts](assets/artwork-prompts.md) describe illustrations. Illustrations and controlled tests are distinct from gameplay captures and hardware benchmarks.

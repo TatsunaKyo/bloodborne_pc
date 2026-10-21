@@ -5,12 +5,15 @@
 #pragma once
 
 #include <span>
+#include <shared_mutex>
 #include <stdexcept>
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 
 namespace Vulkan {
+std::shared_mutex& DriverCacheMutex();
+void SaveDriverCaches();
 struct CacheLoadError : std::runtime_error {
   using std::runtime_error::runtime_error;
 };

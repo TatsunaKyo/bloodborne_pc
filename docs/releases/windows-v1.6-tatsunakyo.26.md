@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 26
 
 I went back through the presentation and integration code after Revision 25. I found a few things worth fixing before adding more features: the window/HDR recovery lock order, an unsynchronized GPU drain, invalid numeric settings reaching image tuning, and downloaded updates being started without the package checks used for publication.

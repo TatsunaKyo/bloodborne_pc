@@ -1,5 +1,7 @@
 # Hardware compatibility
 
+**Current published baseline: R55.** Windows-target compilation, CPU recorder tests and Tk/ImGui layout checks do not establish gameplay compatibility on another GPU. Native FG choices are SDR-only; Workshop routes retain HDR10. RTX 20/30 external FG is opt-in and NR is unsupported. Stock RTX 40/50 users keep the original NVIDIA runtime route. [Open reports](known-issues.md) · [Provider matrix](frame-generation.md#r55-provider-choices)
+
 My main gameplay PC runs Windows 11 with a GeForce RTX 5070 Ti. I welcome results from other configurations, especially Radeon and Intel GPUs. I record the revision and type of evidence so the table stays useful.
 
 **Tested** means gameplay evidence on the named setup. **Partially tested** means the implementation has component/contract checks or only some gameplay paths covered. **Unverified** means I do not yet have a reviewed gameplay result for that hardware. These labels describe coverage, not a promise that an unverified feature fails.
@@ -17,3 +19,6 @@ My main gameplay PC runs Windows 11 with a GeForce RTX 5070 Ti. I welcome result
 The public seed records are in [hardware/compatibility.json](hardware/compatibility.json). Only reviewed results should become confirmed rows. [Generate Support Report](support-reports.md) now provides an optional anonymous JSON submission, which stays unreviewed until actual gameplay evidence is reviewed.
 
 Provider requirements and fallbacks: [Upscaling](upscaling.md), [FG](frame-generation.md) and [latency](latency.md). For existing reports rather than coverage gaps, use [Current reports](known-issues.md).
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

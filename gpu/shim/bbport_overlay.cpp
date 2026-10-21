@@ -365,7 +365,8 @@ void ImageSettings() {
     const char* quality_title = xess ? Text("XeSS quality###xess_preset", "Качество XeSS###xess_preset")
                                     : Text("Quality preset###preset", "Пресет качества###preset");
     if (ImGui::BeginCombo(quality_title, preset_label)) {
-        for (int i = 0; i < (xess ? BbSettings::XessPresetCount : BbSettings::PresetCount); ++i) {
+        const int preset_count = xess ? int(BbSettings::XessPresetCount) : int(BbSettings::PresetCount);
+        for (int i = 0; i < preset_count; ++i) {
             char label[96];
             const float scale = xess ? BbSettings::XessPresetScale(i) : BbSettings::PresetScale(i);
             const int output = s.output_res;
@@ -430,11 +431,20 @@ void ImageSettings() {
     }
     ImGui::EndDisabled(); // upscaler off
     Section(Text("Output resolution", "Разрешение вывода"));
-    static const char* outputs[] = {"1280 x 720", "1920 x 1080", "2560 x 1440", "3840 x 2160"};
-    int output = s.output_res;
-    if (ImGui::BeginCombo(Text("Output resolution###output_res", "Разрешение вывода###output_res"), outputs[output])) {
+    Hint(Text("Ultrawide camera and HUD patches are applied at startup. Changing to, from or "
+              "between ultrawide outputs requires restarting the game.",
+              "Патчи камеры и HUD для сверхширокого экрана применяются при запуске. Смена на "
+              "сверхширокое разрешение, с него или между такими разрешениями требует перезапуска игры."));
+    const int output = s.output_res;
+    char output_label[32];
+    std::snprintf(output_label, sizeof(output_label), "%d x %d",
+                  BbSettings::OutputWidths[output], BbSettings::OutputHeights[output]);
+    if (ImGui::BeginCombo(Text("Output resolution###output_res", "Разрешение вывода###output_res"), output_label)) {
         for (int i = 0; i < BbSettings::OutputCount; ++i) {
-            if (ImGui::Selectable(outputs[i], i == output)) {
+            char label[32];
+            std::snprintf(label, sizeof(label), "%d x %d",
+                          BbSettings::OutputWidths[i], BbSettings::OutputHeights[i]);
+            if (ImGui::Selectable(label, i == output)) {
                 Store(s.output_res, i, true);
             }
         }
@@ -545,15 +555,24 @@ void FrameSettings() {
     Hint(Text("Requires Apply and restart. Only the selected RTX 20/30 can load the isolated mod; RTX 40/50 keep the original NVIDIA path. Vulkan support is experimental. The launcher prepares the provider on restart.",
               "Нужны применение и перезапуск. Изолированный мод загружается только для выбранной RTX 20/30; RTX 40/50 используют исходный путь NVIDIA. Vulkan экспериментален. Лаунчер подготовит мод при перезапуске."));
     if (const char* status=s.nvidia_fg_mod_status) ImGui::TextWrapped("DLSSG: %s",status);
-    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG"};
-    const int fg=std::clamp(s.frame_generation.load(),0,2);
+    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG","FSR FG - Supermedo (SDR)","DLSS FG - Supermedo (SDR, restart)"};
+    const int fg=std::clamp(s.frame_generation.load(),0,4);
     if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
-        for (int i=0;i<3;++i) {
-            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported && !s.nvidia_fg_mod)));
+        for (int i=0;i<5;++i) {
+            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported && !s.nvidia_fg_mod && !s.startup_native_dlss)));
             if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
             ImGui::EndDisabled();
         }
         ImGui::EndCombo();
+    }
+    if (s.startup_native_dlss != (s.frame_generation==BbSettings::FrameGenerationNativeDlss))
+        ImGui::TextWrapped("Apply and restart to switch between the native DLSS bridge and Streamline.");
+    if (s.frame_generation>=BbSettings::FrameGenerationNativeFsr) {
+        ImGui::TextWrapped("Supermedo native FG uses SDR output. HDR retains the existing providers.");
+        int multiplier=s.frame_gen_multiplier;
+        if(ImGui::SliderInt("Native FG multiplier###frame_gen_multiplier",&multiplier,2,4,"%dx")) Store(s.frame_gen_multiplier,multiplier,true);
+        Checkbox("Fit native FG to display###frame_gen_fit_display",s.frame_gen_fit_display);
+        if(const char* message=s.frame_gen_problem)ImGui::TextWrapped("Native FG: %s",message);
     }
     if (s.frame_generation==BbSettings::FrameGenerationNvidia) {
         const int fg_preset=std::clamp(s.nvidia_fg_preset.load(),0,3);
@@ -678,6 +697,7 @@ void WindowSettings() {
     }
 
     Section(Text("Background behavior", "Работа в фоне"));
+    Checkbox("Mute when the game is in the background###mute_unfocused", s.mute_unfocused);
     const char* background_modes[] = {
         Text("Keep running###background_run", "Продолжать работу###background_run"),
         Text("Pause game and rendering###background_pause", "Приостановить игру и рендер###background_pause"),
@@ -853,6 +873,14 @@ void AdvancedSettings() {
 
 void EffectSettings() {
     auto& s = BbSettings::Get();
+    static const char* prompt_modes[] = {"Follow the device in use", "PlayStation", "Keyboard and mouse", "Xbox", "Nintendo Switch"};
+    const int prompts = std::clamp(s.button_prompts.load(), 0, BbSettings::PromptsCount - 1);
+    if (ImGui::BeginCombo("Button prompts", prompt_modes[prompts])) {
+        for (int i = 0; i < BbSettings::PromptsCount; ++i) {
+            if (ImGui::Selectable(prompt_modes[i], i == prompts)) Store(s.button_prompts, i, true);
+        }
+        ImGui::EndCombo();
+    }
     Section(Text("Game effects (restart required)", "Эффекты игры (после перезапуска)"));
     Hint(Text("The game's AA preference is used with the upscaler off. Temporal upscalers use their own AA. Switching between Off and a temporal upscaler requires a restart.",
               "Собственное сглаживание игры используется без апскейлера. Временные апскейлеры используют своё сглаживание. Для переключения между Off и временным апскейлером нужен перезапуск."));
@@ -875,6 +903,11 @@ void EffectSettings() {
         }
         ImGui::EndCombo();
     }
+    int fov = s.fov;
+    const bool fov_changed = ImGui::SliderInt("Field of view", &fov, BbSettings::FovMin, BbSettings::FovMax,
+                                           fov == BbSettings::FovDefault ? "%d (game)" : "%d");
+    Store(s.fov, fov, fov_changed);
+    Hint("Vertical field of view in degrees. Camera changes apply after restart.");
     const int columns = ImGui::GetContentRegionAvail().x >= ImGui::GetFontSize() * 34.0f ? 2 : 1;
     if (ImGui::BeginTable("###effects_grid", columns, ImGuiTableFlags_SizingStretchSame)) {
         for (int e = 0; e < BbSettings::EffectCount; ++e) {
@@ -1006,6 +1039,7 @@ void Menu() {
                    s.nvidia_fg_mod != s.startup_nvidia_fg_mod ||
                    s.nvidia_fg_preset != s.startup_nvidia_fg_preset ||
                    s.model_lod != s.startup_model_lod ||
+                   s.fov != s.startup_fov ||
                    s.live_resolution != s.startup_live_resolution ||
                    BbSettings::ResolutionNeedsRestart();
     for (int e = 0; e < BbSettings::EffectCount; ++e) {
@@ -1024,6 +1058,24 @@ void Menu() {
             BbSettings::Save();
             runtime_restart();
         }
+    }
+    // Issues #74, #116: leaving the game from the pad (this menu opens with L3+R3). A second
+    // press confirms; the window thread then closes like the window's own close button.
+    // (From bbport 0.51.)
+    static bool quit_armed;
+    ImGui::SameLine();
+    // One ID for both labels ("###bb_quit"): with a new ID the button lost the pad's or keyboard's
+    // focus at the first press, which disarmed it at once.
+    if (ImGui::Button(quit_armed ? "Press again to quit###bb_quit" : "Quit game###bb_quit")) {
+        if (quit_armed) {
+            SDL_Event quit{};
+            quit.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit);
+        }
+        quit_armed = !quit_armed;
+    }
+    if (quit_armed && !ImGui::IsItemFocused() && !ImGui::IsItemHovered()) {
+        quit_armed = false;
     }
     ImGui::SameLine();
     ImGui::TextDisabled("Insert / L3+R3");
@@ -1113,7 +1165,7 @@ void FpsCounter() {
         const int active=s.frame_generation_active;
         if (s.frame_generation==BbSettings::FrameGenerationOff) append("FG:off");
         else {
-            const char* mode=s.frame_generation==BbSettings::FrameGenerationNvidia ? "NV" : "FSR";
+            const char* mode=(s.frame_generation==BbSettings::FrameGenerationNvidia || s.frame_generation==BbSettings::FrameGenerationNativeDlss) ? "NV" : "FSR";
             if (active>1) std::snprintf(detail,sizeof(detail),"FG:%s%dx",mode,active);
             else std::snprintf(detail,sizeof(detail),"FG:%s wait",mode);
             append(detail);
@@ -1389,6 +1441,26 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (ms > 0.0f && ms < 1000.0f) {
         frame_ms_avg = frame_ms_avg == 0.0f ? ms : frame_ms_avg * 0.95f + ms * 0.05f;
     }
+    // BB_FPS_LOG=1: presents per second and the slowest frame, every 5 seconds (test runs).
+    static const bool fps_log = [] {
+        const char* env = std::getenv("BB_FPS_LOG");
+        return env && env[0] == '1';
+    }();
+    if (fps_log) {
+        static auto window_start = now;
+        static int frames = 0;
+        static float worst = 0.0f;
+        ++frames;
+        worst = std::max(worst, ms < 1000.0f ? ms : 0.0f);
+        const float elapsed = std::chrono::duration<float>(now - window_start).count();
+        if (elapsed >= 5.0f) {
+            std::printf("Frame rate: %.1f FPS, slowest frame %.1f ms\n", frames / elapsed, worst);
+            window_start = now;
+            frames = 0;
+            worst = 0.0f;
+        }
+    }
+
     if (!Visible()) {
         return;
     }

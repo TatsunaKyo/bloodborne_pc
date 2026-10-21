@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](./index.md) · [Current reports](./known-issues.md) · [Published releases](./releases/index.md)
+
 # Integration review after Revision 25
 
 I reviewed the current Windows branch after finishing Revision 25, keeping that package as the comparison point. I focused on the code shared by everyday play: reconstruction, frame generation, presentation, latency controls, live settings, diagnostics, saves and updates. I also revisited the current GitHub guides. My introduction, banner, approved feature illustrations and upstream attribution remain intact.

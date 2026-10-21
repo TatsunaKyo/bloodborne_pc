@@ -18,25 +18,12 @@ class Infrastructure(unittest.TestCase):
         self.assertFalse(update(check=True))
 
     def test_documentation_links_resolve(self):
-        files=[ROOT/'README.md', ROOT/'CONTRIBUTING.md', ROOT/'SECURITY.md', *list((ROOT/'docs').rglob('*.md')),
-               ROOT/'packaging/windows/README.md']
-        # Historical upstream notes retain links to unavailable original-session
-        # files. New canonical navigation and current guides must all resolve.
-        current={'README.md','CONTRIBUTING.md','SECURITY.md','index.md','live-settings.md',
-                 'known-issues.md','compatibility.md','repository-setup.md','infrastructure-plan.md',
-                 'testing.md','releasing.md','launcher-and-menu.md','upscaling.md','frame-generation.md',
-                 'latency.md','display-and-overlay.md','performance.md','quality-and-performance.md','cheats.md',
-                 'code-review-2026-10-13.md','support-reports.md','save-manager.md','shader-cache.md'}
-        for file in files:
-            text=file.read_text()
-            is_current = file.parent == ROOT and file.name in current or file.parent == ROOT/'docs' and file.name in current or file.name == 'index.md'
-            if not is_current:
-                text='\n'.join(text.splitlines()[:3])
-            for target in re.findall(r'\]\(([^)]+)\)',text):
-                target=target.split('#',1)[0].split(' ',1)[0]
-                if not target or '://' in target or target.startswith(('mailto:','app:')):continue
-                with self.subTest(file=str(file.relative_to(ROOT)),target=target):
-                    self.assertTrue((file.parent/target).exists())
+        import sys
+        sys.path.insert(0, str(ROOT / 'tools'))
+        from check_docs import check
+        report = check()
+        self.assertEqual(report['errors'], [])
+        self.assertGreater(report['pages'], 100)
 
     def test_editable_feature_images_resolve_local_resources(self):
         import xml.etree.ElementTree as ET

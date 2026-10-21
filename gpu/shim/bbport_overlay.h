@@ -33,6 +33,9 @@ void SavePendingSettings();
 
 /// Present thread: draws into `view` (layout ColorAttachmentOptimal).
 void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent);
+/// Every presented image, generated frames included (FPS readout; BB_FPS_LOG=1 prints the rate
+/// every 5 seconds).
+void NotePresent();
 
 /// Present thread: timestamp successful new game-frame presents, including when OSD is off.
 /// Generated FSR presents, blank/reused frames and failed presents never count as real frames.

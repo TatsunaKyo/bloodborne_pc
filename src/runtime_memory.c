@@ -75,6 +75,22 @@ static void write_unlock(void) {
 }
 static void read_lock(void) { if (!exclusive_depth) pthread_rwlock_rdlock(&lock); }
 static void read_unlock(void) { if (!exclusive_depth) pthread_rwlock_unlock(&lock); }
+/* Installed once before GPU tracking starts. The worker applies captured native
+ * protection segments without taking this module's VMA lock. */
+typedef void (*ProtectionEnqueue)(uintptr_t,uint64_t,uint32_t,uintptr_t);
+static ProtectionEnqueue protection_enqueue;
+static void (*protection_wait)(void);
+static void (*protection_wait_range)(uintptr_t,uint64_t);
+void runtime_memory_set_protection_hooks(ProtectionEnqueue enqueue, void (*wait)(void)) {
+    protection_enqueue=enqueue; protection_wait=wait;
+    if (!enqueue) protection_wait_range=NULL;
+}
+void runtime_memory_set_range_protection_hook(void (*wait)(uintptr_t,uint64_t)) {
+    protection_wait_range=wait;
+}
+void runtime_memory_wait_page_protection(void) {
+    if (protection_wait) protection_wait();
+}
 static Block blocks[LIMIT];
 static Vma *vmas; static size_t vma_count, vma_capacity;
 #ifndef _WIN32
@@ -142,8 +158,19 @@ void runtime_memory_reserve(void) {
         win_fail("reserving the PS4 address range (link with --disable-high-entropy-va)",USER_MIN,USER_MAX-USER_MIN);
     region_insert(0,(HostRegion){USER_MIN,USER_MAX,0,0});
 }
+/* Guest memory committed only as the game maps it: the whole pool did not fit Windows' commit
+ * limit (RAM + page file) at once (pool()). */
+static int commit_on_map;
+static void commit_backing(uint64_t phys, uint64_t size) {
+    if (!commit_on_map || VirtualAlloc(backing_base+phys,size,MEM_COMMIT,PAGE_READWRITE)) return;
+    fprintf(stderr,"Runtime: cannot commit %" PRIu64 " MiB more guest memory (error %lu): Windows' "
+            "page file is too small for this resolution; let Windows manage its size, or use a "
+            "lower output resolution\n",size>>20,GetLastError());
+    win_fail("committing guest memory",(uintptr_t)(backing_base+phys),size);
+}
 static void view_map(const HostRegion *r, DWORD protect) {
     DWORD initial=protect==PAGE_NOACCESS ? PAGE_READWRITE : protect, old;
+    commit_backing(r->phys,r->end-r->start);
     if (!MapViewOfFile3(section,GetCurrentProcess(),(void *)r->start,r->phys,r->end-r->start,MEM_REPLACE_PLACEHOLDER,initial,NULL,0))
         win_fail("MapViewOfFile3",r->start,r->end-r->start);
     if (initial!=protect && !VirtualProtect((void *)r->start,r->end-r->start,protect,&old))
@@ -163,6 +190,7 @@ static size_t save_protections(uintptr_t start, uintptr_t end, ProtRun **runs, s
 }
 /* Leaves [a,b) as exactly one unmapped placeholder; returns its region index. */
 static size_t carve_host(uintptr_t a, uintptr_t b) {
+    runtime_memory_wait_page_protection();
     size_t first=region_index(a), last=first;
     if (first==region_count || regions[first].start>a) win_fail("guest range outside the reservation",a,b-a);
     while (last<region_count && regions[last].start<b) ++last;
@@ -220,6 +248,7 @@ static int host_map(uintptr_t address, uint64_t size, int prot, int reserved, ui
 }
 static int host_unmap(uintptr_t address, uint64_t size) { carve_host(address,address+size); return 0; }
 static int host_protect(uintptr_t address, uint64_t size, int prot) {
+    runtime_memory_wait_page_protection();
     DWORD protect=win_prot(prot), old;
     uintptr_t end=address+size;
     for (size_t i=region_index(address); i<region_count && regions[i].start<end; ++i) {
@@ -229,14 +258,48 @@ static int host_protect(uintptr_t address, uint64_t size, int prot) {
     }
     return 0;
 }
+/* Already split into committed views and clipped to guest permissions under
+ * the VMA reader lock. No metadata access or lock is permitted on the worker. */
+void runtime_memory_apply_page_protection(uintptr_t address, uint64_t size, uint32_t native) {
+    DWORD old;
+    if (!VirtualProtect((void *)address,size,native,&old)) win_fail("queued VirtualProtect",address,size);
+}
+static int host_protect_deferred(uintptr_t address, uint64_t size, int prot) {
+    const DWORD native=win_prot(prot);
+    if (!protection_enqueue || (native!=PAGE_READONLY && native!=PAGE_EXECUTE_READ))
+        return host_protect(address,size,prot);
+    const uintptr_t end=address+size;
+    for (size_t i=region_index(address); i<region_count && regions[i].start<end; ++i) {
+        if (!regions[i].mapped) continue;
+        const uintptr_t a=regions[i].start>address ? regions[i].start : address;
+        const uintptr_t b=regions[i].end<end ? regions[i].end : end;
+        protection_enqueue(a,b-a,native,regions[i].start);
+    }
+    return 0;
+}
 /* Released pages read as zero when reused, like the memfd's punched holes. */
-static void host_discard(uint64_t phys, uint64_t size) { memset(backing_base+phys,0,size); }
+static void host_discard(uint64_t phys, uint64_t size) { commit_backing(phys,size); memset(backing_base+phys,0,size); }
 /* Direct memory occupies [0,POOL_SIZE) of the section, flexible memory [POOL_SIZE,+FLEX_SPAN). */
 static int pool(void) {
     if (backing_base) return 0;
     runtime_memory_reserve();
     uint64_t bytes=POOL_SIZE+FLEX_SPAN;
-    section=CreateFileMapping2(INVALID_HANDLE_VALUE,NULL,FILE_MAP_ALL_ACCESS,PAGE_EXECUTE_READWRITE,SEC_COMMIT,bytes,NULL,NULL,0);
+    /* BB_GUEST_COMMIT_ON_MAP=1: the fallback below from the start (tests). */
+    const char *on_map=getenv("BB_GUEST_COMMIT_ON_MAP");
+    if (on_map && on_map[0]=='1') SetLastError(ERROR_COMMITMENT_LIMIT);
+    else section=CreateFileMapping2(INVALID_HANDLE_VALUE,NULL,FILE_MAP_ALL_ACCESS,PAGE_EXECUTE_READWRITE,SEC_COMMIT,bytes,NULL,NULL,0);
+    if (!section && (GetLastError()==ERROR_NO_SYSTEM_RESOURCES || GetLastError()==ERROR_COMMITMENT_LIMIT)) {
+        /* The pool is sized for the largest resolutions (BB_DMEM_MB, 12+ GiB) and committed at
+         * once it exceeded RAM + page file (error 1450) although the game maps much less: then
+         * it is reserved and committed as the game maps it (commit_backing). */
+        DWORD error=GetLastError();
+        section=CreateFileMapping2(INVALID_HANDLE_VALUE,NULL,FILE_MAP_ALL_ACCESS,PAGE_EXECUTE_READWRITE,SEC_RESERVE,bytes,NULL,NULL,0);
+        if (section) {
+            commit_on_map=1;
+            printf("Runtime: %" PRIu64 " MiB of guest memory do not fit Windows' commit limit at once "
+                   "(error %lu): committed as the game maps it\n",bytes>>20,error);
+        }
+    }
     if (!section) { fprintf(stderr,"Runtime: cannot create %" PRIu64 " MiB of guest memory (error %lu); is the page file large enough?\n",bytes>>20,GetLastError()); return -1; }
     backing_base=MapViewOfFile3(section,GetCurrentProcess(),NULL,0,bytes,0,PAGE_READWRITE,NULL,0);
     return backing_base ? 0 : -1;
@@ -254,13 +317,25 @@ static int pool(void) {
 }
 void runtime_memory_reserve(void) {}
 static int host_map(uintptr_t address, uint64_t size, int prot, int reserved, uint64_t phys) {
+    runtime_memory_wait_page_protection();
     void *mapped = !reserved
         ? mmap((void *)address,size,prot,MAP_SHARED|MAP_FIXED,pool_fd,(off_t)phys)
         : mmap((void *)address,size,PROT_NONE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_FIXED,-1,0);
     return mapped==MAP_FAILED ? -1 : 0;
 }
-static int host_unmap(uintptr_t address, uint64_t size) { return munmap((void *)address,size); }
-static int host_protect(uintptr_t address, uint64_t size, int prot) { return mprotect((void *)address,size,prot); }
+static int host_unmap(uintptr_t address, uint64_t size) {
+    runtime_memory_wait_page_protection(); return munmap((void *)address,size);
+}
+static int host_protect(uintptr_t address, uint64_t size, int prot) {
+    runtime_memory_wait_page_protection(); return mprotect((void *)address,size,prot);
+}
+void runtime_memory_apply_page_protection(uintptr_t address, uint64_t size, uint32_t native) {
+    if (mprotect((void *)address,size,native)) { perror("queued mprotect"); abort(); }
+}
+static int host_protect_deferred(uintptr_t address, uint64_t size, int prot) {
+    if (!protection_enqueue || prot!=PROT_READ) return host_protect(address,size,prot);
+    protection_enqueue(address,size,prot,0); return 0;
+}
 static void host_discard(uint64_t phys, uint64_t size) {
     fallocate(pool_fd,FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,(off_t)phys,(off_t)size);
 }
@@ -772,9 +847,31 @@ int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t s
     read_unlock();
     return ok;
 }
+/* Reads through the backing view: the host's copies of guest memory (uploads), which the GPU's
+ * read protection (BB_READBACKS=2: GPU-written pages) must not stop. A fault there would ask the
+ * GPU thread for a readback while it waits for these very copies (a hang at start). Gaps read
+ * as zeros. */
+void runtime_memory_read_backing(uintptr_t address, void *data, uint64_t size) {
+    unsigned char *out=data;
+    read_lock();
+    for (uintptr_t at=address, end=address+size; at<end;) {
+        const size_t i=vma_index(at);
+        uint64_t n;
+        if (i<vma_count && vmas[i].start<=at && vmas[i].kind!=KIND_RESERVED) {
+            n=(vmas[i].end<end ? vmas[i].end : end)-at;
+            memcpy(out+(at-address),backing_base+vmas[i].phys+(at-vmas[i].start),n);
+        } else {
+            const uintptr_t next=i==vma_count ? end : vmas[i].start>at ? vmas[i].start : vmas[i].end;
+            n=(next<end ? next : end)-at;
+            memset(out+(at-address),0,n);
+        }
+        at+=n;
+    }
+    read_unlock();
+}
 /* Per-thread cache of recently found regions for the GPU's per-draw queries:
  * entries hold for as long as the table generation they were read at. */
-typedef struct { uint64_t generation; uintptr_t start, end; int kind; } CachedRegion;
+typedef struct { uint64_t generation; uintptr_t start, end; int kind, prot, read_ahead_safe; } CachedRegion;
 static __thread CachedRegion region_cache[8];
 static __thread unsigned region_cache_next;
 static const CachedRegion *cached_region(uintptr_t address) {
@@ -790,7 +887,7 @@ static const CachedRegion *cached_region(uintptr_t address) {
 static void cache_region(size_t i) {
     uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
     if (i==vma_count || (generation & 1)) return;
-    region_cache[region_cache_next++ % 8]=(CachedRegion){generation,vmas[i].start,vmas[i].end,vmas[i].kind};
+    region_cache[region_cache_next++ % 8]=(CachedRegion){generation,vmas[i].start,vmas[i].end,vmas[i].kind,vmas[i].prot,-1};
 }
 /* Mapped length from address, up to size, across adjacent mappings. */
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size) {
@@ -822,8 +919,63 @@ int runtime_memory_region(uintptr_t address, uintptr_t *start, uintptr_t *end, i
     read_unlock();
     return found;
 }
+/* A second guest alias can write without faulting the first address's watcher.
+ * Restrict speculative uploads to unaliased direct mappings. Cache the VMA-wide
+ * conservative result for this table generation, not just the virtual address. */
+static int direct_range_unaliased(size_t index) {
+    const Vma *v=&vmas[index];
+    if (v->kind!=KIND_DIRECT) return 0;
+    uint64_t end=v->phys+v->end-v->start;
+    for (size_t j=0;j<vma_count;++j) {
+        if (j==index || vmas[j].kind==KIND_RESERVED) continue;
+        uint64_t other_end=vmas[j].phys+vmas[j].end-vmas[j].start;
+        if (v->phys<other_end && vmas[j].phys<end) return 0;
+    }
+    return 1;
+}
+/* Reject inaccessible padding and guest aliases. Temporary OS write/read
+ * restrictions imposed by the GPU tracker are handled by its dirty masks. */
+static int can_read_ahead_locked(uintptr_t address, uint64_t size) {
+    uintptr_t at=address, end=address+size;
+    for (size_t i=vma_index(address); at<end && i<vma_count; ++i) {
+        if (vmas[i].start>at || !(host_prot(vmas[i].prot)&PROT_READ)) break;
+        const int safe=direct_range_unaliased(i);
+        const unsigned before=region_cache_next;
+        cache_region(i);
+        if (region_cache_next!=before) region_cache[(region_cache_next-1)%8].read_ahead_safe=safe;
+        if (!safe) break;
+        at=vmas[i].end<end ? vmas[i].end : end;
+    }
+    return at==end;
+}
+int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size) {
+    if (!size || address > UINTPTR_MAX-size) return 0;
+    const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
+    if (c && size<=c->end-address && c->read_ahead_safe>=0)
+        return c->read_ahead_safe && (host_prot(c->prot)&PROT_READ)!=0;
+    read_lock();
+    const int safe=can_read_ahead_locked(address,size);
+    read_unlock();
+    return safe;
+}
+/* A range wait is safe only while its direct, unaliased VMA identity is stable.
+ * Aliases and inaccessible/flexible spans retain the conservative full drain. */
+void runtime_memory_wait_page_protection_range(uintptr_t address, uint64_t size) {
+    if (!size) return;
+    if (!protection_wait_range || address>UINTPTR_MAX-size) {
+        runtime_memory_wait_page_protection(); return;
+    }
+    read_lock();
+    const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
+    const int safe=c && size<=c->end-address && c->read_ahead_safe>=0
+        ? c->read_ahead_safe && (host_prot(c->prot)&PROT_READ)!=0
+        : can_read_ahead_locked(address,size);
+    if (safe) protection_wait_range(address,size);
+    else runtime_memory_wait_page_protection();
+    read_unlock();
+}
 /* GPU page tracking: restrict host access, never beyond the guest's own protection. */
-void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write) {
+static void gpu_protect(uintptr_t address, uint64_t size, int read, int write, int deferred) {
     read_lock();
     for (size_t i=vma_index(address); i<vma_count && vmas[i].start<address+size; ++i) {
         if (vmas[i].kind==KIND_RESERVED) continue;
@@ -831,9 +983,18 @@ void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int 
         uintptr_t b=vmas[i].end<address+size ? vmas[i].end : address+size;
         int guest=host_prot(vmas[i].prot);
         int want=(read ? PROT_READ : 0)|(write ? PROT_WRITE|PROT_READ : 0)|(guest & PROT_EXEC);
-        host_protect(a,b-a,guest & want);
+        const int result=deferred ? host_protect_deferred(a,b-a,guest & want)
+                                  : host_protect(a,b-a,guest & want);
+        if (result) { fputs("STOP: GPU page protection failed\n",stderr); abort(); }
     }
     read_unlock();
+}
+void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write) {
+    gpu_protect(address,size,read,write,0);
+}
+/* Caller is installing a new write watcher, not granting access after a readback. */
+void runtime_memory_gpu_protect_deferred(uintptr_t address, uint64_t size) {
+    gpu_protect(address,size,1,0,1);
 }
 /* Host view of a guest range, for the GPU backend: the range must be mapped. */
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size) {

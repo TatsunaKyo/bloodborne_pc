@@ -1,5 +1,13 @@
 # Performance work and optional comparisons
 
+## Current traversal and capture status
+
+The cemetery-exit hitch remains open **with FG on or off**. Clearing or precompiling shader cache has not established a fix. R55 includes reviewed cache, staging, sparse-memory, pipeline-priority and motion-target changes; controlled resource tests do not establish gameplay improvement.
+
+Run **Capture-Traversal.cmd** beside the launcher with the current FG setting, repeat the route and close the game. It needs no F8 or NVIDIA FG. **Capture-NVIDIA-FG.cmd** is for optional tagged image readbacks with NVIDIA FG; it still exports logs when images are unavailable. Captures keep normal renderer parallelism and turn off GPU timestamp profiling. Check the chosen user/diagnostics session for the archive and review it before sharing. Nothing is uploaded automatically.
+
+[Current reports](known-issues.md) · [R55 integration decisions and exact test scope](investigations/2026-10-20-upstream-integration.md)
+
 I can remove redundant work that is visible in the code without asking for a profiling capture first. In Revision 10, I removed repeated camera mapping checks, cached unchanged mip bias, avoided repeated object-image read barriers and staggered periodic index scans. The changes and their technical details are in [Quality and performance](quality-and-performance.md). In earlier revisions, I also reused the upscaled display image view and avoided FSR color/interpolation allocations on the NVIDIA FG path.
 
 Overall CPU and GPU utilization do not reveal every bottleneck. One busy thread can be hidden by the CPU average; a GPU can spend time waiting between expensive passes. Lowering input resolution helping FPS means some work scales with pixels, but does not identify the entire cause of a slow scene.
@@ -13,3 +21,6 @@ For more detail, Advanced offers frame statistics and GPU pass timing in the log
 I kept the default one-frame GPU queue because I want low latency. You can try a larger **Frames → Frames ahead of the GPU** value if it helps your configuration, but check the extra delay as well. I've reduced the repeated renderer work I found; I still welcome gameplay comparisons from other PCs to see how much that helps in practice.
 
 I test gameplay on my Windows 11 / RTX setup. [Testing](testing.md) and [current reports](known-issues.md) collects that coverage and the remaining checks.
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

@@ -173,13 +173,17 @@ void Scheduler::TraceDirectRecording(void* caller) {
 }
 
 std::unique_ptr<RecordChunk> Scheduler::AcquireChunk() {
-    std::scoped_lock lk{recorder_mutex};
-    if (free_chunks.empty()) {
-        return std::make_unique<RecordChunk>();
+    BbHitch::Trace::Scope trace{"command chunk acquisition"};
+    {
+        std::scoped_lock lk{recorder_mutex};
+        if (!free_chunks.empty()) {
+            auto chunk = std::move(free_chunks.back());
+            free_chunks.pop_back();
+            return chunk;
+        }
     }
-    auto chunk = std::move(free_chunks.back());
-    free_chunks.pop_back();
-    return chunk;
+    BbHitch::Trace::Scope allocation{"command chunk allocation", 0, RecordChunk::Capacity};
+    return std::make_unique_for_overwrite<RecordChunk>();
 }
 
 void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
@@ -188,13 +192,30 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
         signal();
         return;
     }
-    BbCopy::FlushBatch();
-    deferred_signals_issued.fetch_add(1, std::memory_order_relaxed);
-    Record([signal = std::move(signal), done = deferred_signals_done](vk::CommandBuffer) mutable {
-        BbCopy::AfterCopies([signal = std::move(signal), done = std::move(done)] {
-            signal();
-            done->fetch_add(1, std::memory_order_release);
-        });
+    const u64 id = deferred_signals_issued.fetch_add(1, std::memory_order_relaxed) + 1;
+    struct Completion {
+        std::atomic<unsigned> remaining{2};
+        std::function<void()> signal;
+        std::shared_ptr<std::atomic<u64>> done;
+        u64 id;
+        Completion(std::function<void()> signal_, std::shared_ptr<std::atomic<u64>> done_, u64 id_)
+            : signal{std::move(signal_)}, done{std::move(done_)}, id{id_} {}
+        void Arrive(const char* stage) {
+            BbHitch::Trace::Point(stage, 0, 0, id);
+            if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                signal();
+                BbHitch::Trace::Point("guest copy fence retired", 0, 0, id);
+                done->fetch_add(1, std::memory_order_release);
+            }
+        }
+    };
+    auto completion = std::make_shared<Completion>(std::move(signal), deferred_signals_done, id);
+    BbHitch::Trace::Point("guest copy fence queued", 0, 0, id);
+    // Capture the asynchronous copy prefix now, before later draws add work.
+    // The recorder prefix also covers copies performed inline by recorded commands.
+    BbCopy::AfterCopies([completion] { completion->Arrive("guest copy fence async ready"); });
+    Record([completion](vk::CommandBuffer) {
+        completion->Arrive("guest copy fence recording ready");
     });
     KickRecording(true);
 }
@@ -280,6 +301,7 @@ void Scheduler::SyncRecording() {
 
 void Scheduler::RecorderThread(std::stop_token stoken) {
     Common::SetCurrentThreadName("bb:VkRecorder");
+    BbHitch::Trace::SetRole("Vulkan recording");
     while (true) {
         // Spin briefly before sleeping: the next chunk usually follows within microseconds,
         // and a sleeping recorder costs the GPU thread a wake-up syscall per kick. With few
@@ -360,6 +382,7 @@ void Scheduler::Wait(u64 tick) {
 }
 
 void Scheduler::PopPendingOperations() {
+    BbHitch::Trace::Scope trace{"pending operations"};
     if (num_pending_ops.load(std::memory_order_acquire) == 0) {
         return; // every draw comes here
     }
@@ -429,14 +452,15 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     // Guest memory copies into staging read by this submission (copy threads).
     WaitHostCopies();
     Check(current_cmdbuf.end());
+    // bbport: one command buffer per submission (upstream's sessions add an upload buffer that
+    // nothing records into since batching was removed upstream)
+    const std::array<vk::CommandBuffer, 1> cmd_buffers{current_cmdbuf};
 
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 
-    // Presentation reads the completed frame with transfer/compute commands,
-    // before color attachment output. Every dependency must gate those reads;
-    // indexing a two-entry stage array also put additional waits out of bounds.
-    std::array<vk::PipelineStageFlags, 4> wait_stage_masks;
+    std::array<vk::PipelineStageFlags, std::tuple_size_v<decltype(info.wait_semas)>>
+        wait_stage_masks;
     wait_stage_masks.fill(vk::PipelineStageFlagBits::eAllCommands);
 
     const vk::TimelineSemaphoreSubmitInfo timeline_si = {
@@ -451,8 +475,8 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         .waitSemaphoreCount = info.num_wait_semas,
         .pWaitSemaphores = info.wait_semas.data(),
         .pWaitDstStageMask = wait_stage_masks.data(),
-        .commandBufferCount = 1U,
-        .pCommandBuffers = &current_cmdbuf,
+        .commandBufferCount = static_cast<u32>(cmd_buffers.size()),
+        .pCommandBuffers = cmd_buffers.data(),
         .signalSemaphoreCount = info.num_signal_semas,
         .pSignalSemaphores = info.signal_semas.data(),
     };
@@ -467,6 +491,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         BbHitch::Record("Vulkan queue lock",lock_started);
         BbHitch::Scope hitch{"Vulkan queue submit"};
         const auto submit_result = submission_queue.submit(submit_info, info.fence);
+        if (submit_result == vk::Result::eErrorDeviceLost) instance.ReportDeviceLost("submit");
         ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
     }
 

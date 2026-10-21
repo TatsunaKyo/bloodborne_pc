@@ -1,5 +1,9 @@
 # Repository and release plan
 
+## R55 status
+
+The default branch, published source history and current guides are being reconciled. Save Manager, Support Report, input remapping/direct mouse, provider choices and one-ZIP packaging are implemented; remaining gameplay issues stay [open](known-issues.md). The dated plan below records earlier phases and is not a current list of missing features. [Current maintenance](maintenance.md) · [Current release process](releasing.md)
+
 I checked the audit against the repository and published assets on 12 October 2026, after finishing Revision 21. I am keeping this work separate from rendering and gameplay changes.
 
 | Finding | What I verified | Current result |

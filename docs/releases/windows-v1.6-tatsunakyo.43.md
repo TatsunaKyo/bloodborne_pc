@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # TatsunaKyo Revision 43 — camera guides and renderer synchronization
 
 R42 still shows the owner's cemetery hitch, output-FPS variation and temporal

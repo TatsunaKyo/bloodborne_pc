@@ -23,7 +23,12 @@ jobs:
         with:
           python-version: '3.14.8'
       - name: Install pinned launcher dependencies
-        run: python -m pip install PyInstaller==6.19.0 Pillow==12.3.0
+        run: python -m pip install PyInstaller==6.19.0 Pillow==12.3.0 -r tools/requirements-checks.txt
+      - name: Check first-party Python and documentation
+        run: |
+          python -m pyflakes run.py launcher scripts tools tests
+          python tools/check_docs.py
+          python tools/update_readme_revision.py --check
       - name: Compile the native saves lease fixture
         shell: pwsh
         run: |
@@ -267,6 +272,8 @@ jobs:
           $exe = (Resolve-Path out/frozen-infrastructure/Bloodborne/Bloodborne.exe).Path
           python tests/test_launcher_startup.py $exe 2>&1 | Tee-Object out/verification/frozen-startup.log
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_launcher_trophies_ui.py $exe 2>&1 | Tee-Object out/verification/frozen-trophies.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $script = (Resolve-Path scripts/verify_infrastructure_runtime.py).Path
           $result = Start-Process -FilePath $exe -ArgumentList @('--script', $script) -PassThru -RedirectStandardOutput out/verification/frozen-runtime.log -RedirectStandardError out/verification/frozen-runtime-errors.log
           if (-not $result.WaitForExit(90000)) {
@@ -297,13 +304,15 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ libglm-dev libvulkan1 mesa-vulkan-drivers glslang-tools spirv-tools python3-yaml python3-tk python3-pil python3-pil.imagetk xvfb fonts-dejavu-core zstd
+          sudo apt-get install -y g++ libboost-dev libglm-dev libvulkan1 mesa-vulkan-drivers glslang-tools spirv-tools python3-venv python3-yaml python3-tk python3-pil python3-pil.imagetk xvfb fonts-dejavu-core zstd
+          python3 -m venv --system-site-packages out/checks-env
+          out/checks-env/bin/python -m pip install -r tools/requirements-checks.txt
       - name: Prepare checksum-pinned Vulkan and VMA test headers
         run: python3 tools/setup_test_headers.py
       - name: Run actual Python, renderer and UI regressions
-        run: xvfb-run -a -s '-screen 0 3200x2200x24' python3 tools/ci_regressions.py --gui
+        run: xvfb-run -a -s '-screen 0 3200x2200x24' out/checks-env/bin/python tools/ci_regressions.py --gui --vulkan
       - name: Check documentation and workflow configuration
-        run: python3 tests/test_project_infrastructure.py
+        run: out/checks-env/bin/python tests/test_project_infrastructure.py
       - name: Retain verification records
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

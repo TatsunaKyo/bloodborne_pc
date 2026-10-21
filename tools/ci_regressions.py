@@ -3,6 +3,7 @@
 """Run the portable regression suite; private game files and a GPU are unnecessary."""
 import argparse
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -23,11 +24,18 @@ def run(command):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--gui',action='store_true',help='Requires a display or xvfb-run')
+    parser.add_argument('--glm-include',type=Path,default=Path('/usr/include'))
+    parser.add_argument('--glslang',default=shutil.which('glslangValidator') or 'glslangValidator')
+    parser.add_argument('--validator',default=shutil.which('spirv-val') or 'spirv-val')
+    parser.add_argument('--vulkan',action='store_true',help='Also execute the camera shader on a real Vulkan device/ICD')
     args=parser.parse_args()
     (ROOT/'out/verification').mkdir(parents=True,exist_ok=True)
+    subprocess.run([sys.executable,'-m','pyflakes','run.py','launcher','scripts','tools','tests'],cwd=ROOT,check=True)
+    subprocess.run([sys.executable,'tools/check_docs.py'],cwd=ROOT,check=True)
+    subprocess.run([sys.executable,'tools/update_readme_revision.py','--check'],cwd=ROOT,check=True)
     for file in ('test_launcher_updates.py','test_release_integrity.py','test_release_split.py','test_update_archive.py','test_published_release.py','test_launcher_window_settings.py','test_diagnostics.py','test_geometry_diagnostics.py','test_support_report.py','test_nvidia_fg_preset.py'):
         run([sys.executable,'tests/'+file])
-    for file in ('test_run_settings.py',):
+    for file in ('test_run_settings.py','test_trophies.py'):
         run([sys.executable,'-m','unittest','discover','-s','tests','-p',file])
     subprocess.run(['gcc','-std=c11','-Wall','-Wextra','-Werror','-I','src','tests/test_save_access.c',
                     'src/runtime_save_access.c','-o','out/verification/save-access-host'],cwd=ROOT,check=True)
@@ -40,15 +48,25 @@ def main():
     run([sys.executable,'tests/test_present_queue_scope.py'])
     run([sys.executable,'tests/test_swapchain_recovery.py'])
     run([sys.executable,'tests/test_cpu_integrations.py'])
+    for file in ('test_pipeline_compile_ahead.py','test_sparse_backing_pool.py',
+                 'test_renderer_memory_refresh.py','test_object_motion_targets.py',
+                 'test_texture_refresh_hashes.py','test_readback_policy.py',
+                 'test_native_fg_policy.py','test_temporal_draw_policy.py'):
+        run([sys.executable,'tests/'+file])
+    subprocess.run(['g++','-std=c++20','-O1','-UNDEBUG','-pthread','-Igpu/shadps4',
+                    'tests/test_pipeline_priority.cpp','-o','out/verification/pipeline-priority'],cwd=ROOT,check=True)
+    subprocess.run([str(ROOT/'out/verification/pipeline-priority')],cwd=ROOT,check=True)
     run([sys.executable,'tests/test_streaming_write_prepare.py'])
     run([sys.executable,'tests/test_window_focus.py'])
     run([sys.executable,'tests/test_audio_background.py'])
     run([sys.executable,'tests/test_submit_wait_stages.py'])
     for file in ('test_preparation_lock.py','test_recording_handoff.py','test_presentation_queue.py',
-                 'test_texture_helper_snapshots.py','test_draw_pipe_wait.py'):
+                 'test_texture_helper_snapshots.py','test_draw_pipe_wait.py','test_hitch_trace.py'):
         run([sys.executable,'tests/'+file])
-    run([sys.executable,'tests/test_camera_viewport.py','--glm-include','/usr/include',
-         '--vulkan','--glslang','/usr/bin/glslangValidator','--validator','/usr/bin/spirv-val'])
+    camera=[sys.executable,'tests/test_camera_viewport.py','--glm-include',str(args.glm_include)]
+    if args.vulkan:
+        camera+=['--vulkan','--glslang',args.glslang,'--validator',args.validator]
+    run(camera)
     run([sys.executable,'tests/test_camera_motion_kernel.py'])
     run([sys.executable,'tests/test_fg_frame_inputs.py'])
     run([sys.executable,'tests/test_fg_diagnostic.py'])
@@ -69,7 +87,7 @@ def main():
     run([sys.executable,'tests/test_overlay_controls.py','--compiler','g++',
          '--capture-dir',f'out/verification/menu{revision}'])
     if args.gui:
-        for file in ('test_launcher_startup.py','test_launcher_geometry.py','test_launcher_fg_diagnostic_ui.py','test_launcher_xess.py','test_launcher_fg_presets_ui.py','test_support_report_ui.py','test_save_manager_ui.py'):
+        for file in ('test_launcher_startup.py','test_launcher_geometry.py','test_launcher_fg_diagnostic_ui.py','test_launcher_xess.py','test_launcher_fg_presets_ui.py','test_launcher_trophies_ui.py','test_support_report_ui.py','test_save_manager_ui.py'):
             run([sys.executable,'tests/'+file])
 
 

@@ -29,7 +29,15 @@ public:
     int GetRcasAttenuation() { static const auto value = int(Number("BB_RCAS_ATTENUATION", 250)); return value; }
     // bbport: Relaxed by default: without readbacks FaceGen reads stale GPU-written vertices
     // (vertex explosions); in Hunter's Nightmare it costs no measurable frame rate.
-    u32 GetReadbacksMode() { static const auto value = u32(Number("BB_READBACKS", GpuReadbacksMode::Relaxed)); return value; }
+    u32 GetReadbacksMode() {
+        // FaceGen and streamed geometry rely on GPU writes reaching guest memory.
+        // Migrate the former Off setting to Relaxed instead of returning stale data.
+        static const u32 value = [] {
+            const auto mode = Number("BB_READBACKS", GpuReadbacksMode::Relaxed);
+            return mode == GpuReadbacksMode::Precise ? u32(GpuReadbacksMode::Precise) : u32(GpuReadbacksMode::Relaxed);
+        }();
+        return value;
+    }
     // bbport: BB_VBLANK_HZ=0 (uncapped presets): vblank runs at 480 Hz so a finished frame is
     // shown within ~2 ms instead of waiting for the next display-rate vblank (below the display
     // rate frames alternated 10/20 ms at 100 Hz: judder), and GetFrameLimit() caps the rate at
@@ -56,6 +64,7 @@ public:
     bool IsDumpShaders() { static const auto value = Flag("BB_DUMP_SHADERS", false); return value; }
     bool IsFsrEnabled() { static const auto value = Flag("BB_FSR1", false); return value; }
     bool IsHdrAllowed() { static const auto value = Flag("BB_HDR", false); return value; }
+    bool IsInlineFetchShader() { return false; }
     bool IsNullGPU() { static const auto value = Flag("BB_NULL_GPU", false); return value; }
     bool IsPatchShaders() { return false; }
     bool IsPipelineCacheArchived() { return false; }

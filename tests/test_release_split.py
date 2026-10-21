@@ -37,6 +37,14 @@ class SplitRelease(unittest.TestCase):
                 data[name] = b'@echo off\ncd /d "%~dp0"\n"%~dp0Bloodborne.exe" --play --geometry-diagnostic=normal\npause\n'
         return self.fixture.package(modify=add)
 
+    def test_modern_revisions_cannot_create_split_deliverables(self):
+        original = self.fixture.package('1.6-tatsunakyo.55')
+        digest = checksum(original)
+        with self.assertRaisesRegex(ValueError, 'one complete ZIP'):
+            split(original, self.folder)
+        self.assertFalse(self.folder.exists())
+        self.assertEqual(checksum(original), digest)
+
     def test_runtime_stays_valid_and_all_original_content_is_preserved(self):
         original = self.complete(); original_sha = checksum(original)
         result = split(original, self.folder)

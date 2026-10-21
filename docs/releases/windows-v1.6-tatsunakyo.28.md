@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 28
 
 The motion-history change in this revision caused flashing geometry during gameplay and is rolled back in [Revision 29](windows-v1.6-tatsunakyo.29.md). Use Revision 29 for the corrected build; the notes below describe what Revision 28 originally changed.

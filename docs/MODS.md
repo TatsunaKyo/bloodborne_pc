@@ -1,4 +1,10 @@
 <!-- crowned-workshop-navigation -->
+
+## Current Windows quick start
+
+Use **Mods & patches** to select mods and their order. Loose-file mods use game-relative paths; game XML patches must match CUSA03173 1.09. Preserve your saves/settings before replacing mods. The external RTX 20/30 DLSSG route is a separate opt-in launcher/overlay control, not a reason to replace stock NVIDIA files for every user. NR is unsupported here. Current RCAS sharpening spans 0–2.0.
+
+The Russian upstream instructions below are retained as historical detail. Linux commands and older sharpening ranges there describe their original environment.
 > Earlier technical reference. [The Crowned Workshop current guides](index.md) · [Current reports](known-issues.md). This page retains its original context and credits.
 
 # Файловые моды
@@ -107,3 +113,6 @@ BB_GAME_DIR=/path/to/CUSA03173 BB_MODS_ENABLED=0 bash run.sh
 прохода нет. RCAS применяется к готовой сцене перед HUD. В историю TAA сохраняется
 цвет до повышения резкости, чтобы она не усиливалась при повторном накоплении.
 Ровные участки сохраняют исходный цвет, включая HDR; дополнительный буфер не нужен.
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

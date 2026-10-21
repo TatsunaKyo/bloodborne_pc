@@ -1,5 +1,4 @@
 from paths import ROOT
-from pathlib import Path
 import subprocess
 import unittest
 

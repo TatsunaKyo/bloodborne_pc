@@ -1,5 +1,7 @@
 # DLSS, FSR and XeSS upscaling
 
+R55 retains both DLSS SR NGX search paths with matching DLLs. DLSS Super Resolution availability is checked independently of FG capability or the opt-in RTX 20/30 FG mod. FSR 4.1.1 remains a separate supported asset path. DLSS model letters select hints; they do not validate FG model A/B/C or third-party NR. From R42 the game's original AA is disabled for a temporal-upscaler launch; switching Off/temporal needs restart to apply that startup patch.
+
 ![DLSS, FSR and XeSS: input scene, reconstruction and display output](assets/features/upscaling.png)
 
 I wanted more control over image quality and more choices for people playing on different GPUs. The original port already had DLSS, FSR and TAA; I added **XeSS Super Resolution** and a separate **DLSS model-preset selector**, with the same settings available in the launcher and while playing.
@@ -45,3 +47,6 @@ I preserve the input resolution when migrating an older XeSS setting: the old sh
 The output columns above mean **1920 × 1080**, **2560 × 1440** and **3840 × 2160**, respectively.
 
 I do not currently own an Intel GPU, so I would especially appreciate XeSS results from people who can try it on Intel hardware. The package includes the vendor runtimes and their licenses, and the renderer logs a reason if a provider fails and falls back to FSR 3.1.
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

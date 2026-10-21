@@ -1,5 +1,7 @@
 # Reflex and AMD Anti-Lag 2
 
+R55's native Supermedo SDR FG choices coexist with the Workshop HDR-capable paths. Reflex remains independent from DLSS SR and is automatic for supported NVIDIA FG. AMD Anti-Lag 2 uses its own supported Vulkan interface. `PC latency`, real-frame graph intervals and generated-output FPS measure different things; none alone establishes physical display cadence. [Provider choices](frame-generation.md#r55-provider-choices)
+
 I added independent latency controls because choosing an upscaler or turning Frame Generation off should not remove the option to reduce the render queue. Both interfaces keep them in **Frames**, beside FG and frame limiting.
 
 | Control | Choices | Requirements |
@@ -28,3 +30,6 @@ Intel XeSS Low Latency remains separate work. The XeSS 3.0.2 runtime integrated 
 I keep the default one-frame GPU queue for lower latency. Larger **Frames ahead of the GPU** values may help throughput on some systems, but compare the response as well as the FPS. [Display settings](display-and-overlay.md) explains the window/presentation choices.
 
 Vendor references: [NVIDIA Reflex integration guide](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideReflex.md), [AMD Anti-Lag Vulkan extension](https://docs.vulkan.org/refpages/latest/refpages/source/VK_AMD_anti_lag.html), [Intel XeSS 3.0.2 documentation](https://github.com/intel/xess/tree/v3.0.2/doc). Gameplay coverage and open reports are in [Testing](testing.md).
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Separate developer records from a complete package without removing runtime dependencies."""
+"""Reproduce legacy split layouts for old-release compatibility tests only."""
 import argparse
 import calendar
 import json
@@ -11,7 +11,7 @@ import subprocess
 import time
 import zipfile
 
-from release_integrity import checksum, package_name, safe_member, validate, validate_developer, require
+from release_integrity import checksum, package_name, safe_member, validate, validate_developer, require, version_parts
 
 LAUNCHER_SOURCE = 'source/modified-files/launcher/bbport_launcher_win.py'
 SOURCE_PATCH = 'source/tatsunakyo-revision.patch'
@@ -83,6 +83,9 @@ def split(package, destination, *, repo=None):
     package, destination = Path(package), Path(destination)
     report = validate(package, repo=repo)
     version = report['version']; runtime_root = report['root']
+    base, revision = version_parts(version)
+    require((tuple(map(int, base.split('.'))), revision) < ((1, 6), 39),
+            'Current revisions require one complete ZIP and checksum; split export is legacy-only')
     # SOURCE_DATE_EPOCH permits reproducible exports outside a checkout too.
     # With a verified checkout, the recorded source commit supplies the date.
     epoch = None

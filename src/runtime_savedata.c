@@ -75,7 +75,7 @@ static size_t mounts_done, memory_writes;
  * (e.g. the player's weapon sounds) never play. It is set before the game reads the save.
  * BB_SOUND_HACK=0 leaves saves untouched. */
 static void bloodborne_sound_hack(void) {
-    static const char *const ids[]={"CUSA00207","CUSA00208","CUSA00299","CUSA00900","CUSA01363","CUSA03014","CUSA03023","CUSA03173"};
+    static const char *const ids[]={"CUSA00207","CUSA00208","CUSA00299","CUSA00900","CUSA01363","CUSA03014","CUSA03023","CUSA03173","CUSA03179"};
     const char *env=getenv("BB_SOUND_HACK");
     if (env && env[0]=='0') return;
     int bloodborne=0;
@@ -204,7 +204,15 @@ static ABI int32_t save_umount(const MountPoint *point) {
     int slot=slot_of(point);
     if (slot>=0) { runtime_file_unmount(point->data); slots[slot].used=0; }
     pthread_mutex_unlock(&lock);
+    if (slot>=0) runtime_quit_on_save_done();
     return slot>=0 ? 0 : ERR_NOT_FOUND;
+}
+int runtime_savedata_mounted(void) {
+    pthread_mutex_lock(&lock);
+    int used=0;
+    for (int i=0;i<SLOTS;++i) used+=slots[i].used;
+    pthread_mutex_unlock(&lock);
+    return used;
 }
 static ABI int32_t save_set_param(const MountPoint *point, uint32_t type, const void *buffer, uint64_t size) {
     if (!initialized) return ERR_NOT_INITIALIZED;

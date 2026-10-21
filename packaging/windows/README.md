@@ -1,6 +1,8 @@
 # Building The Crowned Workshop on Windows
 
-Players can use the ordinary game ZIP without installing Python or a compiler. The optional Developer ZIP keeps source records, regression programs and specialist scripts. Start with [the player guide](README-Windows.txt) and [current documentation](../../docs/index.md). This page is for building the port.
+Current default source includes published R55 plus [maintenance](../../docs/maintenance.md). Build one complete ZIP and checksum. Required runtime licenses, exact startup/runtime sources and compact recovery stay in that ZIP; exclude compiled regression executables, unused optional tools and duplicate toolchains. Preserve both required matching DLSS SR NGX paths. Report compilation, UI/package checks and actual Windows/GPU gameplay separately. [Release process](../../docs/releasing.md)
+
+Players can use the ordinary game ZIP without installing Python or a compiler. The single complete ZIP includes required source/recovery and capture commands. Regression executables are build tools and are omitted from player delivery. Start with [the player guide](README-Windows.txt) and [current documentation](../../docs/index.md). This page is for building the port.
 
 ## Verified release candidates
 
@@ -25,7 +27,7 @@ bash packaging/windows/package.sh --launcher-only
 "$WINPYTHON" tools/assemble_windows.py --baseline out/dependencies/runtime-baseline.zip --dll-dir "$(cygpath -w /clang64/bin)" --channel stable
 ```
 
-The baseline contributes unchanged SDK redistributables and their licenses; the workflow replaces the native executables, launcher and project files with the new build. The candidate records its source commit/tree, executable/runtime hashes and dependencies. The validator checks DLL imports, the source patch, package contents and SHA-256 before preparing the publication page. Assembly preserves the unsplit candidate under `dist/complete`, then exports the game and Developer ZIPs with matching sidecars. Release preparation verifies both archives against the same source. Use `--channel preview` for an actual prerelease. See [Releasing](../../docs/releasing.md) for the tag policy and publication steps.
+The baseline contributes unchanged SDK redistributables and their licenses; the workflow replaces the native executables, launcher and project files with the new build. The candidate records its source commit/tree, executable/runtime hashes and dependencies. The validator checks DLL imports, the source patch, package contents and SHA-256 before preparing the publication page. Assembly emits one complete ZIP and its matching SHA256. Source identity, required runtime dependencies and startup inputs are verified in that same ZIP. Use `--channel preview` for an actual prerelease. See [Releasing](../../docs/releasing.md) for the tag policy and publication steps.
 
 ## Development builds
 

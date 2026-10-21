@@ -7,7 +7,7 @@ Exact labels/ratios are diagrams, not gameplay comparisons. Embedded UI readouts
 """
 from pathlib import Path
 from html import escape
-import base64,io,json,math
+import base64, io, json
 import xml.etree.ElementTree as ET
 import cairosvg
 import numpy as np

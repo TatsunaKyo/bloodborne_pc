@@ -47,6 +47,7 @@ fixture = r'''
 #include <utility>
 #include <vector>
 #include "bbport_copy.h"
+#include "bbport_page_watch_queue.h"
 #include "vk_draw_pipe.h"
 using VAddr=std::uintptr_t;
 extern "C" { std::uint64_t runtime_disabled_optimizations=0; }
@@ -59,7 +60,7 @@ namespace vk {
 struct CommandBuffer {};
 struct BufferCopy { u64 srcOffset,dstOffset,size; };
 }
-namespace VideoCore { struct Buffer {}; }
+namespace VideoCore { struct Buffer {}; enum class ObtainBufferFlags {IsWritten=1,IsTexelBuffer=2}; inline ObtainBufferFlags operator|(ObtainBufferFlags a,ObtainBufferFlags b){return ObtainBufferFlags(int(a)|int(b));} }
 struct Scheduler {
     u64 host_copies_issued=0;
     std::atomic<u64> host_copies_done{0},deferred_signals_issued{0};
@@ -104,6 +105,8 @@ struct BufferCache {
     std::pair<const VideoCore::Buffer*,u64> ObtainBuffer(VAddr address,u32,bool,bool=false) {
         return {&buffer,address};
     }
+    std::pair<const VideoCore::Buffer*,u64> ObtainBuffer(VAddr a,u32 n,VideoCore::ObtainBufferFlags) {return ObtainBuffer(a,n,false);}
+
 };
 struct TextureCache {
     void ClearMeta(VAddr) {}

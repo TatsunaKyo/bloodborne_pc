@@ -1,10 +1,23 @@
 # Frame Generation and Multi Frame Generation
 
+## R55 provider choices
+
+| Choice | SDR | HDR10 | Switching |
+|---|---|---|---|
+| Workshop FSR FG | Yes | Yes | Runtime, with valid temporal inputs. |
+| Workshop NVIDIA DLSS FG/MFG | Yes | Yes | Runtime within the existing provider route. |
+| FSR FG — Supermedo | Yes | No | Native integration; valid temporal inputs required. |
+| DLSS FG — Supermedo | Yes | No | Selecting or leaving it requires restart. |
+
+R55 integrates Supermedo Windows 1.9.2 alongside the existing routes. Native SDR choices do not replace the HDR-capable paths. Provider requests, active mode and generated-output evidence are separate.
+
+**RTX 20/30 opt-in:** the launcher/overlay can enable an external DLSSG mod route. Users supply the compatible mod DLL; stock RTX 40/50 defaults and signed NVIDIA runtime files remain available without that layer. Do not rename/replace bundled DLLs blindly. The integration disables NR for newly generated mod settings and bundles no `nvngx_dlssnr.dll`; Encore NR/depth-format errors are not proof that FG failed. [Current reports](known-issues.md)
+
 I added analytical FSR 3.1.6 Frame Generation and an experimental NVIDIA DLSS FG/MFG backend using Streamline 2.14.1 and its production DLSS-G 310.9.1 runtime. I kept FG independent of the upscaler choice and off by default. Select it on Play or **Frames** in the launcher, or in **Frames** in the Insert / L3+R3 menu. A temporal upscaler is needed: DLSS, XeSS, FSR 3.1, FSR 4 or native-resolution TAA. FSR FG is not restricted to AMD cards or FSR upscaling.
 
 ## SDR, HDR and scene inputs
 
-HDR support was a requirement for me. Both paths accept SDR and HDR10. FSR captures PQ HDR10 color into linear half-float at 80 nits per unit, runs AMD's real optical-flow and frame-interpolation passes, and encodes the generated frame back to PQ. Highlights are preserved above SDR white. NVIDIA receives the actual SDR or HDR10 swapchain image, copied depth and motion vectors, jitter and camera transforms; HDR is not silently replaced with SDR. I also avoid allocating the full-resolution FSR color and interpolation buffers on NVIDIA's path, keeping only depth/motion copies and a one-pixel descriptor placeholder. Runtime errors appear in the in-game menu and `user/last_run.log`.
+HDR support was a requirement for me. Both Workshop paths described below accept SDR and HDR10; the native Supermedo choices above are SDR-only. FSR captures PQ HDR10 color into linear half-float at 80 nits per unit, runs AMD's real optical-flow and frame-interpolation passes, and encodes the generated frame back to PQ. Highlights are preserved above SDR white. NVIDIA receives the actual SDR or HDR10 swapchain image, copied depth and motion vectors, jitter and camera transforms; HDR is not silently replaced with SDR. I also avoid allocating the full-resolution FSR color and interpolation buffers on NVIDIA's path, keeping only depth/motion copies and a one-pixel descriptor placeholder. Runtime errors appear in the in-game menu and `user/last_run.log`.
 
 ## Hardware and current choices
 
@@ -20,7 +33,7 @@ The separate [latency guide](latency.md) covers Reflex, AMD Anti-Lag 2 and the P
 
 I kept the normal FPS limit tied to real game frames. Selecting 75 allows up to 150 output frames with 2x FG, subject to GPU throughput and the monitor. For a separate output limit, **Limit total FPS with Frame Generation** has an optional checkbox, drag control and editable integer field from 30 to 1000. It derives a real-frame ceiling from the negotiated multiplier without raising the game's own ceiling: 75 real FPS plus a 120 total cap at 2x gives 60 real FPS. Integer division can place the total slightly below an indivisible value. Generated frames do not advance physics or game logic. I recommend keeping the real-frame limit at 120 or below because the original game logic can misbehave at extreme rates. The output cap can be set as high as 1000, but the practical rate depends on the GPU, monitor and scene.
 
-For capped NVIDIA FG, I now send the effective output interval to Reflex before the next simulation starts, and let it coordinate the rendered and generated frames. The normal cap still counts real frames: 60 real with x2 means 120 output; 75 real with a 130 output cap means 65 real. VideoOut keeps its existing limiter for FG off, FSR, background modes and any transition where the driver has not accepted the current cap. I also closed a submission race that could assign the same NVIDIA token to two consecutive flips. My latest Revision 35 retest no longer shows the earlier 120-versus-146 choppiness on my 154 Hz / G-SYNC setup, but camera movement and cemetery traversal still show spikes. I am tracking both in [current gameplay evidence](known-issues.md#latest-gameplay-evidence).
+For capped NVIDIA FG, I now send the effective output interval to Reflex before the next simulation starts, and let it coordinate the rendered and generated frames. The normal cap still counts real frames: 60 real with x2 means 120 output; 75 real with a 130 output cap means 65 real. VideoOut keeps its existing limiter for FG off, FSR, background modes and any transition where the driver has not accepted the current cap. I also closed a submission race that could assign the same NVIDIA token to two consecutive flips. The earlier Revision 35 retest was scene-specific; current reports still include output-cadence variation and cemetery traversal spikes. I am tracking both in [current gameplay evidence](known-issues.md#latest-gameplay-evidence).
 
 
 ## Focus, lifetime and history
@@ -33,7 +46,7 @@ The game HUD remains in the interpolation input, so moving text and UI can show 
 
 The optional [frametime graph](display-and-overlay.md#reading-the-graph) records real-frame presentation intervals, including with FG active. NVIDIA exposes a generated-output count rather than individual display timestamps, so I keep the graph labeled Real. For generated display cadence, NVIDIA recommends FrameView's displayed-image timing.
 
-My earlier Hunter's Dream capture showed extreme object vectors while the real scene and DLSS output looked normal. I preserved depth before UI passes could reuse it, added ordered world-batch identity and kept each scene's inputs alive through presentation. The later cemetery recurrence needed another correction: Revision 34 checks every pose binding behind shared meshes and avoids positional history for unidentified instance slots. My cemetery test on Windows 11 / RTX 5070 Ti now confirms that the flashing is resolved. Those protections remain in place while I work on smoother FG delivery.
+My earlier Hunter's Dream capture showed extreme object vectors while the real scene and DLSS output looked normal. I preserved depth before UI passes could reuse it, added ordered world-batch identity and kept each scene's inputs alive through presentation. The later cemetery recurrence needed another correction: Revision 34 checks every pose binding behind shared meshes and avoids positional history for unidentified instance slots. That earlier Revision 34 test confirmed its specific flashing capture; later foreground-geometry reports remain open. Those protections remain in place while I work on smoother FG delivery.
 
 ## NVIDIA FG presets A / B / C
 
@@ -53,9 +66,9 @@ UI recomposition is another feature: it needs genuine HUDless color and matching
 
 I test gameplay on my Windows 11 / RTX 5070 Ti PC. I also check the FSR pipeline separately: the actual capture shader and FI/OF passes ran on Lavapipe with Khronos Vulkan validation 1.4.341. Tests cover SDR, depth/motion readbacks, generated pixels, history, resize and ownership. HDR tests check 500/1000/2000-nit decoding, generated highlights above SDR white, PQ re-encoding and HDR-to-SDR reset. The run completed with zero validation errors and warnings. Those headless checks cover the pipeline; desktop presentation and broader hardware results are tracked in [Testing](testing.md) and [current reports](known-issues.md).
 
-I should mention that I initially compared my work to the [AwesomeObserver fork](https://github.com/AwesomeObserver/bloodborne_pc). I quicky decided to do things on my own though, because it's FG implementation is x2 and SDR-only, whereas I find it to be mandatory to support the HDR/MFG/Reflex combination. As such, Revision 10 uses this fork's own integration. Its HUD and timing work still offers useful references for the next steps in [the roadmap](tatsunakyo-next.md), and I invite interested development to take a look.
+The Workshop path retains its own HDR/MFG/Reflex integration. R55 also integrates Supermedo’s native choices. The [integration decisions](investigations/2026-10-20-upstream-integration.md) record reviewed upstream/fork commits and retained compatibility boundaries; HUD and pacing work remains in [the roadmap](tatsunakyo-next.md).
 
-With the renderer's dependencies installed, build the FSR fixture using `ninja -C out/gpu frame-generation-test`. It needs a Vulkan device and a current `VK_LAYER_KHRONOS_validation`; exit 77 means a prerequisite is unavailable. The Windows package includes `bin/frame-generation-test.exe`. The fixture exercises capture/interpolation separately from the gameplay tests.
+With the renderer's dependencies installed, build the FSR fixture using `ninja -C out/gpu frame-generation-test`. It needs a Vulkan device and a current `VK_LAYER_KHRONOS_validation`; exit 77 means a prerequisite is unavailable. Regression executables are build/test tools and are excluded from the current player ZIP. The fixture exercises capture/interpolation separately from the gameplay tests.
 
 The XeSS adapter negotiates required extensions and features before device creation, uses scene depth and pixel motion vectors, and recreates history on resolution changes. Input color is converted through the original sampled view to RGBA16F, preserving sRGB decoding, channel swizzle and HDR highlights. Its API contract and conversion shader pass their regression checks. Intel hardware coverage is tracked on the shared testing page. The optional runtime is unmodified and includes Intel's license.
 

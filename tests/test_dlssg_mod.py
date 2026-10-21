@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import importlib.util
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -50,6 +51,17 @@ class Mod(unittest.TestCase):
         with self.assertRaises(ValueError):
             m.download_provider(self.root/'provider',lambda *a,**kw:Response(b'wrong release'))
         self.assertFalse((self.root/'provider/rtx-encore.asi').exists())
+    def test_fresh_provider_opts_into_fg_only(self):
+        folder=self.root/'provider'
+        m.ensure_config(folder)
+        config=json.loads((folder/'rtx-encore.jsonc').read_text())
+        self.assertFalse(config['neuralRendering']['nrEnabled'])
+        self.assertEqual(config['frameGeneration']['mode'],'game')
+        # Explicit existing preferences belong to the player, including NR.
+        config['neuralRendering']['nrEnabled']=True
+        path=folder/'rtx-encore.jsonc';path.write_text(json.dumps(config))
+        m.ensure_config(folder)
+        self.assertTrue(json.loads(path.read_text())['neuralRendering']['nrEnabled'])
 
 
 if __name__=='__main__': unittest.main()

@@ -27,6 +27,7 @@ HARNESS = r'''
 #include <cstdio>
 #include <vector>
 #include <utility>
+#include "bbport_hitch.h"
 using u32 = unsigned;
 #define ASSERT_MSG(value, ...) assert(value)
 template<class... T> void SetObjectName(T&&...) {}
@@ -68,7 +69,7 @@ void BeforeSwapchainChange() {
 }
 }
 namespace BbAmd { void BeforePresent(int, bool) {} }
-struct Frame { int amd_token{}; };
+struct Frame { int amd_token{}; BbHitch::FramePath hitch_path{}; };
 struct Window { int GetWidth() { return 1920; } int GetHeight() { return 1080; } };
 struct Swapchain {
     bool Present() { return false; }
@@ -146,5 +147,5 @@ if __name__ == '__main__':
             for name in ('revision25', 'current'):
                 binary = folder / name
                 subprocess.run(['g++', '-std=c++20', '-pthread', '-Wall', '-Wextra', '-Werror',
-                                str(folder / (name + '.cpp')), '-o', str(binary)], check=True)
+                                '-I'+str(ROOT/'gpu/shim'), str(folder / (name + '.cpp')), '-o', str(binary)], check=True)
                 subprocess.run([str(binary)], check=True, timeout=10)

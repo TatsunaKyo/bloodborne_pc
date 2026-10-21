@@ -17,7 +17,7 @@ Frames keeps the ordinary cap tied to real game frames and offers a separate gen
 
 Input, mods and online
 
-Keyboard fallback: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, Q Triangle, 1/3 L1/R1, R/F L2/R2, Z/C L3/R3, I/K/J/L d-pad, Enter Options, Tab left touchpad, Backspace right touchpad. Native mouse look/full remapping remain planned.
+Keyboard fallback: WASD move, arrows camera, Space Cross, Left Shift Circle, E Square, V Triangle, 1/3 L1/R1, R/F L2/R2, Z L3, Q/C R3, I/K/J/L d-pad, Enter Options, Tab left touchpad, Backspace right touchpad. Controls supports three slots, combinations, keyboard/controller remapping, reloadable input and direct mouse look from Supermedo 1.9.2. Prompts can follow the device or stay on a chosen layout. FOV defaults to 43 degrees and requires restart; ultrawide camera/HUD changes also need restart. Window offers independent background mute.
 
 Mods & patches retains the original folder/mod-order and 1.09 XML patch support. Use each mod’s game-relative directories. Online co-op remains the inherited beta integration; its account settings live in Online co-op. Keep account details out of public reports.
 
@@ -28,6 +28,8 @@ Advanced → Diagnostics enables optional per-session profiling/crash capture be
 Documentation and roadmap
 
 README.md introduces the added features. docs\index.md links installation, live editing, graphics, FG, latency, caps, overlay, cheats, diagnostics and build/release guides. docs\tatsunakyo-next.md keeps Save Manager, input, ultrawide/HUD and pacing work alongside the separate infrastructure plan.
+
+Traversal capture: run Capture-Traversal.cmd with your current FG on/off setting. Reproduce the hitch and close the game; no F8 is required. Traversal-diagnostic.zip is saved in the latest user\diagnostics session. Capture-NVIDIA-FG.cmd is for optional tagged image readbacks using F8 with NVIDIA FG enabled; it also saves CPU logs when no images are available. These modes keep normal parallel renderer settings and disable GPU timestamp profiling. Nothing is uploaded automatically.
 
 Credits and licenses
 

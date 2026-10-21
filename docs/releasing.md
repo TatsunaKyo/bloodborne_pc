@@ -1,46 +1,35 @@
 # Publishing The Crowned Workshop
 
-I publish a game package and an optional Developer archive so the launcher, native components, runtimes and source records match. Release preparation reads the game package's `BUILD-IDENTITY.json`, matching notes and Developer checksum; there is no revision number to edit in the tool. The game ZIP retains every runtime and license, while source records, regression programs and specialist scripts are kept in Developer. The complete source patch stays in the game ZIP for installed-updater compatibility. The unsplit candidate is preserved under `dist/complete` during assembly.
+Publish **one complete Windows ZIP and its matching `.zip.sha256`**. Include required runtime dependencies/licenses, exact current startup sources, source patch and compact reusable recovery/verification in that ZIP. Exclude compiled regression programs, unused optional tools, redundant reports and a second toolchain copy. Legacy split archives remain readable; modern revisions cannot use the split writer.
 
 ## Version and channel
 
-| Channel | New tag | GitHub setting |
-|---|---|---|
-| Stable | `windows-v<upstream-version>-tatsunakyo.<revision>` | Prerelease off; make it Latest when ready. |
-| Preview | Same version with `-preview` | Prerelease on; keep it out of the stable updater. |
-
-The public Revision 19 and 21 tags end in `-preview` even though GitHub marks those releases stable. I keep those tags intact. The corrected updater accepts them by version and release status; genuine drafts/prereleases are excluded. Revision 22's new stable tag has no suffix so installed older launchers can recognize it too.
+Stable releases have GitHub prerelease disabled; preview releases enable it. Keep existing public tags intact, including R55's `windows-v1.6-tatsunakyo.55-preview`: GitHub marks it stable despite that legacy suffix. Release status and verified identity determine the updater channel. Never move a published tag to a later source tree.
 
 ## Prepare the exact package
 
+Commit current source, update VERSION/launcher and the matching revision notes, then run `python tools/update_readme_revision.py`. Build current native components and launcher using the pinned [Windows workflow](../.github/workflows/windows-build.yml). The assembler replaces all tracked startup/runtime files, including patch XML and red-zone data, instead of inheriting them from a previous ZIP. Both required NGX DLSS SR search paths must contain matching DLL bytes.
+
 ```bash
-python tools/release_integrity.py path/to/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-28.zip --repo . --require-sidecar
-python tools/prepare_release.py path/to/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-28.zip --repo . --channel stable --output dist/release.md
+python tools/release_integrity.py path/to/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-55.zip --repo . --require-sidecar
+python tools/prepare_release.py path/to/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-55.zip --repo . --channel stable --existing-tag windows-v1.6-tatsunakyo.55-preview --output out/release.md
 ```
 
-Use the actual package filename for the revision you built. The second command writes a ready-to-review Markdown description and JSON containing the publishing URL, exact source commit, tag, channel, package and checksum. It reads the matching notes already included in the package and refuses mismatched executables, runtimes, source or dependencies.
+Use the actual revision filename/tag. The existing-tag example reproduces the published R55 form; a new release uses its own version/tag and channel. Preparation reads the ZIP's identity and notes, verifies executables/runtime/source/checksum and writes a local reviewable form. Those temporary files are not additional user deliverables. The tool does not publish or move tags.
 
-I now give ZIP members an explicit date instead of Python's default of 1 January 1980, which left many modification dates blank in Explorer. The splitter uses the recorded source commit's UTC date when `--repo` is supplied, or the export time otherwise. `SOURCE_DATE_EPOCH` can supply a fixed date for reproducible exports outside a checkout. Both companion archives use the same timestamp; ZIP stores it with two-second precision and no time zone. This is a package date, not a claim about when each individual file was edited. Windows files keep their writable archive attributes.
+Run the packaged startup regression against the **finished ZIP**, with its own compiled launcher, and verify import closure, binary hashes, runtime/source identity and checksum. Keep compile/UI/package checks distinct from Windows/GPU gameplay and physical display-cadence evidence.
 
-`--channel preview` prepares a prerelease. To regenerate the form for an already-published legacy stable tag, use `--channel stable --existing-tag windows-v1.6-tatsunakyo.21-preview` with that release's package. The tool never edits tags or publishes a release.
-
-1. Review the prepared page and its source target.
-2. Upload **both ZIPs and both .zip.sha256 files**. Keep them together in the same release; players only need the ordinary game package.
-3. Test the candidate on the intended Windows hardware, then publish with the selected channel setting.
-4. Keep the verification records and build identity with the package. The Published release integrity workflow checks the uploaded assets against their tag/source.
+1. Review the exact prepared notes, source target, channel and test results.
+2. Attach **only the ZIP and its `.zip.sha256`** to the matching GitHub release.
+3. Publish after the intended hardware/candidate checks; state remaining limits accurately.
+4. Run **Published release integrity** against the published tag/assets; rerun after a corrected upload without moving the tag.
 
 ## Automated builds
 
-[Windows build and package](../.github/workflows/windows-build.yml) rebuilds native programs and the launcher, runs regressions and prepares a candidate. Unchanged SDK DLLs/licenses come from the checksum-pinned stable baseline; current native executables, launcher and repository files replace their older counterparts. Installed MSYS2 versions, compiler details, hashes and source/tree are recorded. Fixed inputs improve repeatability; I do not claim that different hosts produce byte-identical compiler output.
+[Windows build and package](../.github/workflows/windows-build.yml) rebuilds native programs and the launcher, executes regressions and assembles the candidate. The baseline supplies pinned unchanged redistributables/licenses. Compiler/package versions and source/tree are recorded; different hosts are not claimed to produce byte-identical compiler output. Publication remains manual.
 
-Publication stays manual. [Repository settings](repository-setup.md) explains Issues/Actions activation; [Windows build instructions](../packaging/windows/README.md) cover local builds. [Contributing](../CONTRIBUTING.md), [tests](testing.md) and [the infrastructure plan](infrastructure-plan.md) describe the gates and next work.
-
-[Earlier publishing records](history/releasing-through-15.md) remain archived.
+[Build instructions](../packaging/windows/README.md) · [Testing](testing.md) · [Repository settings](repository-setup.md) · [Historical publishing records](history/releasing-through-15.md)
 
 ## README revision badge
 
-After changing the launcher version and adding its release notes, run `python tools/update_readme_revision.py`. CI checks that the badge and its notes link match that version. The badge describes the current build; **Download latest** follows the latest published GitHub release. Preparing or delivering a ZIP does not publish it.
-
-The launcher now applies the package validator before running a downloaded update, including its published checksum. Keep uploading the `.zip.sha256` sidecar under the exact package filename. Invalid or incomplete downloads leave the installed launcher open.
-
-The published-release check waits briefly for uploads and records a clear failure if an asset remains missing. It validates the Developer archive when the build identity declares one; older releases with a single ZIP remain valid. After correcting an upload, rerun the failed job rather than changing its public tag or disabling the checks.
+`python tools/update_readme_revision.py --check` checks the launcher version, badge and matching notes link. The badge describes current source; **Download latest** follows the latest published release. Later maintenance belongs on [its own page](maintenance.md), without implying that the existing R55 ZIP was rebuilt.

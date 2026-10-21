@@ -47,6 +47,16 @@ constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1024},
 };
 
+/// bbport: selections keep their own copy (workers fill them while other threads add
+/// permutations, which moves the specializations the upstream pointer referred to).
+static std::optional<Shader::Gcn::FetchShaderData> ToFetchShader(
+    const Shader::Gcn::FetchShaderData& data) {
+    if (data.Empty()) {
+        return std::nullopt;
+    }
+    return data;
+}
+
 static u32 MapOutputs(std::span<Shader::OutputMap, 3> outputs, const AmdGpu::VsOutputControl& ctl) {
     u32 num_outputs = 0;
 
@@ -103,13 +113,14 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
     auto& info = sel.runtime_infos[u32(l_stage)];
     const auto& regs = (*sel.regs);
     const auto BuildCommon = [&](const auto& program) {
-        info.props.num_user_data = program.settings.num_user_regs;
-        info.props.num_input_vgprs = program.settings.vgpr_comp_cnt;
-        info.props.num_allocated_vgprs = program.NumVgprs();
         info.props.fp_denorm_mode32 = program.settings.fp_denorm_mode32;
         info.props.fp_denorm_mode16_64 = program.settings.fp_denorm_mode64;
         info.props.fp_round_mode32 = program.settings.fp_round_mode32;
         info.props.fp_round_mode16_64 = program.settings.fp_round_mode64;
+        info.props.num_allocated_vgprs = program.NumVgprs();
+        info.props.num_user_data = program.settings.num_user_regs;
+        info.props.num_input_vgprs = program.settings.vgpr_comp_cnt;
+        info.props.dx10_clamp = program.settings.dx10_clamp;
     };
     info.Initialize(stage, l_stage);
     switch (stage) {
@@ -182,6 +193,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         info.hw.fs.addr_flags = regs.ps_input_addr;
         info.hw.fs.num_inputs = regs.num_interp;
         info.hw.fs.front_face_all_bits = regs.barycentric_control.front_face_all_bits;
+        info.hw.fs.depth_before_shader = regs.depth_shader_control.depth_before_shader;
         info.hw.fs.num_samples =
             regs.ps_input_addr.sample_coverage_ena && regs.ps_input_ena.sample_coverage_ena
                 ? regs.aa_config.NumSamples()
@@ -210,10 +222,10 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         const auto& ps_inputs = regs.ps_inputs;
         for (u32 i = 0; i < regs.num_interp; i++) {
             info.hw.fs.inputs[i] = {
-                .param_index = u8(ps_inputs[i].input_offset),
-                .is_default = bool(ps_inputs[i].use_default),
-                .is_flat = bool(ps_inputs[i].flat_shade),
-                .default_value = u8(ps_inputs[i].default_value),
+                .param_index = u16(ps_inputs[i].input_offset),
+                .is_default = u16(ps_inputs[i].use_default),
+                .is_flat = u16(ps_inputs[i].flat_shade),
+                .default_value = u16(ps_inputs[i].default_value),
             };
         }
         for (u32 i = 0; i < Shader::MaxColorBuffers; i++) {
@@ -240,6 +252,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         info.props.fp_denorm_mode16_64 = cs_pgm.settings.fp_denorm_mode64;
         info.props.fp_round_mode32 = cs_pgm.settings.fp_round_mode32;
         info.props.fp_round_mode16_64 = cs_pgm.settings.fp_round_mode64;
+        info.props.dx10_clamp = cs_pgm.settings.dx10_clamp;
         info.hw.cs.workgroup_size = {cs_pgm.num_thread_x.full, cs_pgm.num_thread_y.full,
                                      cs_pgm.num_thread_z.full};
         info.hw.cs.tgid_enable = {cs_pgm.IsTgidEnabled(0), cs_pgm.IsTgidEnabled(1),
@@ -256,6 +269,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         info.sw.vs.step_rate_1 = regs.vgt_instance_step_rate_1;
         info.sw.vs.vertex_sgpr_offset = sel.draw_indirect_params.vertex_sgpr_offset;
         info.sw.vs.instance_sgpr_offset = sel.draw_indirect_params.instance_sgpr_offset;
+        info.sw.vs.is_indirect = sel.draw_indirect_params.is_indirect;
         info.sw.vs.tess_emulated_primitive =
             regs.primitive_type == AmdGpu::PrimitiveType::RectList ||
             regs.primitive_type == AmdGpu::PrimitiveType::QuadList;
@@ -352,9 +366,54 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
     pipeline_cache = std::move(cache);
+    if (const char* env=std::getenv("BB_PIPELINE_COMPILE_AHEAD"); !env || env[0]!='0')
+        build_queue=std::make_unique<Common::PipelineBuildQueue>(std::clamp(std::thread::hardware_concurrency()/4,1u,4u));
 }
 
-PipelineCache::~PipelineCache() = default;
+namespace {
+std::atomic<PipelineCache*> driver_cache_owner{};
+std::once_flag driver_cache_atexit;
+}
+void SaveDriverCaches() {
+    if (auto* cache = driver_cache_owner.load()) cache->SaveDriverCache();
+}
+PipelineCache::~PipelineCache() {
+    StopBuilds();
+    driver_cache_owner = nullptr;
+    SaveDriverCache();
+}
+void PipelineCache::LoadDriverCache() {
+    driver_cache_owner = this;
+    std::call_once(driver_cache_atexit, [] { std::atexit(SaveDriverCaches); });
+    const auto props = instance.GetPhysicalDevice().getProperties();
+    std::vector<u8> bytes;
+    const auto key = fmt::format("driver_{}_{}_{}", props.vendorID, props.deviceID, props.driverVersion);
+    Storage::DataBase::Instance().Load(Storage::BlobType::PipelineBinary, key, bytes);
+    if (bytes.size() < sizeof(VkPipelineCacheHeaderVersionOne)) return;
+    VkPipelineCacheHeaderVersionOne header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    if (header.headerSize < sizeof(header) || header.headerSize > bytes.size() ||
+        header.headerVersion != VK_PIPELINE_CACHE_HEADER_VERSION_ONE ||
+        header.vendorID != props.vendorID || header.deviceID != props.deviceID ||
+        std::memcmp(header.pipelineCacheUUID, props.pipelineCacheUUID.data(), VK_UUID_SIZE)) return;
+    std::unique_lock lock{DriverCacheMutex()};
+    auto [result, cache] = instance.GetDevice().createPipelineCacheUnique(
+        vk::PipelineCacheCreateInfo{.initialDataSize=bytes.size(),.pInitialData=bytes.data()});
+    if (result == vk::Result::eSuccess) pipeline_cache = std::move(cache);
+}
+void PipelineCache::SaveDriverCache() {
+    auto& db = Storage::DataBase::Instance();
+    if (!db.IsOpened() || !pipeline_cache) return;
+    std::unique_lock lock{DriverCacheMutex()};
+    auto [result, data] = instance.GetDevice().getPipelineCacheData(*pipeline_cache);
+    if (result == vk::Result::eSuccess && !data.empty()) {
+        const auto props = instance.GetPhysicalDevice().getProperties();
+        db.Save(Storage::BlobType::PipelineBinary,
+            fmt::format("driver_{}_{}_{}", props.vendorID, props.deviceID, props.driverVersion),
+            std::move(data));
+        db.Flush();
+    }
+}
 
 // bbport: shader/pipeline compile time on the GPU thread, reported by BB_FRAME_STATS.
 std::atomic<u64> g_bb_compile_ns;
@@ -362,6 +421,8 @@ std::atomic<u32> g_bb_compiles;
 namespace {
 struct CompileTimer {
     BbHitch::Scope hitch{"shader/pipeline compile"};
+    BbHitch::Trace::Scope detail;
+    CompileTimer(const char* kind, u64 key) : detail{kind, 0, 0, key} {}
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~CompileTimer() {
         g_bb_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -372,12 +433,79 @@ struct CompileTimer {
 };
 } // namespace
 
+struct PipelineCache::PendingBuild {
+    std::array<std::optional<Shader::Info>,MaxShaderStages> owned;
+    std::array<std::vector<u32>,MaxShaderStages> user_data;
+    std::array<const Shader::Info*,MaxShaderStages> infos{},live{};
+    std::array<Shader::RuntimeInfo,MaxShaderStages> runtime{};
+    std::array<vk::ShaderModule,MaxShaderStages> modules{};
+    std::optional<Shader::Gcn::FetchShaderData> fetch;
+    GraphicsPipeline::SerializationSupport support;
+    std::promise<std::unique_ptr<GraphicsPipeline>> result;
+    std::future<std::unique_ptr<GraphicsPipeline>> ready{result.get_future()};
+    bool preloaded=false;
+    std::chrono::steady_clock::time_point queued=std::chrono::steady_clock::now();
+};
+void PipelineCache::QueueBuild(const PipelineSelection& selection,const GraphicsPipeline::SerializationSupport* cached) {
+    if (!build_queue || (!cached && !instance.IsVertexInputDynamicState())) return;
+    const auto key=selection.graphics_key;
+    {std::scoped_lock lock{builds_mutex};if(builds.contains(key)||published_builds.contains(key)||builds.size()>=128)return;}
+    auto job=std::make_shared<PendingBuild>();
+    job->runtime=selection.runtime_infos;job->modules=selection.modules;job->fetch=selection.fetch_shader;
+    job->live=selection.infos;job->preloaded=cached!=nullptr;if(cached)job->support=*cached;
+    for(size_t i=0;i<MaxShaderStages;++i) if(selection.infos[i]) {
+        job->owned[i]=*selection.infos[i];
+        job->user_data[i].assign(selection.infos[i]->user_data.begin(),selection.infos[i]->user_data.end());
+        job->owned[i]->user_data=job->user_data[i];job->infos[i]=&*job->owned[i];
+    }
+    std::scoped_lock lock{builds_mutex};
+    if(builds.contains(key)||published_builds.contains(key)||builds.size()>=128)return;
+    builds.emplace(key,job);
+    if(!build_queue->Submit([this,job,key] {
+        try {
+            auto pipeline=std::make_unique<GraphicsPipeline>(instance,scheduler,desc_heap,profile,key,
+                *pipeline_cache,job->infos,job->runtime,job->fetch ? &*job->fetch : nullptr,
+                job->modules,job->support,job->preloaded);
+            if(!pipeline->Handle())pipeline.reset();
+            job->result.set_value(std::move(pipeline));
+        } catch(...) {job->result.set_value(nullptr);}
+    }, job.get()))builds.erase(key);
+}
+bool PipelineCache::FinishBuild(const GraphicsPipelineKey& key,bool wait) {
+    std::shared_ptr<PendingBuild> job;
+    {std::scoped_lock lock{builds_mutex};auto it=builds.find(key);if(it==builds.end())return false;
+     job=it->second;if(!wait && job->ready.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return false;
+     builds.erase(it);published_builds.insert(key);}
+    if (wait && build_queue) build_queue->RunPending(job.get());
+    auto pipeline=job->ready.get();
+    if(!pipeline)return false; // A speculative failure falls back to the live synchronous path.
+    if(graphics_pipelines.contains(key))return true;
+    pipeline->UseLiveStages(job->preloaded ? job->live : sel.infos);
+    graphics_pipelines.try_emplace(key,std::move(pipeline));
+    if(!job->preloaded){RegisterPipelineData(key,std::hash<GraphicsPipelineKey>{}(key),job->support);++num_new_pipelines;}
+    return true;
+}
+void PipelineCache::PublishPreloads() {
+    if(!build_queue)return;
+    std::vector<GraphicsPipelineKey> keys;
+    {std::scoped_lock lock{builds_mutex};for(const auto& [key,job]:builds)if(job->preloaded && job->ready.wait_for(std::chrono::seconds(0))==std::future_status::ready)keys.push_back(key);}
+    for(const auto& key:keys)FinishBuild(key,false);
+}
+void PipelineCache::ReapBuilds() {
+    const auto now=std::chrono::steady_clock::now();
+    std::scoped_lock lock{builds_mutex};
+    std::erase_if(builds,[&](const auto& entry){const auto& job=entry.second;return !job->preloaded && now-job->queued>std::chrono::seconds(2) && job->ready.wait_for(std::chrono::seconds(0))==std::future_status::ready;});
+}
+void PipelineCache::StopBuilds(){if(build_queue)build_queue->Stop();}
+
 bool PipelineCache::PrepareGraphicsPipeline(PipelineSelection& worker_sel) {
     // Tessellation stages read constant buffers from memory at selection time: not prepared.
     if (worker_sel.regs->stage_enable.hs_en) {
         return false;
     }
-    return RefreshGraphicsKey(worker_sel) && !worker_sel.worker->failed;
+    if(!RefreshGraphicsKey(worker_sel) || worker_sel.worker->failed)return false;
+    QueueBuild(worker_sel);
+    return true;
 }
 
 const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& prepared) {
@@ -413,9 +541,10 @@ const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& p
         return nullptr;
     }
     const auto* pipeline = it->second.get();
+    if (!pipeline) return nullptr;
     const auto& fetch = pipeline->GetFetchShader();
-    if (fetch && !fetch->attributes.empty() &&
-        !prepared.vertex.Matches(pipeline->GetStage(Shader::SwStage::Vertex), *fetch)) {
+    if (!fetch.Empty() && !fetch.attributes.empty() &&
+        !prepared.vertex.Matches(pipeline->GetStage(Shader::SwStage::Vertex), fetch)) {
         // The same table address can describe a different mesh by the time this draw runs.
         // Re-select the pipeline too: number types, swizzles and static formats can change.
         static const bool stats = std::getenv("BB_FRAME_STATS") != nullptr;
@@ -442,16 +571,25 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     if (!RefreshGraphicsKey(sel)) {
         return nullptr;
     }
+    FinishBuild(sel.graphics_key,true);
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
         const auto pipeline_hash = std::hash<GraphicsPipelineKey>{}(sel.graphics_key);
         LOG_INFO(Render_Vulkan, "Compiling graphics pipeline {:#x}", pipeline_hash);
-        CompileTimer timer;
+        CompileTimer timer{"graphics pipeline miss", pipeline_hash};
 
         GraphicsPipeline::SerializationSupport sdata{};
         it.value() = std::make_unique<GraphicsPipeline>(
             instance, scheduler, desc_heap, profile, sel.graphics_key, *pipeline_cache, sel.infos,
-            sel.runtime_infos, sel.fetch_shader, sel.modules, sdata, false);
+            sel.runtime_infos, sel.fetch_shader ? &*sel.fetch_shader : nullptr, sel.modules,
+            sdata, false);
+        // bbport: the driver could not create it. An empty entry keeps the key from being
+        // compiled again on every draw; it is not saved, so the next start does not load it.
+        if (!it.value()->Handle()) {
+            it.value().reset();
+            sel.fetch_shader.reset();
+            return nullptr;
+        }
 
         RegisterPipelineData(sel.graphics_key, pipeline_hash, sdata);
         ++num_new_pipelines;
@@ -477,12 +615,17 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     if (is_new) {
         const auto pipeline_hash = std::hash<ComputePipelineKey>{}(compute_key);
         LOG_INFO(Render_Vulkan, "Compiling compute pipeline {:#x}", pipeline_hash);
-        CompileTimer timer;
+        CompileTimer timer{"compute pipeline miss", pipeline_hash};
 
         ComputePipeline::SerializationSupport sdata{};
         it.value() = std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile,
                                                        *pipeline_cache, compute_key, *sel.infos[0],
                                                        sel.modules[0], sdata, false);
+        // bbport: as for graphics pipelines, kept empty and not saved.
+        if (!it.value()->IsValid()) {
+            it.value().reset();
+            return nullptr;
+        }
         RegisterPipelineData(compute_key, sdata);
         ++num_new_pipelines;
 
@@ -782,6 +925,19 @@ bool PipelineCache::RefreshGraphicsStages(PipelineSelection& sel) {
     }
 
     const auto* vs_info = sel.infos[static_cast<u32>(SwStage::Vertex)];
+    // bbport: a draw whose vertex buffer table pointer is null (reported before a crash at the
+    // cutscene after Rom and in normal play) has no vertex input to build: skipped.
+    if (vs_info && sel.fetch_shader) {
+        for (const auto& attrib : sel.fetch_shader->attributes) {
+            if (vs_info->UdPointerNull(attrib.sgpr_base)) {
+                static std::atomic<u32> reported{0};
+                if (reported.fetch_add(1, std::memory_order_relaxed) < 5) {
+                    std::printf("GPU: draw skipped: its vertex buffer table pointer is null\n");
+                }
+                return false;
+            }
+        }
+    }
     if (vs_info && sel.fetch_shader && !instance.IsVertexInputDynamicState()) {
         // Without vertex input dynamic state, the pipeline needs to specialize on format.
         // Stride will still be handled outside the pipeline using dynamic state.
@@ -814,7 +970,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     LOG_INFO(Render_Vulkan, "Compiling {} shader {:#x} {}", info.hw_stage, info.pgm_hash,
              perm_idx != 0 ? "(permutation)" : "");
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
-    CompileTimer timer;
+    CompileTimer timer{"shader module miss", info.pgm_hash};
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
@@ -901,7 +1057,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         const size_t perm_idx = std::distance(program->modules.begin(), it);
         worker.stages.push_back(
             {program, params.hash, hw_stage, info.pgm_base, &info.flattened_ud_buf});
-        return std::make_tuple(&info, it->module, it->spec.fetch_shader_data,
+        return std::make_tuple(&info, it->module, ToFetchShader(it->spec.fetch_shader_data),
                                HashCombine(params.hash, perm_idx));
     }
 
@@ -923,7 +1079,8 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             std::unique_lock lk{programs_mutex};
             program_cache.emplace(params.hash, std::move(new_program));
         }
-        return std::make_tuple(&program->info, module, program->modules[0].spec.fetch_shader_data,
+        return std::make_tuple(&program->info, module,
+                               ToFetchShader(program->modules[0].spec.fetch_shader_data),
                                perm_hash);
     }
 
@@ -971,7 +1128,8 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         perm_hash = HashCombine(params.hash, perm_idx);
     }
     return std::make_tuple(&program->info, module,
-                           program->modules[perm_idx].spec.fetch_shader_data, perm_hash);
+                           ToFetchShader(program->modules[perm_idx].spec.fetch_shader_data),
+                           perm_hash);
 }
 
 std::optional<vk::ShaderModule> PipelineCache::ReplaceShader(vk::ShaderModule module,

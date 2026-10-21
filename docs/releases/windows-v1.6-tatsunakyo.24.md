@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 24
 
 I started the next renderer work with shader-cache recovery. Closing the game now finishes accepted cache writes, and a damaged or rejected cached pipeline can be rebuilt instead of stopping preload. The Hunter's Dream flashing correction and the separate real/FG output limits are retained.

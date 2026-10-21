@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 23
 
 I added two launcher tools in this revision: Support Report to make useful reports easier to share, and the first Save Manager to protect progress before launching or restoring a save.
