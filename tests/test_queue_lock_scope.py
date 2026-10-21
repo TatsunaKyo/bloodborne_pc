@@ -86,6 +86,7 @@ struct Semaphore {
 };
 struct Instance {
     vk::Queue GetGraphicsQueue() const { return vk::Queue(reinterpret_cast<VkQueue>(1)); }
+    void ReportDeviceLost(const char*) const { assert(false && "unexpected device loss in queue fixture"); }
 };
 namespace ImGui::Core { struct TextureManager { static void Submit() {} }; }
 namespace Vulkan {

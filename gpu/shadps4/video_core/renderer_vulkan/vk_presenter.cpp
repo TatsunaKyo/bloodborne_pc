@@ -148,6 +148,8 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
             [this] { present_scheduler.WaitSubmitted(); },
             [this](u64 tick) { present_scheduler.Wait(tick); },
             [this](u64 tick) { return present_scheduler.IsFree(tick); }});
+    native_frame_generator=std::make_unique<FrameGenerator>(instance,draw_scheduler);
+    rasterizer->GetUpscaler().SetFrameGenerator(native_frame_generator.get());
     const u32 num_images = swapchain.GetImageCount();
     const vk::Device device = instance.GetDevice();
 
@@ -169,6 +171,7 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
 
     fsr_pass.Create(device, instance.GetAllocator(), num_images);
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
+    native_pp_pass.Create(device,FrameGenerator::ColorFormat);
     BbOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
 
 }
@@ -181,6 +184,8 @@ Presenter::~Presenter() {
     // Streamline can still own the depth/motion images after our queue completes.
     BbNvidia::BeforeSwapchainChange();
     frame_generation->Reset();
+    rasterizer->GetUpscaler().SetFrameGenerator(nullptr);
+    native_frame_generator.reset();
     Check(draw_scheduler.CommandBuffer().reset());
     Check(present_scheduler.CommandBuffer().reset());
     Check(flip_scheduler.CommandBuffer().reset());
@@ -191,6 +196,68 @@ Presenter::~Presenter() {
         device.destroyImageView(frame.image_view);
         device.destroyFence(frame.present_done);
     }
+}
+
+void Presenter::PrepareNativeFrame(Frame* frame,vk::CommandBuffer cmd,vk::ImageView source,
+                                    vk::Extent2D size,vk::Format source_format) {
+    frame->native_count=0;
+    if (!native_frame_generator->Wanted() || frame->is_hdr) {
+        if (!native_frame_generator->Wanted()) native_frame_generator->Release();
+        native_frame_generator->Skip();
+        frame->native.reset();
+        if(BbSettings::Get().frame_generation>=BbSettings::FrameGenerationNativeFsr) {
+            BbSettings::Get().frame_generation_active=0;
+            if(frame->is_hdr)BbSettings::Get().frame_gen_problem="The native Supermedo provider requires SDR output.";
+        }
+        return;
+    }
+    const u32 count=std::min(native_frame_generator->WantedCount(),frame_gen_limit.load());
+    const auto usage=vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc |
+        vk::ImageUsageFlagBits::eTransferDst;
+    if (frame->native && (frame->native->width!=frame->width || frame->native->height!=frame->height))
+        frame->native.reset(); // This frame's present fence was retired by GetRenderFrame.
+    if (!frame->native) {
+        frame->native=std::make_unique<NativeFrames>();
+        frame->native->width=frame->width;frame->native->height=frame->height;
+    }
+    auto& owned=*frame->native;
+    const auto ensure=[&](FrameGeneration::Image& image,vk::UniqueImageView& view) {
+        if (image.image && view) return true;
+        if (!image.image && !image.Create(instance.GetAllocator(),FrameGenerator::ColorFormat,frame->width,frame->height,usage))return false;
+        auto [result,created]=instance.GetDevice().createImageViewUnique({.image=image.image,
+            .viewType=vk::ImageViewType::e2D,.format=FrameGenerator::ColorFormat,
+            .subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}});
+        if(result!=vk::Result::eSuccess)return false;
+        view=std::move(created);return true;
+    };
+    if (!ensure(owned.color,owned.color_view)) { native_frame_generator->Skip(); return; }
+    u32 available=0;
+    for(;available<count;++available)if(!ensure(owned.outputs[available],owned.output_views[available]))break;
+    const auto compose=[&](FrameGeneration::Image& target,vk::ImageView view,vk::ImageView input,vk::Extent2D input_size) {
+        const vk::ImageMemoryBarrier2 barrier{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .dstAccessMask=vk::AccessFlagBits2::eColorAttachmentWrite,
+            .oldLayout=vk::ImageLayout::eUndefined,.newLayout=vk::ImageLayout::eColorAttachmentOptimal,
+            .image=target.image,.subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}};
+        cmd.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&barrier});
+        Frame proxy{};proxy.width=frame->width;proxy.height=frame->height;
+        proxy.image=target.image;proxy.image_view=view;
+        native_pp_pass.Render(cmd,input,input_size,proxy,pp_settings);
+    };
+    compose(owned.color,*owned.color_view,source,size);
+    vk::Image hudless{};vk::ImageView hudless_view{};vk::Extent2D hudless_size{};
+    if(auto input=native_frame_generator->Hudless(source_format,hudless_size);input && available && ensure(owned.hudless,owned.hudless_view)) {
+        input=fsr_pass.Render(cmd,input,hudless_size,{frame->width,frame->height},fsr_settings,false);
+        compose(owned.hudless,*owned.hudless_view,input,hudless_size);
+        hudless=owned.hudless.image;hudless_view=*owned.hudless_view;
+    }
+    std::array<FrameGenerator::Output,FrameGenerator::MaxGenerated> outputs{};
+    for(u32 i=0;i<available;++i)outputs[i]={owned.outputs[i].image,*owned.output_views[i]};
+    frame->native_count=native_frame_generator->Generate(cmd,owned.color.image,*owned.color_view,
+        usage,hudless,hudless_view,frame->width,frame->height,{outputs.data(),available});
+    BbSettings::Get().frame_generation_active=frame->native_count ? int(frame->native_count+1) : 1;
 }
 
 bool Presenter::IsVideoOutSurface(const AmdGpu::ColorBuffer& color_buffer) const {
@@ -276,6 +343,9 @@ Frame* Presenter::PrepareLastFrame() {
         }
         if (result == vk::Result::eTimeout) {
             continue;
+        }
+        if (result == vk::Result::eErrorDeviceLost) {
+            instance.ReportDeviceLost("waiting for a frame");
         }
         ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
                    "Device lost during waiting for a frame");
@@ -389,6 +459,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     }
 
     Frame* frame = GetRenderFrame();
+    frame->native_count=0;
 
     const auto frame_subresources = vk::ImageSubresourceRange{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -419,7 +490,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     VideoCore::ImageViewInfo view_info{};
     view_info.format = GetFrameViewFormat(attribute.attrib.pixel_format);
     // Exclude alpha from output frame to avoid blending with UI.
-    view_info.mapping.a = vk::ComponentSwizzle::eOne;
+    view_info.mapping.a = AmdGpu::CompSwizzle::One;
 
     vk::ImageView image_view{};
     vk::Extent2D image_size{};
@@ -464,6 +535,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     pp_settings.srgb_input =
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+    PrepareNativeFrame(frame,cmdbuf,image_view,image_size,view_info.format);
     frame_generation->Capture(cmdbuf,scene_inputs,
                               frame->image_view,frame->width,frame->height,
                               swapchain.GetSurfaceFormat().format,frame->frame_generation);
@@ -510,6 +582,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
     // Request a free presentation frame.
     Frame* frame = GetRenderFrame();
+    frame->native_count=0;
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
     scheduler.EndRendering();
@@ -792,6 +865,28 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
         BbOverlay::RecordPresent(final && is_game_frame && !is_reusing_frame,presented);
     };
+    const auto native_start=std::chrono::steady_clock::now();
+    if (is_game_frame && !is_reusing_frame) {
+        const double ms=std::chrono::duration<double,std::milli>(native_start-last_game_present).count();
+        if(ms>1.0 && ms<100.0)game_frame_ms=game_frame_ms.load()+(ms-game_frame_ms.load())*0.1;
+        last_game_present=native_start;
+    }
+    u32 native_count=is_game_frame && !is_reusing_frame ? frame->native_count : 0;
+    const auto behind=[this] { std::scoped_lock lock{free_mutex};return free_queue.empty(); };
+    if(behind())native_count=0;
+    const bool native_fifo=swapchain.WaitsForDisplay();
+    for(u32 i=0;i<native_count;++i) {
+        const u64 tick=present_scheduler.CurrentTick();
+        submit_image(frame->native->outputs[i].image,false);
+        present_scheduler.Wait(tick);
+        if(!native_fifo && !behind()) BbFramePacing::SleepFor(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double,std::milli>(game_frame_ms.load()/(native_count+1))));
+        if(window.GetWidth()==0 || window.GetHeight()==0 || !swapchain.AcquireNextImage()) {
+            const u64 final_tick=present_scheduler.CurrentTick();
+            SubmitInfo done{};done.AddSignal(frame->present_done);present_scheduler.Flush(done);
+            frame_generation->Submitted(final_tick);free_frame();return;
+        }
+    }
     if (!is_game_frame || is_reusing_frame) frame_generation->Invalidate();
     const bool generated = is_game_frame && !is_reusing_frame &&
         frame_generation->Record(present_scheduler.CommandBuffer(),frame->frame_generation);
@@ -829,6 +924,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     }
     const u64 tick=present_scheduler.CurrentTick();
     submit_image(frame->image,true);
+    if(is_game_frame && !is_reusing_frame) UpdateFrameGenLimit(native_frame_generator->Wanted(),
+        std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-native_start).count());
     frame_generation->Submitted(tick);
     free_frame();
 }
@@ -887,6 +984,97 @@ void Presenter::SetExpectedGameSize(s32 width, s32 height) {
     } else {
         expected_frame_height = static_cast<s32>(width / expected_ratio);
     }
+}
+
+void Presenter::UpdateFrameGenLimit(bool wanted, double present_ms) {
+    auto& settings = BbSettings::Get();
+    settings.game_fps = float(1000.0 / game_frame_ms.load(std::memory_order_relaxed));
+    if (!wanted) {
+        frame_gen_limit = 0;
+        settings.frame_gen_now = 0;
+        settings.frame_gen_flip_limit = 0;
+        present_busy = 0.0;
+        return;
+    }
+    const double interval = game_frame_ms.load(std::memory_order_relaxed);
+    const u32 hz = BbDisplayRefreshHz();
+    const auto now = std::chrono::steady_clock::now();
+    const u32 before = frame_gen_limit.load(std::memory_order_relaxed);
+    u32 limit = before;
+    // The images the display shows per game frame: 60 FPS on 144 Hz has room for one generated
+    // frame, on 240 Hz for three. Decided once a second from that second's game frame rate
+    // (single slow frames while an area loads do not count): down at once when 10% short, up
+    // after two seconds with 5% to spare.
+    ++limit_frames;
+    const double window_s = std::chrono::duration<double>(now - limit_window).count();
+    if (window_s >= 1.0) {
+        const double ratio = hz * window_s / limit_frames;
+        limit_window = now;
+        limit_frames = 0;
+        if (window_s < 2.0) { // not the first, nor after a pause of the game
+            if (limit > 0 && ratio < (limit + 1) * 0.9) {
+                while (limit > 0 && ratio < (limit + 1) * 0.9) {
+                    --limit;
+                }
+                limit_up_seconds = 0;
+            } else if (limit < FrameGenerator::MaxGenerated && ratio >= (limit + 2) * 0.95) {
+                if (++limit_up_seconds >= 2) {
+                    ++limit;
+                    limit_up_seconds = 0;
+                }
+            } else {
+                limit_up_seconds = 0;
+            }
+        }
+    }
+    const bool fifo = swapchain.WaitsForDisplay();
+    if (!settings.frame_gen_fit_display || fifo) {
+        // The multiplier as chosen, past the display's refresh rate with an uncapped game (the
+        // display shows the newest image at each refresh); with FIFO the game is capped below
+        // instead. The pause below still applies.
+        limit = FrameGenerator::MaxGenerated;
+    }
+    // The share of the game's frame interval spent presenting its images: paced, about
+    // count / (count + 1). Near one the presentation holds the game back (FIFO on a display
+    // slower than measured, a GPU too slow for generation): off for a while, longer each time.
+    // Each frame counts at most 1.2: one long hitch (a load, a shader compile) is not a
+    // display that cannot keep up; about ten overloaded frames in a row are.
+    present_busy += (std::min(present_ms / interval, 1.2) - present_busy) * 0.1;
+    if (before && present_busy > 0.97) {
+        frame_gen_hold_seconds =
+            now - frame_gen_hold_until > std::chrono::seconds(60)
+                ? 5
+                : std::min(frame_gen_hold_seconds * 2, 120);
+        frame_gen_hold_until = now + std::chrono::seconds(frame_gen_hold_seconds);
+        std::printf("Frame generation: paused for %d s, presenting does not keep up (%.1f of "
+                    "%.1f ms per game frame; FIFO present mode or a slower display?)\n",
+                    frame_gen_hold_seconds, present_ms, interval);
+        present_busy = 0.0;
+    }
+    if (now < frame_gen_hold_until) {
+        limit = 0;
+    }
+    if (limit != before && settings.frame_gen_fit_display) {
+        std::printf("Frame generation: %u generated per game frame (display %u Hz, game %.0f "
+                    "FPS)\n",
+                    limit, hz, 1000.0 / interval);
+    }
+    // FIFO (V-Sync; AMD's Windows driver has no Mailbox) shows at most `hz` images a second
+    // and makes each one more wait for the display: the game is capped so that its frames and
+    // the generated ones fit, e.g. 72 FPS for 2x on 144 Hz (VideoOut applies it).
+    int flip_limit = 0;
+    if (fifo && limit) {
+        const u32 count = std::min(native_frame_generator->WantedCount(), limit);
+        flip_limit = count ? int(hz / (count + 1)) : 0;
+    }
+    if (flip_limit != settings.frame_gen_flip_limit.exchange(flip_limit) && flip_limit) {
+        std::printf("Frame generation: V-Sync (FIFO) at %u Hz: the game is capped at %d FPS so "
+                    "its frames and the generated ones fit\n",
+                    hz, flip_limit);
+    }
+    frame_gen_limit = limit;
+    settings.frame_gen_now = int(limit);
+    settings.frame_gen_display_hz = int(hz);
 }
 
 } // namespace Vulkan

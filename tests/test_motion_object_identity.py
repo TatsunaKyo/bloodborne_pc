@@ -23,6 +23,7 @@ HARNESS=r'''
 #include <vector>
 #define XXH_INLINE_ALL
 #include "xxhash.h"
+#include "bbport_hitch.h"
 #include "motion_history.h"
 namespace Motion=Vulkan::Motion;
 using u32=uint32_t;using u64=uint64_t;using VAddr=uint64_t;
@@ -179,6 +180,7 @@ def execute(folder):
         shutil.copy2(xxhash/'xxhash.h',target/'xxhash.h')
         args=([compiler,'/nologo','/O1','/EHsc','/std:c++20',str(target/'test.cpp'),'/Fe:'+str(exe)] if msvc else
               [compiler,'-std=c++20','-O1',str(target/'test.cpp'),'-o',str(exe)])
+        args.append(('/I' if msvc else '-I')+str(ROOT/'gpu/shim'))
         subprocess.run(args,cwd=target,check=True,timeout=60)
         subprocess.run([str(exe)],check=True,timeout=20)
 

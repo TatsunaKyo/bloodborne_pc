@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <mutex>
+#include "bbport_hitch_trace.h"
 
 // Bounded CPU wait journal. Normal frames write no log and allocate no memory.
 // A slow real-frame interval prints recent completed waits, not an invented GPU
@@ -125,6 +126,7 @@ inline void ReportCadence(float sdk_output_fps) {
         values[(count-1)*99/100],values[count-1],sdk_output_fps);
 }
 inline void Record(const char* stage, Clock::time_point start, Clock::time_point end=Clock::now()) {
+    Trace::Record(stage,start,end);
     const double ms=std::chrono::duration<double,std::milli>(end-start).count();
     if (ms<1.0) return;
     auto& slot=journal[next.fetch_add(1,std::memory_order_relaxed)%journal.size()];
@@ -199,6 +201,8 @@ inline void Present(bool real, bool presented, bool focused) {
             ms(p.present_enter,p.acquired),ms(p.acquired,p.enqueued),ms(p.enqueued,p.returned));
         ReportWindow("before flip",events,count,p.submitted,p.gpu_flip);
         ReportWindow("preparation",events,count,p.gpu_flip,p.prepared);
+        Trace::Report("before flip",p.submitted,p.gpu_flip);
+        Trace::Report("preparation",p.gpu_flip,p.prepared);
     }
 }
 }

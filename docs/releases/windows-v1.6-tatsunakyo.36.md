@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Revision 36 — background audio and lighter cache preparation
 
 Background Pause stopped the game but left the music playing. I have connected the audio device and output threads to the same pause state: the queued sound stays in place, and its clock starts fresh when you return. This also covers starting the game out of focus. The 30/60 FPS background modes and Keep running continue playing sound.

@@ -7,17 +7,17 @@ the launcher and repository files are replaced by the current build.
 """
 import argparse
 import ast
-import hashlib
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import urllib.request
 import zipfile
-from release_integrity import checksum, package_name, canonical_tag, validate, require, verify_dlss_search_paths
+from release_integrity import (checksum, package_name, canonical_tag, validate, require,
+                               verify_dlss_search_paths, runtime_source_paths, verify_runtime_sources)
 from pe_integrity import PE, system
 from nvidia_fg_runtime import install as install_nvidia_fg
+from native_fg_runtime import install as install_native_fg
 
 ROOT=Path(__file__).resolve().parents[1]
 TESTS=('frame-limits-test','frame-pacing-test','background-pause-test','temporal-history-test',
@@ -40,23 +40,25 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
     require(all((native/(name+'.exe')).is_file() for name in TESTS),'Native regression executables are missing')
     require((ROOT/'out/verification/native-windows-tests.log').is_file(), 'Run the native Windows tests before packaging')
     destination.mkdir(parents=True,exist_ok=True)
-    target=destination/package_name(version);require(not target.exists(),'Package already exists; preserve the previous candidate')
-    complete=target
+    package_path=destination/package_name(version)
+    require(not package_path.exists(),'Package already exists; preserve the previous candidate')
     with tempfile.TemporaryDirectory(prefix='workshop-package-') as directory:
         temp=Path(directory);stage=temp/f'Bloodborne-Windows-TatsunaKyo-Revision-{revision}'
         with zipfile.ZipFile(baseline) as z:
             old=next(n.split('/')[0] for n in z.namelist() if n.endswith('/BUILD-IDENTITY.json'))
             z.extractall(temp/'baseline')
         shutil.copytree(temp/'baseline'/old,stage)
-        for name in ('source','docs','scripts','tools','launcher','_internal','.github'):
+        for name in ('source','docs','scripts','tools','patches','launcher','_internal','.github'):
             shutil.rmtree(stage/name,ignore_errors=True)
         shutil.copy2(launcher/'Bloodborne.exe',stage/'Bloodborne.exe')
         shutil.copytree(launcher/'_internal',stage/'_internal')
-        for name in ('docs','scripts','tools','patches','launcher','.github'):
+        for name in ('docs','.github'):
             shutil.copytree(ROOT/name,stage/name,dirs_exist_ok=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
-        for name in ('README.md','LICENSE','run.py','CONTRIBUTING.md','SECURITY.md'):shutil.copy2(ROOT/name,stage/name)
-        shutil.copy2(ROOT/'packaging/windows/bbport.menu.ini',stage/'bbport.menu.ini')
-        shutil.copy2(ROOT/'packaging/windows/README-Windows.txt',stage/'README-Windows.txt')
+        for name, source in runtime_source_paths(ROOT, commit).items():
+            output=stage/name;output.parent.mkdir(parents=True,exist_ok=True)
+            output.write_bytes(git('show',commit+':'+source))
+        for name in ('README.md','LICENSE','CONTRIBUTING.md','SECURITY.md','AGENTS.md'):shutil.copy2(ROOT/name,stage/name)
+        shutil.copytree(ROOT/'packaging/windows/licenses',stage/'licenses',dirs_exist_ok=True)
         # Do not keep historical test programs under the names of a new build.
         for p in (stage/'bin').glob('*-test.exe'):p.unlink()
         programs={'Bloodborne.exe':checksum(stage/'Bloodborne.exe')}
@@ -65,6 +67,7 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
             subprocess.run(['llvm-strip','--strip-debug','-o',str(stage/output),str(native/(name+'.exe'))],check=True)
             programs[output]=checksum(stage/output)
         install_nvidia_fg(stage, ROOT)
+        native_lock=install_native_fg(stage, ROOT)
         (stage/'redist/vc_redist.x64.exe').unlink(missing_ok=True)
         # Use the pinned CLANG64 DLLs selected for this build, including transitive dependencies.
         require(dll_dir is not None, 'Provide the CLANG64 DLL directory for this build')
@@ -83,9 +86,9 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
             seen.add(program)
             for dll,_ in PE(program).imports():
                 if dll in system or dll.startswith(('api-ms-win-','ext-ms-win-')):continue
-                target=stage/'bin'/dll
-                if not target.is_file() and dll in available:
-                    shutil.copy2(available[dll],target);pending.append(target)
+                dependency_path=stage/'bin'/dll
+                if not dependency_path.is_file() and dll in available:
+                    shutil.copy2(available[dll],dependency_path);pending.append(dependency_path)
         # Streamline initializes process-wide NGX before the DLSS SR bridge.
         # Its plugin directory is an NGX feature path, so this copy is required
         # even though SR is called through the bridge rather than sl.dlss.dll.
@@ -96,14 +99,14 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         source_dir=stage/'source';source_dir.mkdir()
         base=json.loads((temp/'baseline'/old/'BUILD-IDENTITY.json').read_text())['upstream_base']
         (source_dir/'tatsunakyo-revision.patch').write_bytes(git('diff','--binary',base,commit))
-        for name in git('diff','--name-only',base,commit).decode().splitlines():
-            p=source_dir/'modified-files'/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(git('show',commit+':'+name))
         provenance={'project':'Bloodborne: The Crowned Workshop','version':version,'revision':int(revision),
                     'channel':channel,'release_tag':canonical_tag(version,channel),'source_commit':commit,
                     'source_tree':git('rev-parse','HEAD^{tree}').decode().strip(),'upstream_base':base,
                     'repository':'https://github.com/TatsunaKyo/bloodborne_pc','executables':programs,
-                    'runtime_files':{str(p.relative_to(stage)):checksum(p) for p in stage.rglob('*')
+                    'runtime_files':{p.relative_to(stage).as_posix():checksum(p) for p in stage.rglob('*')
                                      if p.suffix.lower() in ('.dll','.pyd')},
+                    'runtime_source_files':verify_runtime_sources(lambda name:(stage/name).read_bytes(),ROOT,commit),
+                    'native_fg_runtime':native_lock,
                     'runtime_baseline':lock,'native_and_launcher_fresh_build':True,
                     'byte_identical_build_claimed':False}
         (stage/'BUILD-IDENTITY.json').write_text(json.dumps(provenance,indent=2)+'\n')
@@ -112,21 +115,23 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         (stage/'BUILD-INFO.txt').write_text('The Crowned Workshop\nSource: '+commit+'\nNative and launcher built from this checkout. Unchanged SDK redistributables are pinned to the recorded baseline. No claim of byte-identical compiler output.\n')
         records=source_dir/'verification';records.mkdir()
         for p in (ROOT/'out/verification').rglob('*'):
-            if p.is_file():
+            if p.is_file() and p.suffix.lower() in ('.json','.log','.txt'):
                 out=records/p.relative_to(ROOT/'out/verification');out.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,out)
-        subprocess.run(['pacman','-Q'],check=True,stdout=(records/'msys2-installed-packages.txt').open('wb'))
-        subprocess.run(['clang++','--version'],check=True,stdout=(records/'compiler.txt').open('wb'))
+        with (records/'msys2-installed-packages.txt').open('wb') as record:
+            subprocess.run(['pacman','-Q'],check=True,stdout=record)
+        with (records/'compiler.txt').open('wb') as record:
+            subprocess.run(['clang++','--version'],check=True,stdout=record)
         notes=(ROOT/f'docs/releases/windows-v{version}.md').read_text()
         (stage/'README-EN.txt').write_text(notes)
         # The portable current player guide is kept instead of a previous revision summary.
         (stage/'README-IT.txt').write_text('Bloodborne: The Crowned Workshop\nVersione '+version+'\nApri README-Windows.txt per installazione, impostazioni live e documentazione aggiornata.\n')
         for p in stage.rglob('__pycache__'):shutil.rmtree(p,ignore_errors=True)
-        with zipfile.ZipFile(complete,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+        with zipfile.ZipFile(package_path,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
             for p in sorted(stage.rglob('*')):
-                if p.is_file():z.write(p,str(Path(stage.name)/p.relative_to(stage)))
-    complete.with_suffix('.zip.sha256').write_text(checksum(complete)+'  '+complete.name+'\n')
-    validate(target,repo=ROOT,require_sidecar=True)
-    return target
+                if p.is_file():z.write(p,(Path(stage.name)/p.relative_to(stage)).as_posix())
+    package_path.with_suffix('.zip.sha256').write_text(checksum(package_path)+'  '+package_path.name+'\n')
+    validate(package_path,repo=ROOT,require_sidecar=True)
+    return package_path
 
 
 def main():

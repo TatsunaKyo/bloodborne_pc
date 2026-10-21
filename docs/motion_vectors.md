@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](./index.md) · [Current reports](./known-issues.md) · [Published releases](./releases/index.md)
+
 <!-- crowned-workshop-navigation -->
 > Earlier technical reference. [The Crowned Workshop current guides](index.md) · [Current reports](known-issues.md). This page retains its original context and credits.
 

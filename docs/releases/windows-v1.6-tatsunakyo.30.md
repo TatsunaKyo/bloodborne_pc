@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 30
 
 The gameplay comparison still shows flashing in Revision 30. [Revision 31](windows-v1.6-tatsunakyo.31.md) addresses a reproduced scene-input overwrite and binds FG inputs to their display buffer; the visual comparison remains pending.

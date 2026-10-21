@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 The gameplay comparison still shows duplicated and flashing assets with NVIDIA FG enabled. The input overwrite fixed here was reproduced, but it did not resolve the full report. Revision 32 adds a capture at the actual NVIDIA handoff to continue the investigation.
 
 # Bloodborne: The Crowned Workshop — Revision 31

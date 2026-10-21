@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Revision 34 preview — object motion history
 
 Revision 33 still showed extra coffins flashing in the cemetery on my Windows 11 / RTX 5070 Ti PC with NVIDIA FG. I have kept that report open and gone back to the motion guides used by interpolation.

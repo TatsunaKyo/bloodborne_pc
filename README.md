@@ -5,7 +5,7 @@
 <p align="center">Experience Bloodborne natively on Windows, enhanced with modern rendering technologies, customizable gameplay and a redesigned launcher.</p>
 
 <p align="center">
-  <a href="docs/releases/windows-v1.6-tatsunakyo.44.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 55" height="28"></a>
+  <a href="docs/releases/windows-v1.6-tatsunakyo.55.md"><img src="docs/assets/readme/revision-stable.svg" alt="Revision 55" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/windows.svg" alt="Windows 10 / 11" height="28"></a>
   <a href="docs/compatibility.md"><img src="docs/assets/readme/vulkan.svg" alt="Vulkan 1.3" height="28"></a>
   <a href="LICENSE"><img src="docs/assets/readme/license.svg" alt="GPL-2.0+" height="28"></a>
@@ -18,7 +18,7 @@
     <td align="center"><a href="docs/launcher-and-menu.md#installation"><strong>▤ Installation guide&nbsp;↗</strong></a><br>Requirements and setup</td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><a href="docs/compatibility.md">Compatibility</a> · <a href="docs/known-issues.md">Current reports</a> · <a href="#roadmap">Roadmap</a> · <a href="docs/index.md">All guides</a> · <a href="docs/releases/index.md">Release notes</a></td>
+    <td colspan="2" align="center"><a href="docs/compatibility.md">Compatibility</a> · <a href="docs/known-issues.md">Current reports</a> · <a href="#roadmap">Roadmap</a> · <a href="docs/index.md">All guides</a> · <a href="docs/releases/windows-v1.6-tatsunakyo.55.md">Release notes</a></td>
   </tr>
 </table>
 </div>
@@ -30,6 +30,16 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 > [!CAUTION]
 > NO game files are included. You NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump, including `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09.
 
+## Latest published release: Revision 55
+
+[Download R55](https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/windows-v1.6-tatsunakyo.55-preview) · [Complete changelog since R40](docs/releases/windows-v1.6-tatsunakyo.55.md) · [All current guides](docs/index.md)
+
+Published **21 October 2026 (CEST)**. R55 integrates **Supermedo Windows 1.9.2**, the renderer work reviewed from other forks, expanded input/camera controls and our existing graphics, FG, latency, save and overlay features. R40 was the previous published revision; R41–R54 are development checkpoints covered by the R55 notes.
+
+Download just **[Bloodborne-Windows-v1.6-TatsunaKyo-Revision-55.zip](https://github.com/TatsunaKyo/bloodborne_pc/releases/download/windows-v1.6-tatsunakyo.55-preview/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-55.zip)** and its **[.zip.sha256](https://github.com/TatsunaKyo/bloodborne_pc/releases/download/windows-v1.6-tatsunakyo.55-preview/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-55.zip.sha256)**. Runtime, licenses, required source and compact recovery are together in that ZIP.
+
+**Still open:** the cemetery traversal hitch, reported 119–121 output variation, character halos/ghosting and brief foreground geometry. Component tests are not affected-scene gameplay verification. [Current reports](docs/known-issues.md)
+
 ## Getting started
 
 1. Download the full Windows ZIP from Releases and extract it into a new folder.
@@ -37,7 +47,7 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 3. Choose your resolution and graphics settings, then press **PLAY**.
 4. Press **Insert** or **L3+R3** in-game to change the port's settings.
 
-**Play Bloodborne.exe** starts with your saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each release includes its **SHA256 checksum**. The optional **Developer** archive keeps the verification scripts, source records and regression programs; you only need the ordinary game ZIP to play. [Installation and settings](docs/launcher-and-menu.md)
+**Play Bloodborne.exe** starts with your saved options. Saves and shader caches normally live in `user/` beside the launcher; you can choose another saves folder. Keep your existing saves, mods and preferences when updating. Each release includes its **SHA256 checksum**. The single game ZIP includes the required runtime, licenses, source material and compact recovery data; no separate Developer archive is needed. [Installation and settings](docs/launcher-and-menu.md)
 
 ## What this fork adds
 
@@ -74,7 +84,16 @@ For DLSS, I exposed the following presets exactly as separate choices:
 
 ![Illustrative FG toggle: 60 real FPS, 120 output FPS and an unchanged real-frame graph](docs/assets/features/frame-generation.gif)
 
-Support was added for **FSR Frame Generation (x2)** and **NVIDIA DLSS FG / MFG (x2–x6 modes for supported GPUs)** to improve display smoothness while keeping the game's real-frame limit separate. FG can work with a different upscaler and both paths support **SDR and HDR10**; I wanted HDR users to have the same FG choices. You can activate and adjust FG **live from the in-game menu**, as well as before launch in the launcher. I kept the normal FPS limit tied to real game frames, with or without FG, and added an optional second limit for the complete FG output. This lets you control the game rate and the generated display rate separately. I also added a separate **NVIDIA FG model choice: Default / A / B / C** under Frames in both menus. Model changes apply at the next launch, and the in-game menu shows whether NVIDIA confirms the override; C requires NVIDIA’s newer beta runtime. I go more in-depth with the technicalities of the implementation in the following page: [FG setup, hardware requirements and how the integration works](docs/frame-generation.md)
+The two Workshop routes keep SDR/HDR10 support and live generation controls; R55 also includes Supermedo's native SDR choices. A temporal upscaler is required, and FG can be selected independently of the upscaler vendor.
+
+| Frame Generation route | Output | Switching |
+|---|---|---|
+| Workshop FSR FG x2 | SDR / HDR10 | Runtime |
+| Workshop NVIDIA DLSS FG/MFG x2–x6, subject to support | SDR / HDR10 | Runtime within this route |
+| FSR FG — Supermedo | SDR | Runtime with valid inputs |
+| DLSS FG — Supermedo | SDR | Restart when selecting/leaving |
+
+The normal cap counts real game frames; the optional output cap includes generated frames. **NVIDIA FG model: Default / A / B / C** is separate from DLSS SR's model letter and applies at the next launch. Its OSD field distinguishes an evaluated driver report from a saved request/error. [Provider setup, model evidence and limits](docs/frame-generation.md)
 
 > [!IMPORTANT]
 > [Revision 40](https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/windows-v1.6-tatsunakyo.40-EXPERIMENTAL) introduced EXPERIMENTAL **DLSSG mod for RTX 20/30** through [RTX Encore](https://github.com/SilyNoMeta/rtx-encore). Be mindful of potential bugs and instability, DLSSG is NOT officially supported on any RTX card below 40 series, Vulkan is only experimentally supported by RTX Encore at the moment and I have no RTX 20/30 series card to test this with. I did and will do my best to look through the code, but as you can guess, some issues are bound to arise ONLY when actually playing the game. All my thanks go to the original creators and developers.
@@ -129,6 +148,7 @@ FG is suspended during the background pause or limit, and your foreground settin
 
 I wanted the overlay to be useful without covering more of the game than necessary. You can keep the original basic readout, hide it completely, or choose which extra fields you want:
 
+- **NVIDIA FG preset evidence**, independently of the upscaler model.
 - **DLSS preset letter**, without the longer CNN/Transformer descriptions.
 - **Input and output resolution**, so you can see the scene size and reconstructed output.
 - **Active FG provider and multiplier**, based on the running mode.
@@ -229,6 +249,14 @@ I also added **Generate Support Report**, available in Diagnostics and Log. It b
 
 The original mod/patch loading, keyboard/controller support, shortcuts, shader-cache tools, game effects and beta online co-op remain available, with their original credits.
 
+## R55 integration and current source
+
+Supermedo 1.9.2 adds three-slot input combinations, direct mouse camera, prompts, FOV (43° default), background mute, ultrawide HUD placement, native SDR FG choices and renderer/recovery changes. The existing Workshop FG routes retain HDR10/MFG/Reflex. RTX 20/30 external FG stays opt-in; stock RTX 40/50 users keep the original NVIDIA route. NR is unsupported and no NR DLL is bundled. [Four-provider matrix and limitations](docs/frame-generation.md#r55-provider-choices)
+
+The renderer integration includes reviewed cache admission/compilation, pipeline priority, sparse backing, staging, texture-hash and per-size motion-target work. In the controlled three-size alternation, R55 records three target allocations and no drains versus R54's 3,000 allocations and 2,999 drains. This is a resource check, not a cemetery-route benchmark. [Pinned decisions and test scope](docs/investigations/2026-10-20-upstream-integration.md)
+
+The published R55 source is [6f8564d](https://github.com/TatsunaKyo/bloodborne_pc/tree/6f8564dc973dd35d70438c43f0140fb0531949a3). The default branch also has [later maintenance](docs/maintenance.md), including Achievements, resolution-menu and assembler corrections. Those fixes require a later binary build; the published R55 ZIP/tag/checksum remain identifiable.
+
 ## Requirements and test setup
 
 - **Windows 10 1903 or later / Windows 11**, 64-bit, with a current graphics driver.
@@ -244,8 +272,8 @@ I am keeping the existing gameplay work active while making the fork easier to m
 
 - **Release reliability:** updater compatibility, verified complete packages, CI and useful report forms.
 - **Save Manager:** extend the shipped backup/restore tools with named save profiles and further save protection.
-- **PC input:** full remapping, native mouse camera and controller/UI consistency.
-- **Ultrawide and HUD:** aspect-aware FOV, interface placement and cinematic handling.
+- **PC input:** extend the shipped remapping/direct mouse controls and hardware/UI coverage.
+- **Ultrawide and HUD:** extend the shipped FOV/HUD controls and cinematic handling.
 - **Frame pacing and image quality:** real/displayed cadence, shader-cache resilience and HUDless FG.
 - **Support and compatibility:** a locally reviewed/redacted report archive and reviewed hardware results.
 - **Further cheats and vendor features:** the scoped gameplay/training proposals and supported backend extensions.
@@ -262,6 +290,8 @@ For black screens, try **Advanced → Clear shader cache**. Rebuilding it can ca
 
 ## Credits
 
+
+The reviewed [andrecabralgit](https://github.com/andrecabralgit/bloodborne_pc), [emurphy04](https://github.com/emurphy04/bloodborne_pc) and [iannitram](https://github.com/iannitram/bloodborne_pc) forks retain their credits; the [R55 integration record](docs/investigations/2026-10-20-upstream-integration.md) pins the adopted work and compatibility decisions.
 
 This revision is maintained by [TatsunaKyo](https://github.com/TatsunaKyo). The Windows port and original launcher are by [Supermedo](https://github.com/Supermedo). The upstream history, copyright notices and licenses are retained.
 

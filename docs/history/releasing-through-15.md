@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 <!-- crowned-workshop-navigation -->
 > Historical document. [The Crowned Workshop current guides](../index.md) · [Current reports](../known-issues.md). This page retains its original context and credits.
 
@@ -44,7 +46,7 @@ Increment the revision number for subsequent releases. Increase the upstream ver
 
 ## Build
 
-Follow [the Windows build instructions](../packaging/windows/README.md) on the commit to be released. Build the renderer and freeze the launcher from that same checkout. The normal packaging script creates `dist/bbport-windows.zip`; rename the completed ZIP to the asset name above. Include all executables, runtime DLLs, `_internal/`, FSR assets, the DLSS bridge/runtime and applicable licenses. Do not include game files, saves, account credentials or personal settings.
+Follow [the Windows build instructions](../../packaging/windows/README.md) on the commit to be released. Build the renderer and freeze the launcher from that same checkout. The normal packaging script creates `dist/bbport-windows.zip`; rename the completed ZIP to the asset name above. Include all executables, runtime DLLs, `_internal/`, FSR assets, the DLSS bridge/runtime and applicable licenses. Do not include game files, saves, account credentials or personal settings.
 
 Run the launcher settings and updater regressions before packaging:
 

@@ -7,7 +7,7 @@ from tkinter import ttk,filedialog,messagebox
 from PIL import ImageGrab
 from PyInstaller.archive.readers import CArchiveReader
 repo=Path(__file__).resolve().parents[1]
-import argparse,importlib.util
+import argparse
 parser=argparse.ArgumentParser(description='Capture actual launcher controls with isolated preview settings; never launches the game.')
 parser.add_argument('--launcher',type=Path,help='Matching CPython 3.14 frozen Windows launcher; omit to capture current source.')
 args=parser.parse_args()

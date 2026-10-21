@@ -1,3 +1,4 @@
+#include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "bbport_write_log.h"
 // bbport: glue between the C loader and the vendored shadPS4 video core.
 #include "bbport_overlay.h"
@@ -5,6 +6,7 @@
 #include "bbport_amd.h"
 #include "bbport_nvidia.h"
 #include "bbport_copy.h"
+#include "bbport_page_watch_queue.h"
 #include "bbport_hitch.h"
 #ifndef _WIN32
 #include <sys/resource.h>
@@ -32,15 +34,21 @@
 #include "core/memory.h"
 #include "core/signals.h"
 #include "sdl_window.h"
+#include "bloodborne_cam.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 extern "C" {
 // runtime_memory.c
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
+int runtime_memory_can_read_ahead(uintptr_t address, uint64_t size);
 int runtime_memory_write_backing(uintptr_t address, const void* data, uint64_t size);
+void runtime_memory_read_backing(uintptr_t address, void* data, uint64_t size);
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size);
 int runtime_memory_region(uintptr_t address, uintptr_t* start, uintptr_t* end, int* mapped);
 void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write);
+void runtime_memory_gpu_protect_deferred(uintptr_t address, uint64_t size);
+void runtime_memory_wait_page_protection(void);
+void runtime_memory_wait_page_protection_range(uintptr_t address, uint64_t size);
 typedef void (*RuntimeGpuRange)(uintptr_t address, uint64_t size);
 // runtime_kernel.c: one clock for guest and GPU timestamps
 uint64_t runtime_process_time_us(void);
@@ -90,23 +98,37 @@ public:
 
 void MemoryManager::SetRasterizer(Vulkan::Rasterizer* rasterizer_) {
     rasterizer = rasterizer_;
+    BbHitch::Trace::InstallExporter();
+    BbPageWatch::Install();
     // Existing guest mappings are replayed by the runtime when hooks are installed.
     runtime_memory_set_gpu_hooks(
         [](uintptr_t address, uint64_t size) {
+            BbHitch::Trace::Scope trace{"guest GPU mapping", address, size};
             auto* r = Memory::Instance()->GetRasterizer();
             r->RegisterMemory(address, size);
             r->MapMemory(address, size);
         },
-        [](uintptr_t address, uint64_t size) { Memory::Instance()->GetRasterizer()->UnmapMemory(address, size); },
         [](uintptr_t address, uint64_t size) {
+            BbHitch::Trace::Scope trace{"guest GPU unmapping", address, size};
+            Memory::Instance()->GetRasterizer()->UnmapMemory(address, size);
+        },
+        [](uintptr_t address, uint64_t size) {
+            BbHitch::Trace::Scope trace{"runtime invalidation notification", address, size};
             Memory::Instance()->GetRasterizer()->InvalidateMemory(address, size);
         });
 }
 void MemoryManager::InvalidateMemory(VAddr address, u64 size) {
+    BbHitch::Trace::Scope trace{"host write notification", address, size};
     if (rasterizer) rasterizer->InvalidateMemory(address, size);
+}
+bool MemoryManager::IsValidMapping(VAddr virtual_addr, u64 size) {
+    return runtime_memory_is_mapped(virtual_addr, size) != 0;
 }
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     return runtime_memory_clamp(virtual_addr, size);
+}
+bool MemoryManager::CanReadAhead(VAddr address, u64 size) {
+    return runtime_memory_can_read_ahead(address, size) != 0;
 }
 static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
     BbHitch::Scope hitch{"guest sparse copy / VMA lookup"};
@@ -122,7 +144,14 @@ static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
         source += n; dest += n; size -= n;
     }
 }
+void MemoryManager::WaitForPageProtection(VAddr address, u64 size) {
+    runtime_memory_wait_page_protection_range(address, size);
+}
 void MemoryManager::CopySparseMemory(VAddr source, u8* dest, u64 size) {
+    BbHitch::Trace::Scope trace{"guest snapshot", source, size};
+    // A snapshot cannot precede the queued write revocation. Later guest
+    // stores then fault, or are included in this snapshot before retirement.
+    runtime_memory_wait_page_protection_range(source, size);
     // bbport: large uploads (streaming) are split across the copy threads.
     constexpr u64 Chunk = 512 * 1024;
     if (size < 4 * Chunk || !BbCopy::Enabled()) {
@@ -139,6 +168,9 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
 }
 void AddressSpace::Protect(VAddr virtual_addr, u64 size, MemoryPermission perms) {
     BbHitch::Scope hitch{"guest page protection"};
+    BbHitch::Trace::Scope resource{True(perms & MemoryPermission::Write) ? "page watch writable"
+        : True(perms & MemoryPermission::Read) ? "page watch read-only" : "page watch no-access",
+        virtual_addr, size};
     BbStats::Timer timer{BbStats::t_protect};
     const u64 pages = (size + 4095) / 4096;
     BbStats::protect_calls.fetch_add(1, std::memory_order_relaxed);
@@ -149,6 +181,15 @@ void AddressSpace::Protect(VAddr virtual_addr, u64 size, MemoryPermission perms)
     }
     runtime_memory_gpu_protect(virtual_addr, size, True(perms & MemoryPermission::Read),
                                True(perms & MemoryPermission::Write));
+}
+void AddressSpace::ProtectReadOnlyDeferred(VAddr virtual_addr, u64 size) {
+    BbHitch::Trace::Scope resource{"read-only protection request", virtual_addr, size};
+    const u64 pages = (size + 4095) / 4096;
+    BbStats::protect_calls.fetch_add(1, std::memory_order_relaxed);
+    BbStats::protect_pages.fetch_add(pages, std::memory_order_relaxed);
+    BbStats::protect_revoke_calls.fetch_add(1, std::memory_order_relaxed);
+    BbStats::protect_revoke_pages.fetch_add(pages, std::memory_order_relaxed);
+    runtime_memory_gpu_protect_deferred(virtual_addr, size);
 }
 boost::icl::interval_set<VAddr> AddressSpace::GetUsableRegions() {
     boost::icl::interval_set<VAddr> set;
@@ -241,7 +282,9 @@ extern "C" int bbgpu_init(const BbGpuConfig* config) {
             SDL_Delay(BbSettings::Get().window_focused ? 2 : 20);
         }
         LOG_INFO(Frontend, "Window closed by user");
+        BbHitch::Trace::FlushExporter();
         std::fflush(stdout);
+        Vulkan::SaveDriverCaches();
         std::_Exit(0);
     });
     g_window_thread.detach();
@@ -344,6 +387,11 @@ extern "C" int bbgpu_overlay_captures_input(void) {
     return BbOverlay::CapturesInput() ? 1 : 0;
 }
 
+extern "C" int bbgpu_audio_muted(void) {
+    const auto& settings = BbSettings::Get();
+    return settings.mute_unfocused && !settings.window_focused ? 1 : 0;
+}
+
 extern "C" int bbgpu_text_input_begin(const char* initial, const char* prompt) {
     if (!g_window) return 0;
     g_window->BeginTextInput(initial ? initial : "", prompt ? prompt : "Text");
@@ -360,4 +408,30 @@ extern "C" int bbgpu_text_input_poll(char* out, uint64_t size) {
         out[n] = 0;
     }
     return state;
+}
+
+extern "C" void bbgpu_mouse_take(BbMouseInput* out) {
+    if (!out) return;
+    if (!g_window) { std::memset(out, 0, sizeof(*out)); return; }
+    Frontend::MouseInput mouse;
+    g_window->TakeMouseInput(mouse);
+    out->dx = mouse.dx;
+    out->dy = mouse.dy;
+    out->buttons = mouse.buttons;
+    out->wheel = mouse.wheel;
+    out->captured = mouse.captured ? 1 : 0;
+}
+
+extern "C" void bbgpu_input_configure(int mouse_mode_available, int32_t toggle_scancode, int32_t reload_scancode) {
+    if (!g_window) return;
+    g_window->ConfigureInput(mouse_mode_available != 0, toggle_scancode, reload_scancode);
+}
+
+extern "C" int bbgpu_input_reload_requested(void) {
+    if (!g_window) return 0;
+    return g_window->TakeInputReloadRequested();
+}
+
+extern "C" void bbgpu_mouse_camera_configure(int direct, float sensitivity, float scale_x, float scale_y, int sync) {
+    Core::BloodborneCam::Instance().Configure(direct != 0, sensitivity, scale_x, scale_y, sync != 0);
 }

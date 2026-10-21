@@ -73,6 +73,7 @@ def build(settings):
     obj.ini, obj.ini_lines = launcher.load_ini()
     obj.menu = launcher.menu_values(obj.app)
     obj.menu_baseline = dict(obj.menu)
+    obj.remap_edits={};obj.mouse_edited=False
     obj.vars, obj.pages, obj.content = {}, {}, Widget()
     obj.mod_order, obj.patch_vars = [], {}
     def scrolled_page(name, *_args):
@@ -388,6 +389,9 @@ print('PASS: launcher controls in Play/Image/Frames/Window/Overlay, seven DLSS p
       'preset normalization, environment and custom config paths.')
 
 s = dict(launcher.APP_DEFAULTS, fps_mode='75', frame_cap='120')
+s.pop('real_fps_limit') # raw legacy preferences, before load_menu migrates them
 assert launcher.game_environment(s)['BB_FPS'] == 'uncap'
 assert launcher.game_environment(s)['BB_FPS_LIMIT'] == '75'
+s['real_fps_limit'] = '-1' # an explicit modern Auto choice supersedes the old cap
+assert 'BB_FPS_LIMIT' not in launcher.game_environment(s)
 assert '75' in dict(launcher.FPS_MODES) and '75' in dict(launcher.FRAME_CAPS)

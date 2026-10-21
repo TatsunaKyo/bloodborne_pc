@@ -36,3 +36,6 @@ I review that evidence before adding a confirmed row to the [compatibility datab
 For pacing reports, collect matching scenes/settings for the compared revisions and include both real/FG caps. The [performance guide](performance.md) explains the measurements, including the difference between real-frame intervals and displayed FG cadence.
 
 [Launcher and menu](launcher-and-menu.md) · [Current reports](known-issues.md) · [Compatibility](compatibility.md)
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

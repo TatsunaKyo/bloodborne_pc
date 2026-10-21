@@ -4,7 +4,7 @@
 from pathlib import Path
 import threading
 
-from save_manager import SaveManager, SaveManagerError, verify_backup
+from save_manager import SaveManager, verify_backup
 
 
 class SaveManagerDialog:

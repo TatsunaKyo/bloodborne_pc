@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 27
 
 I fixed the startup error in Revision 26 that stopped Bloodborne.exe before the launcher could open. When I replaced the updater's shared temporary folder, I left one reference to `UPDATE_DIR` in the normal startup path. That reference is now removed.

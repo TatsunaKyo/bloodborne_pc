@@ -4,19 +4,28 @@
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
-#include <unistd.h>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include "bbport_settings.h"
+
+static void Env(const char* key, const char* value) {
+#ifdef _WIN32
+    assert(_putenv_s(key, value ? value : "") == 0);
+#else
+    assert((value ? setenv(key, value, 1) : unsetenv(key)) == 0);
+#endif
+}
 
 int main() {
     using namespace BbSettings;
-    char path[] = "/tmp/bbport-upscaler-test-XXXXXX";
-    const int fd = mkstemp(path);
-    assert(fd >= 0);
-    close(fd);
-    setenv("BB_CONFIG", path, 1);
-    unsetenv("BB_UPSCALER");
-    unsetenv("BB_UPSCALE_PRESET");
-    unsetenv("BB_RENDER_RES");
+    const auto path = std::filesystem::temp_directory_path() /
+        ("bbport-upscaler-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".ini");
+    std::ofstream(path).close();
+    Env("BB_CONFIG", path.string().c_str());
+    Env("BB_UPSCALER", nullptr);
+    Env("BB_UPSCALE_PRESET", nullptr);
+    Env("BB_RENDER_RES", nullptr);
     auto& s = Get();
     s.upscaler = UpscalerTaa;
     s.preset = Performance;
@@ -31,7 +40,7 @@ int main() {
     for (bool fsr4 : {false, true}) {
         for (bool fsr411 : {false, true}) {
             for (int requested = 0; requested < UpscalerCount; ++requested) {
-                FILE* config = std::fopen(path, "w");
+                FILE* config = std::fopen(path.string().c_str(), "w");
                 assert(config);
                 std::fprintf(config, "upscaler=%s\npreset=3\noutput_res=2560x1440\n",
                              UpscalerName(requested));
@@ -59,7 +68,7 @@ int main() {
     s.upscaler = UpscalerFsr3;
     s.preset = Performance;
     assert(RenderPreset() == Performance && !ResolutionNeedsRestart());
-    setenv("BB_RENDER_RES", "1706x960", 1);
+    Env("BB_RENDER_RES", "1706x960");
     assert(RenderPreset() == Quality && ResolutionNeedsRestart());
     s.preset = Quality;
     assert(!ResolutionNeedsRestart());
@@ -74,9 +83,9 @@ int main() {
     s.output_res = (output + 1) % OutputCount;
     assert(ResolutionNeedsRestart());
     s.output_res = output;
-    setenv("BB_RENDER_RES", "", 1);
+    Env("BB_RENDER_RES", "");
     assert(!FixedRenderSession() && !ResolutionNeedsRestart());
-    unsetenv("BB_RENDER_RES");
-    std::remove(path);
+    Env("BB_RENDER_RES", nullptr);
+    std::filesystem::remove(path);
     std::puts("Upscaler support: saved choices and FSR 3.1 fallback PASS");
 }

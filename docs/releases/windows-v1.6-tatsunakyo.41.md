@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # TatsunaKyo Revision 41 — streaming invalidation and frame path waits
 
 - Prepare every GPU-mapped part of a CPU write, including reads spanning ordinary staging memory and multiple GPU allocations. R40 required the entire span to be GPU mapped and skipped bulk invalidation otherwise. The fix takes a snapshot of exact intersections, drains once, then invalidates only those intersections. Empty, unmapped and overflowing spans do not drain. The CPU reproduction executes the production method with fragmented mappings.

@@ -1,5 +1,7 @@
 # Shader-cache recovery
 
+R55 improves persistent cache admission, demanded-pipeline priority and background compilation. A compiled cache does not remove every possible streaming, invalidation, host-copy, queue or allocation wait. The repeatable cemetery hitch remains open after cache resets; do not present a cache clear as its established fix. [Renderer integration](investigations/2026-10-20-upstream-integration.md)
+
 I want the cache to save work between sessions without becoming another reason for the game to fail. Revision 24 is the first small change in the frame-delivery and image-quality work: it improves loading and persistence of shader/pipeline records. The existing Hunter's Dream foliage-history fix, scene-depth copy and FG input fences stay in place.
 
 ## What changes
@@ -28,3 +30,6 @@ The regression executable uses the production serializer, cache IO worker and ca
 A second fixture compiles the actual `WarmUp` body with controlled cache/driver boundaries. It checks missing, malformed and incompatible profiles; unknown/stale pipeline kinds; failed shader/pipeline loading; later valid entries; and clearing partial selections. These automated checks run on Linux and Windows CI. They exercise recovery behavior, without claiming a measured gameplay improvement.
 
 My gameplay setup remains Windows 11 with an RTX 5070 Ti. For a useful comparison, use the same Hunter's Dream view, settings, HDR mode and real/output caps on Revision 23 and 24. Existing records should load normally; after a damaged record is rebuilt, repeat the route once so its first compilation is separate from subsequent use. The [frametime graph](display-and-overlay.md#reading-the-graph) and an inspected [Support Report](support-reports.md) can help document the result.
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

@@ -12,7 +12,7 @@
 #
 # It also checks the rules vk_fsr411.cpp uses against every capture: the dispatch sequence, the
 # group counts, the tensor size table and the frame constants. A mismatch is an error.
-import glob, hashlib, math, os, re, struct, subprocess, sys
+import glob, hashlib, os, re, struct, subprocess, sys
 
 dxil_spirv, root, out = sys.argv[1:4]
 FLAGS = ['--enable-shader-i8-dot', '--ssbo-uav', '--ssbo-srv', '--class-bindings', '--use-reflection-names',

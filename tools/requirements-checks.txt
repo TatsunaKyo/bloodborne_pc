@@ -1,0 +1,2 @@
+pyflakes==4.0.3
+markdown-it-py==4.2.0

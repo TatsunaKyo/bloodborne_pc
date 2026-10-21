@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 29
 
 The flashing report persisted after this rollback. [Revision 30](windows-v1.6-tatsunakyo.30.md) corrects a frame-ready wait and adds a targeted world-motion continuity safeguard. The focus correction below remains included.

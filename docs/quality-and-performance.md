@@ -1,5 +1,9 @@
 # Temporal stability and renderer performance
 
+## R55 renderer integration
+
+R55 integrates Supermedo Windows 1.9.2 plus reviewed demanded-pipeline priority, sparse backing reserve, coherent texture-hash reuse, staging retention/copy sizing and per-size motion targets. The production-method control records 3,000 allocations/2,999 drains in 1,000 alternating three-size R54 frames; R55 records three allocations and no drains for that controlled alternation. This is a resource test, not a cemetery-route benchmark. Draw retention, strict compiler failure fallback, unreadable GPU-owned data and existing graphics/provider controls remain checked compatibility boundaries. [Pinned integration decisions](investigations/2026-10-20-upstream-integration.md)
+
 I focused on stopping stale history from carrying across unrelated scenes and removing repeated work from the renderer. The current build also includes the foliage-history and preserved-depth corrections that resolved the Hunter's Dream flashing in my Windows 11 / RTX 5070 Ti test. The underlying bbport/shadPS4 renderer and vendor integrations retain their credits.
 
 ## Shared camera reset
@@ -70,3 +74,6 @@ The production-block regression holds the SDK work before/after the queue call. 
 In Revision 26 I corrected the recovery paths around that queue scope. A failed presentation previously entered swapchain recreation while holding the client queue lock; recreation then requested the NVIDIA lifecycle lock, reversing the normal NVIDIA-to-queue order. Resize and HDR paths also waited for the device without consistently excluding client queue operations. I retire NVIDIA ownership first, then serialize the GPU drain itself. HDR recreation uses that one drain instead of waiting twice. The new semaphore arrays also start at slot zero, so a reduced swapchain image count cannot inherit an out-of-range acquisition slot.
 
 The regression executes the production recovery and drain scopes: Revision 25 reproduces the reversed ordering and concurrent queue access, while the corrected scopes retain the order and exclude submissions during the drain. This follows Vulkan's [device-wait synchronization requirement](https://docs.vulkan.org/refpages/latest/refpages/source/vkDeviceWaitIdle.html). It protects mode changes and recovery; ordinary-frame limits, SDK input fences, depth copies and reconstruction shaders stay intact. The [code review](code-review-2026-10-13.md) lists the broader checks.
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

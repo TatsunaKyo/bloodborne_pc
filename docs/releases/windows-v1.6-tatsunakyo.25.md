@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Bloodborne: The Crowned Workshop — Revision 25
 
 I continued the pacing work by removing another source of contention on the shared Vulkan queue. NVIDIA FG state and latency queries now let the renderer submit its next command buffer while they run. QueuePresent itself stays serialized, and I kept the scene-depth, motion-history and input-completion protections that resolved the earlier flashing.

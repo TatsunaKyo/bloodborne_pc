@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # The Crowned Workshop — Development history
 
 I keep these dated records so earlier decisions and test results remain available. Use the [current guides](../index.md) for today’s settings and [current reports](../known-issues.md) for their latest status.

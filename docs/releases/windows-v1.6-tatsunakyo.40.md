@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # TatsunaKyo Revision 40 — DLSS runtime packaging hotfix
 
 - Restore `bin/streamline/nvngx_dlss.dll`, removed from Revision 39 as an assumed duplicate of `bin/nvngx_dlss.dll`. Streamline initializes NGX before the separate DLSS Super Resolution bridge and supplies its plugin directory as an NGX feature search path. Both locations now contain the same original NVIDIA SR runtime. This corrects the packaging regression associated with DLSS becoming unavailable on the reported RTX 5070 Ti; confirmation in the game is still needed.

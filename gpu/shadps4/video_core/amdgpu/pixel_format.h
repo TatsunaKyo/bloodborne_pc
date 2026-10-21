@@ -65,6 +65,7 @@ enum class DataFormat : u32 {
     Format32_As_8_8 = 62,
     Format32_As_32_32_32_32 = 63,
 };
+constexpr u32 NUM_DATA_FMTS = static_cast<u32>(DataFormat::Format32_As_32_32_32_32) + 1;
 
 enum class NumberFormat : u32 {
     Unorm = 0,
@@ -81,6 +82,7 @@ enum class NumberFormat : u32 {
     Ubint = 12,
     Ubscaled = 13,
 };
+constexpr u32 NUM_NUMBER_FMTS = static_cast<u32>(NumberFormat::Ubscaled) + 1;
 
 enum class NumberClass : u8 {
     Float = 0,
@@ -356,7 +358,10 @@ constexpr NumberConversion MapNumberConversion(const NumberFormat num_fmt,
         case DataFormat::Format16_16_16_16:
             return NumberConversion::Sint16ToSnormNz;
         default:
-            UNREACHABLE_MSG("data_fmt = {}", u32(data_fmt));
+            // bbport: no real descriptor has this combination (seen: SnormNz with
+            // Format11_11_10). Draw preparation reads sharps from game memory the game may be
+            // rewriting; a stale one must not stop the game. Idea from parsifal295 (PR #55).
+            return NumberConversion::None;
         }
     }
     default:
@@ -395,9 +400,26 @@ constexpr bool IsFmask(DataFormat format) {
 std::string_view NameOf(DataFormat fmt);
 std::string_view NameOf(NumberFormat fmt);
 
-u32 NumComponents(DataFormat format);
-u32 NumBitsPerBlock(DataFormat format);
-u32 NumBitsPerElement(DataFormat format);
+constexpr u32 NUM_ENTRIES = 42;
+
+extern const std::array<s32, NUM_ENTRIES> NUM_COMPONENTS;
+extern const std::array<s32, NUM_ENTRIES> BITS_PER_BLOCK;
+extern const std::array<s32, NUM_ENTRIES> BITS_PER_ELEMENT;
+
+constexpr u32 NumComponents(DataFormat format) noexcept {
+    const u32 index = static_cast<u32>(format);
+    return NUM_COMPONENTS[index];
+}
+
+constexpr u32 NumBitsPerBlock(DataFormat format) noexcept {
+    const u32 index = static_cast<u32>(format);
+    return BITS_PER_BLOCK[index];
+}
+
+constexpr u32 NumBitsPerElement(DataFormat format) noexcept {
+    const u32 index = static_cast<u32>(format);
+    return BITS_PER_ELEMENT[index];
+}
 
 } // namespace AmdGpu
 

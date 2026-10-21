@@ -47,13 +47,26 @@ enum { SDL_WINDOW_INPUT_FOCUS=1, SDL_WINDOW_MINIMIZED=2,
     SDL_EVENT_WINDOW_CLOSE_REQUESTED, SDL_EVENT_WINDOW_FIRST=20, SDL_EVENT_WINDOW_LAST=30,
     SDL_SCANCODE_F8=1, SDLK_BACKSPACE=8, SDLK_RETURN=13, SDLK_KP_ENTER=14, SDLK_ESCAPE=27,
     SDL_GAMEPAD_BUTTON_SOUTH=0, SDL_GAMEPAD_BUTTON_EAST=1 };
+enum {SDL_EVENT_MOUSE_BUTTON_DOWN=100,SDL_EVENT_MOUSE_BUTTON_UP,SDL_EVENT_MOUSE_WHEEL,
+      SDL_EVENT_MOUSE_MOTION,SDL_EVENT_GAMEPAD_ADDED,SDL_EVENT_GAMEPAD_AXIS_MOTION};
 struct SDL_Event {
     int type{};
     struct { unsigned windowID=1; } window;
     struct { int scancode{}, key{}; bool repeat{}; } key;
     struct { std::string text; } text;
-    struct { int button{}; } gbutton;
+    struct { int button{},which{}; } gbutton,button;
+    struct { int which{}; } gdevice;
+    struct { int which{},value{}; } gaxis;
+    struct {float xrel{},yrel{};} motion;
+    struct {float x{},y{};} wheel;
 };
+unsigned SDL_BUTTON_MASK(unsigned button){return 1u<<button;}
+uint64_t SDL_GetTicks(){return 0;}
+const char* SDL_GetGamepadNameForID(int){return "fixture";}
+int SDL_GetGamepadTypeForID(int){return 0;}
+const char* SDL_GetGamepadStringForType(int){return "fixture";}
+namespace BbPrompts {enum Device {Keyboard,PlayStation};void OnInput(Device){}void OnControllerConnected(Device){}void Apply(){}}
+namespace Core {struct BloodborneCam {static BloodborneCam& Instance(){static BloodborneCam c;return c;}bool IsEnabled()const{return false;}bool IsLockedOn()const{return false;}};}
 SDL_Window target;
 int game_handle, other_handle;
 HWND foreground=&other_handle;
@@ -89,6 +102,9 @@ void BeforeSwapchainChange() { ++shutdowns; }
 @WANTED@
 }
 namespace Frontend {
+constexpr uint64_t kWheelPulseMs=50;
+std::array<std::atomic<uint64_t>,4> g_wheel_expiry_ms{};
+BbPrompts::Device PadDevice(int){return BbPrompts::PlayStation;}
 WindowSDL::WindowSDL(s32 w,s32 h,const char*) : width{w},height{h} {
     window=&target;
     window_info.type=native ? WindowSystemType::Windows : WindowSystemType::X11;
@@ -98,6 +114,8 @@ WindowSDL::WindowSDL(s32 w,s32 h,const char*) : width{w},height{h} {
 WindowSDL::~WindowSDL() {}
 void WindowSDL::ApplyWindowMode() {}
 void WindowSDL::UpdateTextTitle() {}
+void WindowSDL::UpdateMouseCapture() {}
+void WindowSDL::UpdateMouseCamera() {}
 #ifndef _WIN32
 #define _WIN32
 #endif

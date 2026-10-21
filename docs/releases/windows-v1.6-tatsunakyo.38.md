@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Revision 38 — NVIDIA runtime updates, FG model overlay and streaming writes
 
 Preset C works in other applications on my PC but returned an error in R37. I found that my Streamline initialization replaced NVIDIA's default flags and disabled OTA updates and loading downloaded plugins. I have restored both documented flags. The existing per-installation profile still requests Default/A/B/C before launch and keeps its backup/restoration rules. NVIDIA supplies and selects any available updated runtime; the package retains the signed public SDK DLLs. This corrects the opt-out, but does not establish that NVIDIA will supply C for this application or that C has run successfully on my GPU.

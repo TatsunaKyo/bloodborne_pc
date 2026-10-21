@@ -1,11 +1,17 @@
 # GitHub settings for this fork
 
+## Current repository state
+
+The default `windows` branch is reconciled with published R55; its tag/release branch retain the exact published source identity. Current docs live under `docs/` and the main README. GitHub Pages is not enabled, and Issues remain disabled until the owner chooses otherwise. Existing report forms apply when Issues is enabled. Regression checks run on supported source events; the full Windows candidate workflow is manual. No workflow needs a write-capable token to publish this documentation update.
+
+The older setup sequence below records the infrastructure choices. Current packaging uses **one ZIP and checksum**, with temporary review forms kept locally, not a second Developer deliverable.
+
 The source files can provide workflows and report forms, but the repository settings have to enable their use. I checked the repository during the Revision 22 infrastructure work: Issues were disabled and no workflows had been committed yet. GitHub Actions has since started the regression workflow automatically; the Windows candidate job is still a separate manual run.
 
 1. Open **Settings → General → Features** and enable **Issues**. The Bug report, Performance regression and Feature request forms will then appear under New issue.
 2. Open **Actions**. If GitHub asks to enable workflows on the fork, choose **I understand my workflows, go ahead and enable them**.
 3. In **Settings → Actions → General**, allow the pinned workflows' actions. They use `actions/checkout`, `actions/setup-python`, `actions/upload-artifact` and `msys2/setup-msys2`. Keep the default token read-only; these workflows do not need permission to publish releases or write to the repository.
-4. Run **Regression checks**, then **Windows build and package** from Actions using the `windows` branch. The Windows job produces a candidate ZIP, checksum, identity/provenance and a prepared release page. Review the results and test the candidate before publishing it.
+4. Run **Regression checks**, then **Windows build and package** from Actions using the `windows` branch. The Windows job produces a candidate ZIP and checksum, with identity/provenance inside the ZIP and a local prepared release form. Review the results and test the candidate before publishing it.
 5. Run **Published release integrity** for the release tag being published to check its assets and source. The workflow also runs after future release publication.
 
 Optional: enable **Security → Private vulnerability reporting** before directing private security reports there. [SECURITY.md](../SECURITY.md) also describes the fallback when that feature is unavailable.

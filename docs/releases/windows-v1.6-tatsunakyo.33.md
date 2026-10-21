@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 I have gone back through the existing flashing-assets report and the NVIDIA frame handoff. I reproduced two errors in Revision 32: a queued frame can keep a pointer to a Streamline token after the SDK has reassigned that token to a later frame, and a concurrent submission during Reflex sleep can pick up the previous simulation's token.
 
 Streamline 2.14.1 keeps six token slots. I now keep each slot reserved from simulation through its queued flip and Present call. If all six are still in use, the next simulation waits for one to retire instead of overwriting an outstanding frame's identity. This waits on host ownership; it does not add a GPU idle or change the FPS limits. Reflex sleep keeps its own token alive and lets the previous Present progress. Starting the render and assigning its flip now happen together, after the correct simulation is ready.

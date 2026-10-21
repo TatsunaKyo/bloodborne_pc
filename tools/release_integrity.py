@@ -23,6 +23,36 @@ RUNTIMES = ('bin/bbport_dlss.dll', 'bin/nvngx_dlss.dll', 'bin/xess/libxess.dll',
             'bin/streamline/sl.reflex.dll', 'bin/streamline/sl.pcl.dll',
             'bin/streamline/NvLowLatencyVk.dll', 'bin/streamline/nvngx_dlssg.dll')
 
+# These files execute or provide input at startup. Overlay every tracked file
+# from the release commit; retaining a previous ZIP's copy can change game logic.
+RUNTIME_SOURCE_DIRS = ('launcher', 'scripts', 'tools', 'patches')
+WINDOWS_ROOT_SOURCES = ('README-Windows.txt', 'bbport.menu.ini', 'Capture-NVIDIA-FG.cmd',
+                        'Compare-NVIDIA-Generated-Frames.cmd', 'Capture-Traversal.cmd')
+
+
+def runtime_source_paths(repo, commit):
+    """Package path -> tracked source path for the complete first-party runtime."""
+    raw = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', '-z', commit, '--',
+                                   *RUNTIME_SOURCE_DIRS, 'run.py', 'VERSION'], cwd=repo)
+    result = {p.decode(): p.decode() for p in raw.split(b'\0') if p}
+    tracked = set(subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', '-z', commit,
+                                         '--', 'packaging/windows'], cwd=repo).split(b'\0'))
+    for name in WINDOWS_ROOT_SOURCES:
+        source = 'packaging/windows/' + name
+        if source.encode() in tracked:
+            result[name] = source
+    return result
+
+
+def verify_runtime_sources(read, repo, commit):
+    """Compare actual shipped bytes, including patch data, with the pinned commit."""
+    hashes = {}
+    for name, source in runtime_source_paths(repo, commit).items():
+        expected = subprocess.check_output(['git', 'show', commit + ':' + source], cwd=repo)
+        require(read(name) == expected, 'Packaged runtime differs from source commit: ' + name)
+        hashes[name] = hashlib.sha256(expected).hexdigest()
+    return hashes
+
 
 def require(condition, message):
     if not condition:
@@ -208,6 +238,28 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
                 verify_pe(data, name)
         for name in DATA: read(name)
         for name in RUNTIMES: verify_pe(read(name), name)
+        native_lock = identity.get('native_fg_runtime')
+        if (tuple(map(int, base.split('.'))), revision) >= ((1, 6), 54):
+            require(isinstance(native_lock, dict) and
+                    {'default_sr_bridge', 'native_fg_bridge', 'native_fg_feature'}.issubset(native_lock),
+                    'Missing native FG bridge provenance')
+            for key, path in (('default_sr_bridge', 'bin/bbport_dlss.dll'),
+                              ('native_fg_bridge', 'bin/bbport_dlss_native.dll'),
+                              ('native_fg_feature', 'bin/nvngx_dlssg.dll')):
+                require(native_lock[key].get('file') == path, 'Incorrect native FG runtime path: ' + key)
+            require(native_lock['default_sr_bridge'].get('abi') == 1 and
+                    native_lock['native_fg_bridge'].get('abi') == 2,
+                    'Incorrect DLSS bridge ABI provenance')
+            require(native_lock['native_fg_feature'].get('same_bytes_as') == 'bin/streamline/nvngx_dlssg.dll',
+                    'Missing native FG feature search-path provenance')
+        if native_lock is not None:
+            for record in native_lock.values():
+                data = read(record['file'])
+                verify_pe(data, record['file'])
+                require(hashlib.sha256(data).hexdigest() == record['sha256'],
+                        'Native FG runtime checksum mismatch: ' + record['file'])
+                if 'same_bytes_as' in record:
+                    require(data == read(record['same_bytes_as']), 'Native FG feature paths disagree')
         # Preserve historical package-reading support, but never accept the R39
         # omission in a new release, even if its self-recorded hashes omit it.
         if (tuple(map(int, base.split('.'))), revision) >= ((1, 6), 40):
@@ -236,7 +288,20 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
                     safe_member(name)
                     require(hashlib.sha256(read(folder+'/'+name)).hexdigest() == record['sha256'],
                             'Vendor runtime checksum mismatch: '+name)
-        launcher = 'source/modified-files/launcher/bbport_launcher_win.py'
+        source_hashes = identity.get('runtime_source_files')
+        if (tuple(map(int, base.split('.'))), revision) >= ((1, 6), 54):
+            require(isinstance(source_hashes, dict) and
+                    {'run.py', 'patches/Bloodborne.xml', 'patches/redzone.json',
+                     'scripts/patches.py', 'launcher/bbport_launcher_win.py'}.issubset(source_hashes),
+                    'Missing first-party runtime source provenance')
+        if source_hashes is not None:
+            require(isinstance(source_hashes, dict), 'Invalid first-party runtime source provenance')
+            for name, expected in source_hashes.items():
+                safe_member(name)
+                require(hashlib.sha256(read(name)).hexdigest() == expected,
+                        'First-party runtime checksum mismatch: ' + name)
+        launcher = ('launcher/bbport_launcher_win.py' if root+'/launcher/bbport_launcher_win.py' in names
+                    else 'source/modified-files/launcher/bbport_launcher_win.py')
         require(source_version(read(launcher)) == version, 'Packaged launcher source and identity disagree')
         notes_path = f'docs/releases/windows-v{version}.md'
         notes = read(notes_path).decode('utf-8')
@@ -249,6 +314,9 @@ def validate(package, *, expected_version=None, repo=None, require_sidecar=False
             require(git('show', commit+':launcher/bbport_launcher_win.py') == read(launcher),
                     'Launcher source differs from its recorded commit')
             require(git('show', commit+':'+notes_path) == notes.encode(), 'Release notes differ from their recorded commit')
+            if (tuple(map(int, base.split('.'))), revision) >= ((1, 6), 54):
+                require(verify_runtime_sources(read, repo, commit) == source_hashes,
+                        'First-party runtime source manifest is incomplete')
             upstream = identity.get('upstream_base')
             require(isinstance(upstream, str) and re.fullmatch('[0-9a-f]{40}', upstream), 'Missing source patch base')
             import os

@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 [Current guides](../index.md) · [Current reports](../known-issues.md) · [Renderer guide](../quality-and-performance.md)
 
 # Hunter's Dream flashing: Revisions 13–19

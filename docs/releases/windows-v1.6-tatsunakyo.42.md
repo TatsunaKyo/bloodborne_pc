@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # TatsunaKyo Revision 42 — reusable motion shaders and FG queue ownership
 
 This preview corrects reproduced cache and resource-retirement defects. The owner's R41 log still contains a 48.19 ms real-frame interval and normal output-counter variation near 120 FPS. That cemetery report remains open until a target-game comparison confirms the result; the supplied session JSON/log are older R19 captures, not an R41 profiling trace.

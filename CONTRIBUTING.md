@@ -1,5 +1,7 @@
 # Contributing to The Crowned Workshop
 
+Current source tracks published R55 plus [maintenance](docs/maintenance.md). Keep upstream history/credits, shared settings and supported provider paths. Run the relevant targeted tests, Python/doc/badge gates and finished-package checks before distributing binaries. Player releases contain one complete ZIP and checksum. Dated notes retain their original evidence scope.
+
 I welcome fixes, hardware results and improvements that make the port easier to use. Please check the [roadmap](docs/tatsunakyo-next.md) and [current reports](docs/known-issues.md) first so we can build on what is already there.
 
 For a code change, work from the `windows` branch and keep the PR focused. Explain the behavior before and after the change, and include the tests you actually ran. Gameplay results, command-recording tests and compilation cover different things; name the environment so I know what was checked. The [test guide](docs/testing.md) has the portable suite and Windows build instructions.

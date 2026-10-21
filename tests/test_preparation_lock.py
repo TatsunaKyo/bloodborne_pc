@@ -65,6 +65,7 @@ std::shared_mutex programs_mutex;
 std::map<u64,std::unique_ptr<Program>> program_cache;
 u64 HashCombine(u64 h,size_t p){return h*10000+p;}
 using Result=std::tuple<Shader::Info*,int,std::optional<unsigned>,u64>;
+std::optional<unsigned> ToFetchShader(const std::optional<unsigned>& value) { return value; }
 Result Prepare(Selection& sel,const Parameters& params,unsigned& binding){
     int runtime_info=0,profile=0;unsigned hw_stage=0;
 @BRANCH@

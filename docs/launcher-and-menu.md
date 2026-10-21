@@ -1,10 +1,12 @@
 # Launcher and in-game settings
 
+R55 includes Supermedo 1.9.2 input/camera changes. **Controls** supports three binding slots, combinations and direct mouse look; prompts can follow the device or stay on a selected layout. **Effects → Field of view** defaults to 43° and needs restart. **Window → Mute in background** is separate from Pause. **Image → HUD position** adjusts ultrawide placement. **Other versions** remains available in the launcher.
+
 ## Installation
 
 Extract the full Windows package into a new folder and open **Bloodborne.exe**. Select your decrypted Bloodborne CUSA03173 1.09 folder under Game & files, then choose the resolution and graphics settings on Play. No game files are included.
 
-Saves and shader caches normally live in `user/` beside the launcher. You can select an existing saves folder; keep it and your mods/preferences when updating. **Play Bloodborne.exe** launches with saved settings. The optional Developer archive keeps **Start-Verified-Launcher.cmd** and the specialist capture scripts under `diagnostics/`; extract it beside the game folder or pass your installation folder as a script's first argument.
+Saves and shader caches normally live in `user/` beside the launcher. You can select an existing saves folder; keep it and your mods/preferences when updating. **Play Bloodborne.exe** launches with saved settings. The single ZIP includes **Start-Verified-Launcher.cmd**, **Capture-Traversal.cmd** and **Capture-NVIDIA-FG.cmd** beside the launcher. No Developer companion is required.
 
 ## The launcher
 
@@ -36,7 +38,7 @@ Press **Insert** or **L3+R3** to open the menu. I added English and retained Rus
 
 | Tab | Settings |
 |---|---|
-| Image | Upscaling, quality, DLSS model presets, output resolution, sharpening and object motion. |
+| Image | Upscaling, quality, DLSS model presets, ten output resolutions, ultrawide HUD position, sharpening and object motion. |
 | Frames | Real-frame cap, FG and latency controls. |
 | Window | Window mode and background behavior. |
 | Overlay | Overlay visibility, optional fields and the frametime graph. |
@@ -63,3 +65,6 @@ More detail: [Upscaling](upscaling.md) · [Frame Generation](frame-generation.md
 **Generate Support Report** is in Advanced → Diagnostics and Log. It reuses existing diagnostics, shows a sanitized file preview and exports a verified ZIP for manual sharing. [Contents and privacy](support-reports.md)
 
 **Open Save Manager** is in Game & files beside the saves-folder selection. It provides pre-launch backups, named snapshots, verified restore/rollback and retention for that selected location. Save operations require a closed game. [Backups and recovery](save-manager.md)
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

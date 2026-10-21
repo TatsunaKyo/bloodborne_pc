@@ -270,8 +270,12 @@ void StorageTest() {
   Check(
       db.Save(Storage::BlobType::ShaderMeta, "later", std::vector<u8>{4, 5, 6}),
       "enqueue after failure");
+  Check(db.Save(Storage::BlobType::PipelineBinary,"driver",std::vector<u8>{10,20,30}),"pipeline payload enqueue");
+  db.Flush();
+  db.Load(Storage::BlobType::PipelineBinary,"driver",data);Check(data==std::vector<u8>({10,20,30}),"pipeline payload flush");
   db.Close();
   db.Open();
+  db.Load(Storage::BlobType::PipelineBinary,"driver",data);Check(data==std::vector<u8>({10,20,30}),"persistent pipeline payload reopen");
   db.Load(Storage::BlobType::ShaderMeta, "later", data);
   Check(data == std::vector<u8>({4, 5, 6}) &&
             std::filesystem::exists(dir / "blocked.key" / "keep"),
@@ -291,13 +295,20 @@ void SetCurrentThreadName(const char *) { hold_worker.wait(true); }
 } // namespace Common
 int main(int argc, char **argv) {
   try {
-    Check(argc == 2, "expected isolated cache directory");
+    Check(argc == 2 || argc == 3, "expected isolated cache directory");
     root = std::filesystem::path(argv[1]) /
            std::filesystem::path(u8"cache – 猎人");
     std::filesystem::create_directories(root);
     Serdes();
     Blobs();
     ShaderTest();
+    if(argc==3) {
+      std::ifstream file(argv[2],std::ios::binary|std::ios::ate);auto length=file.tellg();file.seekg(0);
+      Check(length>0 && length%4==0,"legacy SPIR-V length");std::vector<u32> old(size_t(length)/4);file.read((char*)old.data(),length);
+      Vulkan::CompileSPV(old,vk::Device{},true);
+      Check(vk::last_code!=old,"actual driver received the broken R52 declaration");
+      std::cout<<"PASS R52 shader migration before actual CompileSPV driver boundary\n";
+    }
     StorageTest();
     std::cout << "PASS shader cache production regressions\n";
     return 0;

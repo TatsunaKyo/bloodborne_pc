@@ -3,7 +3,6 @@
 """Build an inspectable support archive from the port's existing diagnostics."""
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import ctypes
 import hashlib
 import ipaddress
 import json

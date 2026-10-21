@@ -69,6 +69,9 @@ BbFrameMetrics::RealFrameHistory real_frame_history;
 std::mutex imgui_mutex;
 bool initialized=true,l3_down=false,r3_down=false;
 constexpr int SDL_EVENT_WINDOW_FOCUS_GAINED=1,SDL_EVENT_WINDOW_FOCUS_LOST=2;
+constexpr int SDL_EVENT_QUIT=3;
+struct SDL_Event {int type;};
+int SDL_PushEvent(SDL_Event* event){assert(event->type==SDL_EVENT_QUIT);return 1;}
 int restart_calls=0;
 extern "C" void runtime_restart() { ++restart_calls; }
 ImRect language_rect, russian_rect, english_rect, window_rect, borderless_rect, windowed_rect, vsync_rect;
@@ -84,6 +87,7 @@ void TrackSetting(const char* key) {
 std::map<std::string,ImGuiWindow*> control_windows;
 std::map<std::string,ImGuiID> control_ids;
 std::map<std::string,ImRect> selectables;
+std::map<std::string,ImGuiWindow*> selectable_windows;
 ImGuiID language_id=0;
 bool saw_russian=false, saw_english=false;
 bool TrackedTab(const char* label) {
@@ -116,6 +120,7 @@ bool TrackedCombo(const char* label,const char* preview) {
 bool TrackedSelectable(const char* label,bool selected) {
     bool result=ImGui::Selectable(label,selected);
     selectables[label]=GImGui->LastItemData.Rect;
+    selectable_windows[label]=ImGui::GetCurrentWindow();
     if (std::strcmp(label,"Русский")==0) { russian_rect=GImGui->LastItemData.Rect; saw_russian=true; }
     if (std::strcmp(label,"English")==0) { english_rect=GImGui->LastItemData.Rect; saw_english=true; }
     if (std::strstr(label,"###window_borderless")) borderless_rect=GImGui->LastItemData.Rect;
@@ -303,6 +308,36 @@ void TestFrameGeneration() {
             assert(s.frame_generation==BbSettings::FrameGenerationOff);
         }
     }
+}
+void TestOutputResolutions() {
+    auto& s=BbSettings::Get();
+    for (int i=1;i<=BbSettings::OutputCount;++i) {
+        const int selected=i%BbSettings::OutputCount;
+        Reveal("output_res");selectables.clear();
+        Click(controls.at("output_res").GetCenter());Frame();Frame();
+        assert(selectables.size()==BbSettings::OutputCount);
+        char label[32];
+        std::snprintf(label,sizeof(label),"%d x %d",BbSettings::OutputWidths[selected],
+                      BbSettings::OutputHeights[selected]);
+        assert(selectables.contains(label));
+        auto* popup=selectable_windows.at(label);
+        ImGui::SetScrollFromPosY(popup,selectables.at(label).GetCenter().y-popup->Pos.y,0.5f);
+        Frame();Frame();Click(selectables.at(label).GetCenter());
+        assert(s.output_res==selected && dirty);
+        SetOpen(false);s.output_res=(selected+1)%BbSettings::OutputCount;BbSettings::Load();
+        assert(s.output_res==selected);SetOpen(true);
+    }
+    // Any changed ultrawide output needs its startup camera/HUD patch, including
+    // transitions between two ultrawide resolutions with different aspects.
+    s.startup_hud_position=s.hud_position;
+    for (int startup=0;startup<BbSettings::OutputCount;++startup)
+        for (int output=0;output<BbSettings::OutputCount;++output) {
+            s.startup_output_res=startup;s.output_res=output;
+            assert(BbSettings::ResolutionNeedsRestart()==(startup!=output &&
+                (BbSettings::Ultrawide(startup) || BbSettings::Ultrawide(output))));
+        }
+    s.output_res=s.startup_output_res=BbSettings::OutputDefault;
+    BbSettings::Save();
 }
 void TestXessQuality() {
     auto& s=BbSettings::Get();
@@ -869,8 +904,20 @@ int main(int argc,char** argv) {
         s.menu_language=language; s.upscaler=BbSettings::UpscalerFsr3;
         s.fsr4_supported=true; s.fsr411_supported=true;
         TestFrameGeneration();
+        s.upscaler=BbSettings::UpscalerDlss;s.dlss_supported=true;
+        for(int mode:{BbSettings::FrameGenerationNativeFsr,BbSettings::FrameGenerationNativeDlss}) {
+            Reveal("frame_generation");selectables.clear();Click(controls.at("frame_generation").GetCenter());Frame();Frame();
+            const char* label=mode==BbSettings::FrameGenerationNativeFsr ? "FSR FG - Supermedo (SDR)" : "DLSS FG - Supermedo (SDR, restart)";
+            assert(selectables.contains(label));Click(selectables.at(label).GetCenter());assert(s.frame_generation==mode);
+            BbSettings::Save();s.frame_generation=BbSettings::FrameGenerationOff;BbSettings::Load();assert(s.frame_generation==mode);
+            Reveal("frame_gen_multiplier");assert(controls.contains("frame_gen_fit_display"));
+            assert(s.startup_native_dlss==(mode==BbSettings::FrameGenerationNativeDlss));
+        }
+        s.frame_generation=BbSettings::FrameGenerationOff;s.startup_native_dlss=false;BbSettings::Save();
+
         TestNvidiaControls();
         TestRealFpsAndAntiLag();
+        TestOutputResolutions();
         TestXessQuality();
         s.upscaler=BbSettings::UpscalerFsr3;
         TestBoolean("sharpen",s.sharpen);
@@ -937,7 +984,7 @@ int main(int argc,char** argv) {
         out<<"}\n";
     }
     ImGui::DestroyContext();
-    std::puts("PASS: actual ImGui real-FPS mode/drag/exact entry/save, fixed-timing restriction and supported/unsupported Anti-Lag controls; all seven XeSS quality modes independently of DLSS/FSR; conditional quality controls; basic/compact DLSS OSD; all seven active DLSS model hints and pending changes stay on one row with the original window height; shared settings survive saves; both languages/all upscalers tested; no restart from OSD choices.");
+    std::puts("PASS: all ten output choices clicked/reloaded and 100 output-transition restart cases per language; actual ImGui real-FPS mode/drag/exact entry/save, fixed-timing restriction and supported/unsupported Anti-Lag controls; all seven XeSS quality modes independently of DLSS/FSR; conditional quality controls; basic/compact DLSS OSD; all seven active DLSS model hints and pending changes stay on one row with the original window height; shared settings survive saves; both languages/all upscalers tested; no restart from OSD choices.");
 }
 '''
 # Check all constant widget label pairs against the actual Dear ImGui hash implementation.

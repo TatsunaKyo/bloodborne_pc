@@ -1,5 +1,7 @@
 # Save Manager
 
+R55 keeps Save Manager separate from game input and online account controls. Restore/snapshot tools operate on the selected saves folder while the game is closed. Preserve existing saves, settings and mods across release updates; input/camera/FG changes are not a reason to discard them.
+
 I added Save Manager because I want progress protected before a new session or an experimental change. It copies the original save tree without editing the game's save contents, and verifies each snapshot before offering it for restoration.
 
 Open **Game & files → Open Save Manager**. The dialog shows the selected saves folder and has separate **Snapshots** and **Backup options** tabs. It uses the same custom saves location as the launcher; reopening the manager after changing that location selects the new folder.
@@ -33,3 +35,6 @@ If a journal or required rollback is damaged, the manager stops and leaves the a
 This first version includes automatic backups, named snapshots, verified restoration/rollback, retention and custom save locations. Named save profiles and a genuine coordinated live-save boundary are later work. The next PC priorities are native mouse/full remapping and measured real/generated frame pacing comparisons against Revision 21.
 
 [Launcher settings](launcher-and-menu.md) · [Support Report](support-reports.md) · [Development roadmap](tatsunakyo-next.md)
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Revision 35 — smoother NVIDIA FG delivery
 
 Revision 34 finally stopped the flashing coffins in my cemetery test on Windows 11 / RTX 5070 Ti. Movement with NVIDIA FG still felt choppy, even at 60 real + 60 generated FPS, so I have focused this revision on frame delivery. The motion-history correction from R34 stays intact.

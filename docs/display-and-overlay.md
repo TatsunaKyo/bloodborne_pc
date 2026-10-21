@@ -1,5 +1,7 @@
 # Display, FPS and the performance overlay
 
+R55 adds independent **Mute in background**, four FG provider choices, and ultrawide camera/HUD startup settings. The optional **NVIDIA FG preset** field reports `C` only with evaluated driver evidence; `C?` means a request without confirmation and `C!` means an override error. Actual render/output dimensions and real-frame intervals remain separate from SDK output-FPS statistics. Current source fixes the ten-resolution dropdown and ultrawide restart warning; [those changes need a later binary](maintenance.md).
+
 These settings are shared between the launcher and the Insert / L3+R3 menu. **Customize overlay…** on Play opens **Overlay** at its controls; the main overlay checkbox stays on Play.
 
 ## FPS limits
@@ -57,3 +59,6 @@ Pause also stops the audio device and parks new audio output. I keep its queued 
 ### NVIDIA Frame Generation model
 
 Enable **Show NVIDIA FG preset in overlay** in the launcher's Overlay page or the in-game Overlay tab. The upscaler preset and FG model are independent. `FG model:C` means NVIDIA confirms an evaluated C override. `C?` shows the driver profile preference awaiting execution confirmation, `C!` an override error, and `?` an unknown model. The Frames tab includes the exact driver error and preference. FG off/paused does not claim an active model. The field stays on the existing OSD row and is saved separately.
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

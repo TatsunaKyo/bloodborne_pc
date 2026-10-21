@@ -10,6 +10,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compiler',default='g++')
     parser.add_argument('--binary',type=Path)
+    parser.add_argument('--legacy-spirv',type=Path)
     args=parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='crowned-cache-') as temp:
         temp=Path(temp);binary=args.binary.resolve() if args.binary else temp/'cache-test'
@@ -19,5 +20,5 @@ def main():
                             '-Itests/cache_stubs','-Igpu/shadps4','-Igpu/third_party/miniz','-I'+str(temp),
                             'tests/test_shader_cache.cpp','gpu/shadps4/video_core/cache_storage.cpp',
                             'gpu/shadps4/video_core/renderer_vulkan/vk_shader_util.cpp','-o',str(binary)],cwd=ROOT,check=True)
-        subprocess.run([str(binary),str(temp)],cwd=ROOT,check=True,timeout=60)
+        subprocess.run([str(binary),str(temp),*([str(args.legacy_spirv)] if args.legacy_spirv else [])],cwd=ROOT,check=True,timeout=60)
 if __name__=='__main__':main()

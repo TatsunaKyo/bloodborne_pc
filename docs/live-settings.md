@@ -1,5 +1,7 @@
 # Change settings while playing
 
+**R55 restart cases:** selecting/leaving native Supermedo DLSS FG, NVIDIA FG model or mod changes, FOV, ultrawide HUD/camera patches, and startup game patches need restart. Changing to, from or between ultrawide outputs also needs restart. Live 16:9 resizing is available only when Live resolution changes was enabled before launch. Background mute and prompt selection are runtime choices. [Provider matrix](frame-generation.md#r55-provider-choices)
+
 I wanted the added controls to be useful while the game is running. Open **Insert** or **L3+R3**, make the change and continue playing. The launcher and menu use the same saved preferences, so you can return to the launcher without losing your choices.
 
 | Setting | Live behavior |
@@ -26,3 +28,6 @@ Settings that affect generation or reconstruction may briefly rebuild resources 
 Temporal upscalers use their own anti-aliasing. From R42 the game's original AA is disabled automatically for a temporal-upscaler launch; its saved preference is retained for an upscaler-off launch. Switching between Off and a temporal upscaler requires a restart to apply that startup patch. Switching temporal providers or quality settings keeps its existing live behavior.
 
 [Settings tour](launcher-and-menu.md) · [Upscaling details](upscaling.md) · [Both FPS caps](display-and-overlay.md#fps-limits)
+
+<!-- workshop-current-navigation -->
+[All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)

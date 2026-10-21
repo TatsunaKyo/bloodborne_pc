@@ -377,7 +377,7 @@ void* VulkanLoader(void* native) {
     const auto directory=folder.wstring();const wchar_t* paths[]={directory.c_str()};
     sl::Preferences pref;
     pref.pathsToPlugins=paths;pref.numPathsToPlugins=1;
-    pref.featuresToLoad=features;pref.numFeaturesToLoad=3;
+    pref.featuresToLoad=features+(BbSettings::Get().startup_native_dlss ? 1 : 0);pref.numFeaturesToLoad=BbSettings::Get().startup_native_dlss ? 2 : 3;
     pref.flags=sl::PreferenceFlags::eUseManualHooking|sl::PreferenceFlags::eDisableCLStateTracking|
                sl::PreferenceFlags::eUseFrameBasedResourceTagging|
                sl::PreferenceFlags::eAllowOTA|sl::PreferenceFlags::eLoadDownloadedPlugins;

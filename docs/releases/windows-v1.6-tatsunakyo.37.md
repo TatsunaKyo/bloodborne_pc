@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 # Revision 37 — parallel asset reads and NVIDIA FG presets
 
 The hitch at the cemetery exit repeats at the same boundary. I am working on the area-streaming path: R36's cache changes did not establish the cause of that traversal hitch.

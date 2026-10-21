@@ -1,0 +1,26 @@
+{
+  "default_sr_bridge": {
+    "file": "bin/bbport_dlss.dll",
+    "abi": 1,
+    "sha256": "077c8cd70caa1aa0fbcf628daa376926c303a8002953eac851a52a6e20a2d2ee",
+    "source_commit": "872a14f4d990fa7dcb0d606484a83faa619cc75f",
+    "role": "Retained SR bridge for the original Streamline/Encore path."
+  },
+  "native_fg_bridge": {
+    "file": "bin/bbport_dlss_native.dll",
+    "abi": 2,
+    "bytes": 257024,
+    "sha256": "5594018d55ca51d31fed24881c53880010effe2cb644a43bcaf05cd22a33ab78",
+    "source_commit": "652f9a494c47cc8c1ab16f28b456372eaa8103f8",
+    "original_file": "bbport-windows/bin/bbport_dlss.dll",
+    "release_url": "https://github.com/Supermedo/bloodborne_pc/releases/download/windows-v1.9/Bloodborne-Windows.zip",
+    "release_sha256": "d2df6aa37530f0d21f577c5cc05bd3366b1f95e8f402b96cab89bbd8c8a219e5",
+    "role": "Selected at startup only by native_dlss; Streamline DLSSG is omitted from its feature list."
+  },
+  "native_fg_feature": {
+    "file": "bin/nvngx_dlssg.dll",
+    "same_bytes_as": "bin/streamline/nvngx_dlssg.dll",
+    "sha256": "cadee1aa6db3907babdc3285da2aebc4553d92b89c38ba3eae8abd8bba1bea72",
+    "role": "Original signed NVIDIA DLSSG 310.9.16.0; no mod proxy."
+  }
+}

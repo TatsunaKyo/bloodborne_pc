@@ -1,3 +1,5 @@
+> Historical/upstream record: statements and test results below describe their original revision or environment. [Current guides](../index.md) · [Current reports](../known-issues.md) · [Published releases](../releases/index.md)
+
 Revision 31 still duplicates and flashes assets with NVIDIA FG enabled on my Windows 11 / RTX 5070 Ti PC. The fixes to input ownership and synchronization remain included, but they have not resolved this report. I am keeping the normal renderer unchanged while I collect the inputs at the point where NVIDIA actually receives them.
 
 The previous flashing-assets capture used the serial renderer and saved scene images before the FG handoff. That changes the workload and misses the final tagged inputs, so I have added a focused capture to the existing diagnostic sessions. In Launcher settings, use **Capture NVIDIA FG inputs**, or run `Capture-NVIDIA-FG.cmd` from the game package. Keep NVIDIA FG enabled, load the affected scene and press **F8** while the assets flash. Close the game a few seconds later. `NVIDIA-FG-diagnostic.zip` is saved under the saves folder's `diagnostics` directory, in that run's folder.

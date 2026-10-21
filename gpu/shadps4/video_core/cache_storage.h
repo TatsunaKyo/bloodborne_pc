@@ -20,6 +20,7 @@ enum class BlobType : u32 {
   ShaderBinary,
   PipelineKey,
   ShaderProfile,
+  PipelineBinary,
 };
 
 class DataBase {
@@ -32,6 +33,7 @@ public:
   void Close();
   [[nodiscard]] bool IsOpened() const { return opened; }
   void FinishPreload();
+  void Flush();
   /// bbport: removes every cached blob (an incompatible cache is rebuilt, not
   /// ignored).
   void Clear();
