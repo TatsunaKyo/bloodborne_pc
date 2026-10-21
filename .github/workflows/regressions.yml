@@ -27,7 +27,9 @@ jobs:
       - name: Check first-party Python and documentation
         run: |
           python -m pyflakes run.py launcher scripts tools tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tools/check_docs.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tools/update_readme_revision.py --check
       - name: Compile the native saves lease fixture
         shell: pwsh
