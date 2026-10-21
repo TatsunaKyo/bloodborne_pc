@@ -30,16 +30,6 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 > [!CAUTION]
 > NO game files are included. You NEED your own decrypted **Bloodborne CUSA03173, version 1.09** dump, including `eboot.bin` and its original data. Most game patches and the added cheats depend on 1.09.
 
-## Latest published release: Revision 55
-
-[Download R55](https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/windows-v1.6-tatsunakyo.55-preview) · [Complete changelog since R40](docs/releases/windows-v1.6-tatsunakyo.55.md) · [All current guides](docs/index.md)
-
-Published **21 October 2026 (CEST)**. R55 integrates **Supermedo Windows 1.9.2**, the renderer work reviewed from other forks, expanded input/camera controls and our existing graphics, FG, latency, save and overlay features. R40 was the previous published revision; R41–R54 are development checkpoints covered by the R55 notes.
-
-Download just **[Bloodborne-Windows-v1.6-TatsunaKyo-Revision-55.zip](https://github.com/TatsunaKyo/bloodborne_pc/releases/download/windows-v1.6-tatsunakyo.55-preview/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-55.zip)** and its **[.zip.sha256](https://github.com/TatsunaKyo/bloodborne_pc/releases/download/windows-v1.6-tatsunakyo.55-preview/Bloodborne-Windows-v1.6-TatsunaKyo-Revision-55.zip.sha256)**. Runtime, licenses, required source and compact recovery are together in that ZIP.
-
-**Still open:** the cemetery traversal hitch, reported 119–121 output variation, character halos/ghosting and brief foreground geometry. Component tests are not affected-scene gameplay verification. [Current reports](docs/known-issues.md)
-
 ## Getting started
 
 1. Download the full Windows ZIP from Releases and extract it into a new folder.
