@@ -34,8 +34,13 @@ print(f'Checked {len(pairs)} bilingual strings and their printf formats; {len(st
 
 text_and_open=source[source.index('const char* Text('):source.index('ImGuiKey KeyFromSdl')]
 menu=source[source.index('// Marks the settings dirty'):source.index('// The game\'s text dialog', source.index('// Marks the settings dirty'))]
-fps=source[source.index('void FpsCounter()'):source.index('} // namespace\n\nvoid SavePendingSettings')]
-present=source[source.index('void RecordPresent('):source.index('void Render(vk::CommandBuffer',source.index('void RecordPresent('))]
+fps=source[source.index('void FpsCounter()'):source.index('void SystemCounter()')]
+def production_function(signature):
+    begin=source.index(signature);end=source.index('{',begin)+1;depth=1
+    while depth:
+        depth+=(source[end]=='{')-(source[end]=='}');end+=1
+    return source[begin:end]
+present=production_function('void RecordPresent(')
 focus=source[source.index('    case SDL_EVENT_WINDOW_FOCUS_GAINED:'):source.index('    case SDL_EVENT_KEY_DOWN:',source.index('bool HandleEvent('))]
 # Instrument only the scratch copy to record the real controls' positions and IDs.
 menu=menu.replace('ImGui::BeginCombo(', 'TrackedCombo(').replace('ImGui::Selectable(', 'TrackedSelectable(').replace('ImGui::Checkbox(', 'TrackedCheckbox(').replace('ImGui::SliderFloat(', 'TrackedSlider(').replace('ImGui::SliderInt(', 'TrackedSliderInt(')
@@ -51,10 +56,12 @@ prefix=r'''#include <algorithm>
 #include <fstream>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <map>
 #include <mutex>
 #include "bbport_settings.h"
+#include "bbport_fsr41_ui.h"
 #include "bbport_hitch.h"
 #include "bbport_nvidia_preset.h"
 #include "bbport_frametime.h"
@@ -64,7 +71,7 @@ prefix=r'''#include <algorithm>
 
 std::atomic<bool> menu_open{true};
 bool dirty=false;
-float base_scale=1.0f, frame_ms_avg=16.666f;
+float base_scale=1.0f, frame_ms_avg=16.666f, counter_bottom=0.0f;
 BbFrameMetrics::RealFrameHistory real_frame_history;
 std::mutex imgui_mutex;
 bool initialized=true,l3_down=false,r3_down=false;
@@ -136,7 +143,7 @@ bool TrackedCheckbox(const char* label,bool* value) {
     const char* key=std::strstr(label,"###");
     if (key) { controls[key+3]=GImGui->LastItemData.Rect; control_windows[key+3]=GImGui->CurrentWindow; control_ids[key+3]=GImGui->LastItemData.ID; TrackSetting(key+3); }
     if (std::strstr(label,"###borderless_vsync")) vsync_rect=GImGui->LastItemData.Rect;
-    if (std::strstr(label,"###show_fps")) osd_rect=GImGui->LastItemData.Rect;
+    if (std::string_view(label).ends_with("###show_fps")) osd_rect=GImGui->LastItemData.Rect;
     if (std::strstr(label,"###show_dlss_preset")) osd_preset_rect=GImGui->LastItemData.Rect;
     if (std::strstr(label,"###show_resolution")) resolution_rect=GImGui->LastItemData.Rect;
     return result;

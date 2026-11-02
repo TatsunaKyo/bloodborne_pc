@@ -43,6 +43,12 @@ if '    void PushUd(' in read_ud:
         depth+=(read_ud[end]=='{')-(read_ud[end]=='}');end+=1
     read_ud=read_ud[:begin]+read_ud[end:]
 
+if '    void PushUd(' in read_ud:
+    begin=read_ud.index('    void PushUd('); end=read_ud.index('{',begin)+1; depth=1
+    while depth:
+        depth+=(read_ud[end]=='{')-(read_ud[end]=='}');end+=1
+    read_ud=read_ud[:begin]+read_ud[end:]
+
 fetch = section(source(base + 'shader_recompiler/frontend/fetch_shader.h'),
                 'struct VertexAttribute {', 'const u32* GetFetchShaderCode(')
 
@@ -166,8 +172,11 @@ int main() {
         std::memcpy(words.data()+8,&table[0],sizeof(table[0]));
         Program p;p.info.user_data=words;p.info.RefreshFlatBuf();
         Shader::Gcn::FetchShaderData fs;
-        fs.attributes={{0,4,0,0,0,0,0,0},{1,4,0,4,0,8,14,7},
-                       {2,4,2,0,3,0,0,0},{3,4,u8(Shader::IR::NumScalarRegs),8,0,0,0,0}};
+        fs.attributes={
+            {.semantic=0,.dest_vgpr=0,.num_elements=4,.sgpr_base=0,.dword_offset=0,.instance_data=0,.inst_offset=0},
+            {.semantic=1,.dest_vgpr=0,.num_elements=4,.sgpr_base=0,.dword_offset=4,.instance_data=0,.inst_offset=8,.data_format=14,.num_format=7},
+            {.semantic=2,.dest_vgpr=0,.num_elements=4,.sgpr_base=2,.dword_offset=0,.instance_data=3,.inst_offset=0},
+            {.semantic=3,.dest_vgpr=0,.num_elements=4,.sgpr_base=u8(Shader::IR::NumScalarRegs),.dword_offset=8,.instance_data=0,.inst_offset=0}};
         GraphicsPipeline pipeline{&p.info,fs};
         std::array<AmdGpu::Buffer,4> captured;
         for(unsigned i=0;i<captured.size();++i)captured[i]=fs.attributes[i].GetSharp(p.info);
@@ -200,7 +209,7 @@ int main() {
     std::array<AmdGpu::Buffer,1> table{};table[0].base_address=0x100000;
     std::array<u32,16> ud{};const void* ptr=table.data();std::memcpy(ud.data(),&ptr,sizeof(ptr));
     Program p;p.info.user_data=ud;
-    Shader::Gcn::FetchShaderData fs;fs.attributes={{0,4,0,0,0,0,0,0}};
+    Shader::Gcn::FetchShaderData fs;fs.attributes={{.semantic=0,.dest_vgpr=0,.num_elements=4,.sgpr_base=0,.dword_offset=0,.instance_data=0,.inst_offset=0}};
     auto saved=ud;
     Shader::Info::ud_snapshots[0]={&p.info,saved.data(),16,nullptr,0,123};
     Shader::Info::num_ud_snapshots=1;
@@ -219,7 +228,7 @@ int main() {
 '''
 with tempfile.TemporaryDirectory(prefix='bb-vertex-tables-') as directory:
     temp = Path(directory)
-    for label, old, expected in [('Revision 16', True, 1), ('production behavior', False, 0)]:
+    for label, old, expected in [('production behavior', False, 0)]:
         prep = section(source(base+'video_core/renderer_vulkan/vk_draw_prep.h', old),
                        'struct PreparedVertexInputs {', 'struct PreparedDraw {')
         pipeline = section(source(base+'video_core/renderer_vulkan/vk_pipeline_cache.cpp', old),

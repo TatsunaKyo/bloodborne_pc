@@ -1741,7 +1741,7 @@ void FpsCounter() {
 
 void SystemCounter() {
     const auto& options = BbSettings::Get();
-    if (!(options.show_frame_times || options.show_render_latency || options.show_vram || options.show_gpu ||
+    if (!options.show_fps || !(options.show_frame_times || options.show_render_latency || options.show_vram || options.show_gpu ||
           options.show_cpu || options.show_ram || options.show_fps_graph)) return;
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const float pad = 12.0f * base_scale;
@@ -2128,9 +2128,7 @@ bool HandleEvent(const SDL_Event& event) {
 
 // Any of the counter's readouts asked for (the graph lives in the same window).
 bool ReadoutsOn() {
-    const auto& s = BbSettings::Get();
-    return s.show_fps || s.show_frame_times || s.show_render_latency || s.show_vram || s.show_gpu ||
-           s.show_cpu || s.show_ram || s.show_fps_graph;
+    return BbSettings::Get().show_fps;
 }
 
 bool Visible() {

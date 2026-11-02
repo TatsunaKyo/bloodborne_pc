@@ -599,7 +599,17 @@ const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& p
         }
     }
     const auto it = graphics_pipelines.find(prepared.key);
-    return it != graphics_pipelines.end() ? Usable(it->second.get()) : nullptr;
+    if (it == graphics_pipelines.end()) return nullptr;
+    const auto* pipeline = Usable(it->second.get());
+    if (!pipeline) return nullptr;
+    const auto& fetch = pipeline->GetFetchShader();
+    if (fetch && !fetch->attributes.empty() &&
+        !prepared.vertex.Matches(pipeline->GetStage(Shader::SwStage::Vertex), *fetch)) {
+        // User-data pointers can stay unchanged while a vertex table is reused.
+        // Re-select formats/swizzles as well as bindings for that new descriptor.
+        return nullptr;
+    }
+    return pipeline;
 }
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectParams params,

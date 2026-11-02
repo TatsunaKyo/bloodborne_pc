@@ -1844,7 +1844,8 @@ void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
     const auto& fetch = pipeline->GetFetchShader();
     const PreparedVertexInputs* ready =
         prepared && prepared->vertex.valid && instance.IsVertexInputDynamicState() && fetch &&
-                fetch->attributes.size() == prepared->vertex.count && !FrameCapture::Active() &&
+                prepared->vertex.Matches(pipeline->GetStage(Shader::SwStage::Vertex), *fetch) &&
+                !FrameCapture::Active() &&
                 !BbToggle::Disabled(BbToggle::PreparedResources)
             ? &prepared->vertex
             : nullptr;

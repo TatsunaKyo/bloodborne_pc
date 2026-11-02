@@ -84,6 +84,7 @@ def main():
     revision=version.rsplit('.',1)[1]
     run([sys.executable,'tests/test_overlay_controls.py','--compiler','g++',
          '--capture-dir',f'out/verification/menu{revision}'])
+    run([sys.executable,'tests/test_system_overlay.py'])
     if args.gui:
         for file in ('test_launcher_window_settings.py','test_launcher_startup.py','test_launcher_geometry.py','test_launcher_fg_diagnostic_ui.py','test_launcher_xess.py','test_launcher_fg_presets_ui.py','test_launcher_trophies_ui.py','test_support_report_ui.py','test_save_manager_ui.py'):
             run([sys.executable,'tests/'+file])
