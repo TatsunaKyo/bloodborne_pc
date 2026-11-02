@@ -1,0 +1,16 @@
+{
+  "name": "Hunter's view",
+  "description": "From your last save: the camera turns once around the hunter and back (24 s). Quick and the same every time; for the frame rate and for comparing settings.",
+  "kinds": ["performance", "compare", "stability"],
+  "save": "own",
+  "steps": [
+    {"do": "title"},
+    {"do": "wait", "seconds": 6},
+    {"do": "capture", "name": "view"},
+    {"do": "measure", "name": "camera turn", "route": "pan:24"}
+  ],
+  "loop": [
+    {"do": "measure", "name": "camera turn", "route": "pan:24"},
+    {"do": "wait", "seconds": 2}
+  ]
+}

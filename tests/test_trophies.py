@@ -29,6 +29,67 @@ class TrophyTests(unittest.TestCase):
         self.assertEqual(trophies.read_log(self.user / 'trophies.log'), {14: 100, 21: 300})
         self.assertEqual(trophies.read_log(self.user / 'missing.log'), {})
 
+    def test_merge_adds_the_other_folders_unlocks_and_removes_none(self):
+        other = self.user / 'other'
+        other.mkdir()
+        (other / 'trophies.log').write_text('14 100\n21 300\n15 400\n', encoding='utf-8')
+        (self.user / 'trophies.log').write_text('21 200\n16 500\n', encoding='utf-8')
+        self.assertEqual(trophies.merge_log(other / 'trophies.log', self.user / 'trophies.log'), 2)  # 14 and 15
+        self.assertEqual(trophies.read_log(self.user / 'trophies.log'), {14: 100, 15: 400, 16: 500, 21: 200})
+        self.assertEqual(trophies.merge_log(other / 'trophies.log', self.user / 'trophies.log'), 0)  # once is enough
+        self.assertEqual(trophies.merge_log(self.user / 'missing.log', self.user / 'trophies.log'), 0)
+        self.assertEqual(self.tracker.poll(), [14, 21, 15, 16])  # the Achievements page shows them
+
+    def test_a_shadps4_trophy_list(self):
+        """shadPS4 marks an unlock in TROP.XML: unlockstate and sceRtcGetCurrentTick's microseconds since the year 1."""
+        when = 1790000000
+        xml = self.user / 'TROP.XML'
+        xml.write_text('<?xml version="1.0"?><trophyconf><title-name>Bloodborne</title-name>'
+                       f'<trophy id="014" hidden="no" ttype="B" pid="000" unlockstate="true" '
+                       f'timestamp="{(when + trophies.RTC_UNIX) * 1_000_000}"><name>Father Gascoigne</name></trophy>'
+                       '<trophy id="015" ttype="B" unlockstate="false"></trophy>'
+                       '<trophy id="021" ttype="B" unlockstate="true"></trophy>'
+                       '<trophy id="022" ttype="B" unlockstate="true" timestamp="1790000123456"></trophy>'
+                       '<trophy id="99" unlockstate="true" timestamp="0"></trophy></trophyconf>', encoding='utf-8')
+        os.utime(xml, (1780000000, 1780000000))
+        self.assertEqual(trophies.read_unlocks(xml), {14: when, 21: 1780000000, 22: 1790000123})  # no time: the file's
+        other = self.user / 'TROP_other.XML'
+        other.write_text('<title-name>Another game</title-name><trophy id="1" unlockstate="true"/>', encoding='utf-8')
+        self.assertEqual(trophies.read_unlocks(other), {})
+        self.assertEqual(trophies.read_unlocks(self.user / 'missing.xml'), {})
+        # An installation's Xml folder: every language's list, the earliest time of each trophy.
+        folder = self.user / 'Xml'
+        folder.mkdir()
+        xml.replace(folder / 'TROP.XML')
+        (folder / 'TROP_08.XML').write_text('<title-name>Bloodborne</title-name><trophy id="014" unlockstate="true" '
+                                            'timestamp="1789000000"/><trophy id="016" unlockstate="true" '
+                                            'timestamp="1789000000"/>', encoding='utf-8')
+        (folder / 'TROPCONF.XML').write_text('<title-name>Bloodborne</title-name><trophy id="017"/>', encoding='utf-8')
+        self.assertEqual(trophies.read_unlocks(folder), {14: 1789000000, 16: 1789000000, 21: 1780000000,
+                                                         22: 1790000123})
+
+    def test_another_installations_unlocks_are_added_and_none_removed(self):
+        """R86: a player with a new Windows merged two trophies.log by hand."""
+        target = self.user / 'trophies.log'
+        target.write_bytes(b'21 200\n16 500')  # a last line without its end
+        found = {14: 100, 21: 150, 16: 600, 99: 5}  # 99 is no trophy of the game
+        self.assertEqual(trophies.missing(found, target), {14: 100, 21: 150, 99: 5})
+        added, copy = trophies.add_unlocks(found, target)
+        self.assertEqual(added, 1)  # 14; 21 only gets its earlier time
+        self.assertEqual(copy.read_bytes(), b'21 200\n16 500')
+        self.assertEqual(copy.parent, self.user)
+        self.assertEqual(trophies.read_log(target), {14: 100, 16: 500, 21: 150})
+        self.assertTrue(target.read_text(encoding='utf-8').startswith('21 200\n16 500\n'))  # appended only
+        self.assertEqual(trophies.add_unlocks(found, target), (0, None))  # once is enough: no second copy
+        self.assertEqual(len(list(self.user.glob('trophies.log.*.bak'))), 1)
+        fresh = self.user / 'new' / 'trophies.log'
+        with self.assertRaises(OSError):  # a saves folder that is not there is never made here
+            trophies.add_unlocks({14: 100}, fresh)
+        self.assertFalse(fresh.parent.exists())
+        fresh.parent.mkdir()
+        self.assertEqual(trophies.add_unlocks({14: 100}, fresh), (1, None))  # nothing to copy yet
+        self.assertEqual(trophies.read_log(fresh), {14: 100})
+
     def test_observe_records_once(self):
         self.assertEqual(self.tracker.observe('Runtime: trophy 14 unlocked\n'), [14])
         self.assertEqual(self.tracker.observe('Runtime: trophy 14 unlocked\n'), [])

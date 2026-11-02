@@ -429,6 +429,18 @@ static int mapped(Segment *segments, uint64_t count, uint64_t address, uint64_t 
             address - segments[i].address <= segments[i].size - bytes) return 1;
     return 0;
 }
+/* Patches may also write past an executable segment's end up to its 4 KiB page boundary: those
+ * bytes are mapped with the segment on every host (and PS4) and unused by the game, so they hold
+ * patch code that does not fit in place (quit_menu.py). */
+static int patchable(Segment *segments, uint64_t count, uint64_t address, uint64_t bytes) {
+    if (mapped(segments, count, address, bytes)) return 1;
+    for (uint64_t i = 0; i < count; ++i) {
+        const uint64_t end = segments[i].address + segments[i].size, tail = (end + 4095) & ~(uint64_t)4095;
+        if ((segments[i].flags & 1) && address >= end && bytes <= tail - end && address - end <= tail - end - bytes)
+            return 1;
+    }
+    return 0;
+}
 /* BBPATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
@@ -440,7 +452,7 @@ static void apply_patches(const char *path, Segment *segments, uint64_t ns, cons
     unsigned char data[4096];
     for (uint64_t i=0;i<count;++i) {
         uint64_t offset=read64(f), length=read64(f);
-        if (!length || length>sizeof(data) || !mapped(segments,ns,offset,length) || fread(data,1,length,f)!=length)
+        if (!length || length>sizeof(data) || !patchable(segments,ns,offset,length) || fread(data,1,length,f)!=length)
             fail("bad patch entry");
         uint64_t slots[sizeof(data)/8]; size_t nslots=0;
         for (uint64_t r=0;r<nr;++r) {
@@ -448,7 +460,7 @@ static void apply_patches(const char *path, Segment *segments, uint64_t ns, cons
             uint64_t target=relocs[r].target, value;
             if (relocs[r].kind || target<offset || target+8>offset+length) fail("patch overlaps a relocation");
             memcpy(&value,data+(target-offset),8);
-            if (value<base || !mapped(segments,ns,value-base,1)) fail("patch writes a pointer outside the image");
+            if (value<base || !patchable(segments,ns,value-base,1)) fail("patch writes a pointer outside the image");
             slots[nslots++]=target;
         }
         memcpy(image+offset,data,length);
@@ -476,12 +488,36 @@ void runtime_restart(void) {
     puts("Runtime: restarting through run.py");
     if (!command || !*command) { fputs("runtime_restart: BB_RESTART_COMMAND is not set\n",stderr); _exit(1); }
     char *line=_strdup(command);
-    /* Same output handles: a launcher reading the game's log keeps reading the new launch. */
-    STARTUPINFOA startup={.cb=sizeof(startup),.dwFlags=STARTF_USESTDHANDLES,
+    /* Same output handles: a launcher reading the game's log keeps reading the new launch. Only
+     * those are inherited: the new launch (run.py, alive for the whole next game) inheriting this
+     * process's sockets kept its shadNet connection open, and the server refused the new game's
+     * login as already logged in (offline after "Restart game"). */
+    STARTUPINFOEXA startup={.StartupInfo={.cb=sizeof(startup),.dwFlags=STARTF_USESTDHANDLES,
                           .hStdInput=GetStdHandle(STD_INPUT_HANDLE),.hStdOutput=GetStdHandle(STD_OUTPUT_HANDLE),
-                          .hStdError=GetStdHandle(STD_ERROR_HANDLE)};
+                          .hStdError=GetStdHandle(STD_ERROR_HANDLE)}};
+    HANDLE inherit[3]; DWORD count=0;
+    HANDLE standard[3]={startup.StartupInfo.hStdInput,startup.StartupInfo.hStdOutput,startup.StartupInfo.hStdError};
+    for (int i=0;i<3;i++) {
+        HANDLE handle=standard[i];
+        if (!handle || handle==INVALID_HANDLE_VALUE) continue;
+        int seen=0;
+        for (DWORD j=0;j<count;j++) seen|=inherit[j]==handle;
+        if (!seen && SetHandleInformation(handle,HANDLE_FLAG_INHERIT,HANDLE_FLAG_INHERIT)) inherit[count++]=handle;
+    }
+    SIZE_T size=0;
+    InitializeProcThreadAttributeList(NULL,1,0,&size);
+    LPPROC_THREAD_ATTRIBUTE_LIST attributes=count?(LPPROC_THREAD_ATTRIBUTE_LIST)HeapAlloc(GetProcessHeap(),0,size):NULL;
+    if (attributes && (!InitializeProcThreadAttributeList(attributes,1,0,&size) ||
+                       !UpdateProcThreadAttribute(attributes,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,inherit,
+                                                  count*sizeof(HANDLE),NULL,NULL))) {
+        HeapFree(GetProcessHeap(),0,attributes); attributes=NULL;
+    }
+    startup.lpAttributeList=attributes;
     PROCESS_INFORMATION process;
-    if (!line || !CreateProcessA(NULL,line,NULL,NULL,TRUE,0,NULL,NULL,&startup,&process)) {
+    /* Without the list (no output handles, or the list failed): nothing is inherited at all rather
+     * than everything; the launch still starts, only without the old log pipe. */
+    if (!line || !CreateProcessA(NULL,line,NULL,NULL,attributes!=NULL,attributes?EXTENDED_STARTUPINFO_PRESENT:0,
+                                 NULL,NULL,&startup.StartupInfo,&process)) {
         fprintf(stderr,"runtime_restart: CreateProcess failed (%lu)\n",GetLastError()); _exit(1);
     }
     CloseHandle(process.hThread); CloseHandle(process.hProcess);
@@ -684,8 +720,11 @@ int main(int argc, char **argv) {
         }
     }
     image = allocate(round_page(size));
+    runtime_rebirth_set_image(image);
+    bbgpu_pc_menu_set_image(image);
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
+    runtime_discord_start(image);
     if (!cpu_only) {
         char title[128]="Bloodborne", serial[16]="UNKNOWN", sfo[4096];
         uint32_t attributes=0;
@@ -732,17 +771,32 @@ int main(int argc, char **argv) {
     bbnet_set_image(image, size);
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
     if (!cpu_only) runtime_cheats_install(image, size, game_version);
+    bbgpu_pc_menu_prepare(image);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif
     protect(traps, round_page((import_count + 1) * 32), 5);
-    protect(image, round_page(size), 0);
+    /* Each page goes straight to its final protection (a later segment wins, as before), never
+       through no access: another thread that already found the image (a mod DLL's memory
+       watcher) faulted when it read it between the two steps. */
+    size_t page_count = round_page(size) / page_size;
+    unsigned char *page_flags = calloc(page_count ? page_count : 1, 1);
+    if (!page_flags) fail("out of memory");
     int executable_entry = 0;
     for (uint64_t i = 0; i < ns; ++i) {
-        protect(image + segments[i].address, round_page(segments[i].size), (unsigned)segments[i].flags);
+        size_t first = segments[i].address / page_size;
+        size_t end = (segments[i].address + round_page(segments[i].size) + page_size - 1) / page_size;
+        for (size_t p = first; p < end && p < page_count; ++p) page_flags[p] = (unsigned char)segments[i].flags;
         if ((segments[i].flags & 1) && entry >= segments[i].address && entry - segments[i].address < segments[i].size)
             executable_entry = 1;
     }
+    for (size_t p = 0; p < page_count;) {
+        size_t run = p;
+        while (run < page_count && page_flags[run] == page_flags[p]) ++run;
+        protect(image + p * page_size, (run - p) * page_size, page_flags[p]);
+        p = run;
+    }
+    free(page_flags);
     if (!executable_entry) fail("entry is not executable");
     printf("Mapped %" PRIu64 " bytes, %" PRIu64 " segments; applied %" PRIu64 " relocations\n", size, ns, nr);
     if (native_libc) {

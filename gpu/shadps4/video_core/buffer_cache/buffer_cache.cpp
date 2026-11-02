@@ -8,20 +8,16 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <functional>
 #include <magic_enum/magic_enum.hpp>
 #include "bbport_copy.h"
-#include "bbport_hitch.h"
 #include "bbport_toggles.h"
-#include <xxhash.h>
-
 #include "common/alignment.h"
-#include "core/debug_state.h"
 #include "core/memory.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/memory_tracker.h"
-#include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -33,26 +29,16 @@
 namespace VideoCore {
 
 static constexpr size_t GDS_BUFFER_SIZE = 64_KB;
-static constexpr size_t NULL_INDEX_BUFFER_SIZE = 16;
 static constexpr size_t STREAM_BUFFER_SIZE = 128_MB;
-constexpr std::optional<u32> CmaskColorExpandedValue(u32 num_samples) {
-    switch (num_samples) {
-    case 1:
-        return 0xFFFFFFFF;
-    case 2:
-        return 0xDDDDDDDD;
-    case 4:
-        return 0xEEEEEEEE;
-    case 8:
-        return 0xFFFFFFFF;
-    default:
-        return 0;
-    }
-}
-static_assert(CmaskColorExpandedValue(1) == 0xFFFFFFFF);
-static_assert(CmaskColorExpandedValue(2) == 0xDDDDDDDD);
-static_assert(CmaskColorExpandedValue(4) == 0xEEEEEEEE);
-static_assert(CmaskColorExpandedValue(8) == 0xFFFFFFFF);
+// bbport: game memory backing comes from slabs of this size; its use is tracked per 2 MiB chunk.
+static constexpr u64 SLAB_SIZE = 32_MB;
+static constexpr u64 CHUNK_BITS = 21;
+static constexpr u64 CHUNK_SIZE = u64{1} << CHUNK_BITS;
+// BB_ARENA_DEBUG=1: every release, unbind and freed slab in the log.
+static const bool arena_debug = [] {
+    const char* env = std::getenv("BB_ARENA_DEBUG");
+    return env && env[0] == '1';
+}();
 
 static constexpr auto ARENA_USAGE =
     vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst |
@@ -84,7 +70,6 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
       stream_buffer{instance, scheduler, MemoryType::Stream, STREAM_BUFFER_SIZE},
       gds_buffer{instance, 0, GDS_BUFFER_SIZE, MemoryType::Stream, "GDS Buffer"},
       memory_semaphore{instance} {
-    std::puts("GPU: renderer 0.20.1 refresh; time-based texture retention; bounded memory tracking");
     while (arena_page_bits > MIN_ARENA_PAGE_BITS &&
            (u64{2} << arena_page_bits) > instance.GetMaxBufferSize()) {
         --arena_page_bits;
@@ -117,21 +102,52 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
         FindMemoryType(instance.GetMemoryProperties(), vk::MemoryPropertyFlagBits::eDeviceLocal,
                        reqs.memoryTypeBits)
             .value();
-
-    const auto& memory_properties = instance.GetMemoryProperties();
-    const u32 arena_heap = memory_properties.memoryTypes[arena_memory_type_index].heapIndex;
-    std::vector<u32> compatible_host_types;
-    for (u32 i=0;i<memory_properties.memoryTypeCount;++i) {
-        if (i!=arena_memory_type_index && (reqs.memoryTypeBits&(1u<<i)) &&
-            !(memory_properties.memoryHeaps[memory_properties.memoryTypes[i].heapIndex].flags & vk::MemoryHeapFlagBits::eDeviceLocal))
-            compatible_host_types.push_back(i);
+    arena_memory_type_bits = reqs.memoryTypeBits;
+    // bbport: discrete GPUs keep a reserve of VRAM for the guest memory backing (EnsureResident).
+    // It only grows as areas load and, on NVIDIA, cannot be outside VRAM (sparse buffers accept
+    // VRAM types only): on 4 GB cards textures filled VRAM and the next area stopped the game
+    // with ErrorOutOfDeviceMemory. Textures keep their own placement (a reserve made by moving
+    // them to system memory cost FPS after every area load in 1.9).
+    // bbport: only where the arena has no memory type outside VRAM. AMD and Intel accept system
+    // memory for it (EnsureResident falls back to that first): there the reserve held ~480 MiB
+    // of a 4 GB card for good and was never used (RX 6500 XT: "reserve 0 of 478 MiB used").
+    const auto& arena_props = instance.GetMemoryProperties();
+    const u32 arena_heap = arena_props.memoryTypes[arena_memory_type_index].heapIndex;
+    bool system_fallback = false;
+    for (u32 i = 0; i < arena_props.memoryTypeCount; ++i) {
+        system_fallback |= ((arena_memory_type_bits >> i) & 1) != 0 &&
+                           arena_props.memoryTypes[i].heapIndex != arena_heap;
     }
-    backing_pool.Initialize(device, arena_memory_type_index, block_size,
-                            instance.MaxMemoryAllocationSize(),
-                            memory_properties.memoryHeaps[arena_heap].size,std::move(compatible_host_types));
-    if (!instance.IsIntegrated()) {
-        backing_pool.TryReserve(std::min<u64>(512_MB, memory_properties.memoryHeaps[arena_heap].size / 8));
+    if (!instance.IsIntegrated() && !system_fallback) {
+        const auto& props = instance.GetMemoryProperties();
+        const u64 heap = props.memoryHeaps[props.memoryTypes[arena_memory_type_index].heapIndex].size;
+        const u64 size = Common::AlignDown(std::min<u64>(512_MB, heap / 8), block_size);
+        const vk::MemoryAllocateFlagsInfo reserve_flags = {
+            .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,
+        };
+        const auto [result, memory] = device.allocateMemory({
+            .pNext = &reserve_flags,
+            .allocationSize = size,
+            .memoryTypeIndex = arena_memory_type_index,
+        });
+        if (result == vk::Result::eSuccess) {
+            reserve_memory = memory;
+            reserve_size = size;
+            Slab slab{.memory = memory, .vram = true, .reserve = true,
+                      .pieces = static_cast<u32>(size >> block_shift)};
+            for (u32 piece = slab.pieces; piece-- > 0;) {
+                slab.free.push_back(piece);
+            }
+            slab_of[static_cast<VkDeviceMemory>(memory)] = static_cast<u32>(slabs.size());
+            slabs.push_back(std::move(slab));
+        }
     }
+    ASSERT_MSG(block_shift <= CHUNK_BITS, "Sparse block size {} is over 2 MiB", block_size);
+    chunk_used.assign(u64{1} << (ADDRESS_SPACE_BITS - CHUNK_BITS), 0);
+    chunk_flags.assign(chunk_used.size(), 0);
+    arena_start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
 
     const u64 bda_pagetable_size =
         (blocks_per_arena_page * num_arena_pages) * sizeof(vk::DeviceAddress);
@@ -140,52 +156,13 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     bda_pagetable_buffer = std::make_unique<Buffer>(
         instance, 0, bda_pagetable_size, MemoryType::DeviceLocal, "BDA Page Table Buffer");
     runtime.FillBuffer(bda_pagetable_buffer.get(), 0u, bda_pagetable_size, 0u);
-    if (!instance.IsMaintenance6Supported()) {
-        null_index_buffer = std::make_unique<Buffer>(instance, 0, NULL_INDEX_BUFFER_SIZE,
-                                                     MemoryType::DeviceLocal, "Null Index Buffer");
-        runtime.FillBuffer(null_index_buffer.get(), 0u, NULL_INDEX_BUFFER_SIZE, 0u);
-    }
 }
 
 BufferCache::~BufferCache() = default;
 
-void BufferCache::TickFrame() {
-    PreuploadResident();
-    if (std::exchange(fault_process_pending, false)) {
-        fault_manager->ProcessFaultBuffer();
-    }
-}
-
-// Only idle CPU-authored data already backed by an arena is eligible. No new sparse
-// bindings or allocations are made here; uploads retain the normal issue-time copy fences.
-void BufferCache::PreuploadResident() {
-    static const bool enabled=[] {const char* value=std::getenv("BB_PREUPLOAD");return value&&value[0]=='1';}();
-    if(!enabled)return;
-    const auto start=std::chrono::steady_clock::now();
-    const u64 now=RegionManager::NowMillis();
-    if(now<200)return;
-    u64 scanned=0,uploaded=0;
-    for(const auto& range:resident_ranges) {
-        const VAddr end=range.end<<block_shift;
-        VAddr address=std::max<VAddr>(range.start<<block_shift,preupload_cursor);
-        while(address<end) {
-            const u32 size=u32(std::min<u64>(64*1024,end-address));
-            preupload_cursor=address+size;
-            if(memory->CanReadAhead(address,size) && memory_tracker->IsPreuploadCandidate(address,size,now-200)) {
-                const auto* arena=address_space[address>>arena_page_bits];
-                if(arena) {SynchronizeMemory(arena,address,size,false,false);uploaded+=size;}
-            }
-            ++scanned;address+=size;
-            if(scanned>=256 || uploaded>=2*1024*1024 || std::chrono::steady_clock::now()-start>=std::chrono::microseconds(300))return;
-        }
-    }
-    preupload_cursor=0;
-}
-
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {
-    BbHitch::Trace::Scope trace{"buffer CPU invalidation", device_addr, size};
     memory_tracker->InvalidateRegion(device_addr, size, [this, device_addr, size, assume_locks] {
-        ReadMemory(device_addr, size, true, false, assume_locks);
+        ReadMemory(device_addr, size, true, assume_locks);
     });
 }
 
@@ -219,20 +196,14 @@ void BufferCache::ExtendWriteFault(VAddr device_addr) {
         const u64 kib = env ? std::strtoull(env, nullptr, 10) : 256;
         return std::bit_ceil(std::clamp<u64>(kib, 4, 1024)) * 1024;
     }();
-    if (window <= BYTES_PER_PAGE || BbToggle::Disabled(BbToggle::FaultWindow)) {
+    if (window <= TRACKER_BYTES_PER_PAGE || BbToggle::Disabled(BbToggle::FaultWindow)) {
         return;
     }
     memory_tracker->ExtendWriteFault(Common::AlignDown(device_addr, window), window);
 }
 
-void BufferCache::UnmarkRegionAsGpuModified(VAddr device_addr, u64 size, bool is_write) {
-    memory_tracker->UnmarkRegionAsGpuModified(device_addr, size, is_write);
-    gpu_modified_ranges.Subtract(device_addr, size);
-}
-
-void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool async,
-                             bool assume_locks) {
-    const auto flush_request = [this, device_addr, size, is_write, async] {
+void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool assume_locks) {
+    const auto flush_request = [this, device_addr, size, is_write] {
         const u32 first_block = device_addr >> block_shift;
         const u32 last_block = (device_addr + size - 1) >> block_shift;
         const auto* arena = GetArena(first_block, last_block);
@@ -245,7 +216,10 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
             std::max<VAddr>(Common::AlignDown(device_addr, WindowSize), arena->cpu_addr);
         const VAddr window_end = std::min<VAddr>(
             std::max<VAddr>(window_start + WindowSize, device_addr + size), arena_end);
-        DownloadMemory(arena, window_start, window_end - window_start, is_write, async);
+        DownloadMemory(arena, window_start, window_end - window_start);
+        if (is_write) {
+            memory_tracker->MarkRegionAsCpuModified(device_addr, size);
+        }
     };
     if (assume_locks) {
         flush_request();
@@ -254,8 +228,7 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
     }
 }
 
-void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size, bool is_write,
-                                 bool async) {
+void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size) {
     boost::container::small_vector<vk::BufferCopy, 1> copies;
     u64 total_size_bytes = 0;
     const VAddr arena_base = arena->cpu_addr;
@@ -279,37 +252,20 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
     if (total_size_bytes == 0) {
         return;
     }
-    const auto download =
-        staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached, 16, async);
+    const auto download = staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached);
     for (auto& copy : copies) {
         copy.dstOffset += download.offset;
     }
     runtime.CopyBuffer(arena, download.buffer, copies);
+    scheduler.Finish();
 
-    const auto write_data = [this, arena_base, device_addr, size, download, is_write, async,
-                             copies = std::move(copies)] {
-        download.Invalidate();
-        for (const auto& copy : copies) {
-            auto* dst_addr = std::bit_cast<u8*>(arena_base + copy.srcOffset);
-            memory->TryWriteBacking(dst_addr, download.mapped + (copy.dstOffset - download.offset),
-                                    copy.size);
-        }
-        memory_tracker->UnmarkRegionAsGpuModified(device_addr, size, false);
-        if (is_write) {
-            memory_tracker->MarkRegionAsCpuModified(device_addr, size);
-        }
-
-        if (async) {
-            staging_pool.FreeDeferred(download);
-        }
-    };
-
-    if (async) {
-        scheduler.DeferOperation(std::move(write_data));
-    } else {
-        scheduler.Finish();
-        write_data();
+    download.buffer->Invalidate(download.offset, download.size);
+    for (const auto& copy : copies) {
+        auto* dst_addr = std::bit_cast<u8*>(arena_base + copy.srcOffset);
+        memory->TryWriteBacking(dst_addr, download.mapped + (copy.dstOffset - download.offset),
+                                copy.size);
     }
+    memory_tracker->UnmarkRegionAsGpuModified(device_addr, size);
 }
 
 namespace {
@@ -395,18 +351,14 @@ void PrintBufferStats() {
 } // namespace
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
-                                                        ObtainBufferFlags flags) {
-    const bool is_written = True(flags & ObtainBufferFlags::IsWritten);
-    const bool is_texel_buffer = True(flags & ObtainBufferFlags::IsTexelBuffer);
-    const bool skip_stream_buffer = True(flags & ObtainBufferFlags::IgnoreStreamBuffer);
+                                                        bool is_written, bool is_texel_buffer) {
     const bool stats = BufferStatsEnabled();
     if (stats) {
         PrintBufferStats();
         NoteHotUse(device_addr, size);
     }
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
-    if (!is_written && !skip_stream_buffer && size <= STREAM_THRESHOLD &&
-        !IsRegionGpuModified(device_addr, size)) {
+    if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
         if (stats) {
             auto& region = Stats().regions[RegionKey(device_addr)];
             ++region.stream_count;
@@ -436,11 +388,9 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const u64 first_block = device_addr >> block_shift;
     const u64 last_block = (device_addr + size - 1) >> block_shift;
     const auto* arena = GetArena(first_block, last_block);
+    NoteChunkUse(device_addr, size); // first: a release making room for it leaves it alone
     EnsureResident(arena, first_block, last_block);
     const u64 uploaded_before = BbStats::buffer_upload_bytes.load(std::memory_order_relaxed);
-    if (is_written) {
-        texture_cache.MarkAsMaybeGpuDirty(device_addr, size);
-    }
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
     if (stats) {
         auto& region = Stats().regions[RegionKey(device_addr)];
@@ -457,7 +407,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_addr, u32 size) {
     if (IsRegionGpuModified(device_addr, size)) {
-        return ObtainBuffer(device_addr, size);
+        return ObtainBuffer(device_addr, size, false);
     }
     const auto staging = staging_pool.Request(size, VideoCore::MemoryType::HostUncached,
                                               instance.StorageMinAlignment());
@@ -495,67 +445,11 @@ bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
     return memory_tracker->IsRegionGpuModified(addr, size);
 }
 
-void BufferCache::MarkRegionAsGpuModified(VAddr addr, size_t size) {
-    texture_cache.MarkAsMaybeGpuDirty(addr, size);
-    memory_tracker->MarkRegionAsGpuModified(addr, size);
-    gpu_modified_ranges.Add(addr, size);
-}
-
-void BufferCache::ReadEdgeImagePages(const Image& image) {
-    // May happen that after downloading the image and invalidating region,
-    // that there were GPU modified ranges that are lost due to CPU reuploading.
-    // This doesn't change tracker state and it is spected to call DownloadImageMemory after this.
-    const VAddr image_addr = image.info.guest_address;
-    const u64 image_size = image.info.guest_size;
-    const VAddr image_end = image_addr + image_size;
-    const VAddr page_start = PageManager::GetPageAddr(image_addr);
-    const VAddr page_end = PageManager::GetNextPageAddr(image_end - 1);
-    boost::container::small_vector<vk::BufferCopy, 2> copies;
-    u64 total_size_bytes = 0;
-    const auto [buffer, offset] = ObtainBuffer(page_start, page_end - page_start);
-    const auto add_download = [&](VAddr start, VAddr end) {
-        const u64 new_offset = start - buffer->CpuAddr();
-        const u64 new_size = end - start;
-        copies.push_back(vk::BufferCopy{
-            .srcOffset = new_offset,
-            .dstOffset = total_size_bytes,
-            .size = new_size,
-        });
-        // Align up to avoid cache conflicts
-        constexpr u64 align = 64ULL;
-        constexpr u64 mask = ~(align - 1ULL);
-        total_size_bytes += (new_size + align - 1) & mask;
-    };
-    gpu_modified_ranges.ForEachInRange(page_start, image_addr - page_start, add_download);
-    gpu_modified_ranges.ForEachInRange(image_end, page_end - image_end, add_download);
-    gpu_modified_ranges.Subtract(page_start, page_end - page_start);
-    if (total_size_bytes == 0) {
-        return;
-    }
-    const auto download =
-        staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached, 16, true);
-    for (auto& copy : copies) {
-        // Modify copies to have the staging offset in mind
-        copy.dstOffset += download.offset;
-    }
-    scheduler.EndRendering();
-    runtime.CopyBuffer(buffer, download.buffer, copies);
-    scheduler.DeferOperation(
-        [this, base = buffer->CpuAddr(), download, copies = std::move(copies)]() {
-            download.Invalidate();
-            auto* memory = Core::Memory::Instance();
-            for (const auto& copy : copies) {
-                const VAddr copy_device_addr = base + copy.srcOffset;
-                const u64 dst_offset = copy.dstOffset - download.offset;
-                memory->TryWriteBacking(std::bit_cast<u8*>(copy_device_addr),
-                                        download.mapped + dst_offset, copy.size);
-            }
-            staging_pool.FreeDeferred(download);
-        });
+void BufferCache::ProcessFaultBuffer() {
+    fault_manager->ProcessFaultBuffer();
 }
 
 void BufferCache::SynchronizeDmaBuffers() {
-    fault_process_pending = true;
     for (const auto& range : resident_ranges) {
         const u64 page = range.start >> (arena_page_bits - block_shift);
         const VAddr device_addr = range.start << block_shift;
@@ -586,6 +480,7 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
     }
 
     LOG_WARNING(Render, "Migrating arena");
+    const std::size_t binds_before = pending_binds.size();
 
     const u64 first_addr = first_arena ? first_arena->cpu_addr : (first_page << arena_page_bits);
     const u64 first_size = first_arena ? first_arena->size_bytes : arena_page_size;
@@ -603,10 +498,22 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
             .resourceOffset = (start - base_block) << block_shift,
             .size = (end - start) << block_shift,
             .memory = backing.memory,
-            .memoryOffset = (backing.offset + start - backing.start) << block_shift,
+            .memoryOffset = (backing.offset + (start - backing.start)) << block_shift,
         });
     });
 
+    // bbport: the old arena keeps its binds (the shaders' page table still points into it): the
+    // slabs behind them are never freed, a released piece is only taken again.
+    for (auto& slab : slabs) {
+        if (slab.memory) {
+            slab.pinned = true;
+        }
+    }
+    std::printf("Game memory: arena at %#llx migrated (%llu MiB): %zu ranges bound again; %zu releases "
+                "not unbound yet, %zu pending bind lists before\n",
+                static_cast<unsigned long long>(first_addr), static_cast<unsigned long long>(total_size >> 20),
+                bind->binds.size(), unbinds.size(), binds_before);
+    std::fflush(stdout);
     u64 base_page = first_addr >> arena_page_bits;
     for (u32 page = 0; page < (first_size >> arena_page_bits); ++page) {
         address_space[base_page + page] = new_arena;
@@ -631,41 +538,50 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     }
     BbStats::Timer timer{BbStats::t_resident};
 
-    const auto physical = Vulkan::Check(backing_pool.Allocate(u64{resident_blocks} << block_shift));
-    const auto device_memory = physical.memory;
-    arena_backed += u64{resident_blocks} << block_shift;
-
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =
         staging_pool.Request(resident_blocks * sizeof(vk::DeviceAddress), MemoryType::HostUncached);
 
-    u64 memory_offset = physical.offset;
     ArenaBinds* binds = BindsForArena(arena);
     auto* bda_addrs = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
     u64 offset = staging.offset;
     for (const auto& range : bind_ranges) {
-        Backing backing;
-        backing.start = range.start;
-        backing.end = range.end;
-        backing.memory = device_memory;
-        backing.offset = memory_offset >> block_shift;
-        resident_ranges.Add(backing);
-
-        LOG_INFO(Render, "Making range start={}, end={} resident", backing.start, backing.end);
-
-        const auto& bind = binds->binds.emplace_back(vk::SparseMemoryBind{
-            .resourceOffset = (range.start << block_shift) - arena->cpu_addr,
-            .size = (range.end - range.start) << block_shift,
-            .memory = device_memory,
-            .memoryOffset = memory_offset,
-        });
-        memory_offset += bind.size;
-
-        for (u32 block = 0; block < bind.size; block += block_size) {
-            *(bda_addrs++) = arena->BufferDeviceAddress() + bind.resourceOffset + block;
+        // bbport: pieces of the slabs, in runs as long as they lie next to each other
+        for (u64 block = range.start; block < range.end;) {
+            const auto run = TakeRun(range.end - block);
+            if (!run) {
+                std::printf("GPU: video memory full: no room for %llu MiB of game memory (only VRAM "
+                            "can hold it on this GPU). A lower output resolution or upscaler preset "
+                            "needs less.\n",
+                            static_cast<unsigned long long>((range.end - block) << block_shift >> 20));
+                std::fflush(stdout);
+                Vulkan::Check(vk::Result::eErrorOutOfDeviceMemory);
+                return;
+            }
+            const Slab& slab = slabs[run->slab];
+            Backing backing;
+            backing.start = block;
+            backing.end = block + run->count;
+            backing.memory = slab.memory;
+            backing.offset = run->index;
+            resident_ranges.Add(backing);
+            CancelUnbinds(arena, block, block + run->count);
+            binds->binds.emplace_back(vk::SparseMemoryBind{
+                .resourceOffset = (block << block_shift) - arena->cpu_addr,
+                .size = u64{run->count} << block_shift,
+                .memory = slab.memory,
+                .memoryOffset = backing.offset << block_shift,
+            });
+            arena_backed += u64{run->count} << block_shift;
+            block += run->count;
         }
-        const u64 copy_size = (backing.end - backing.start) * sizeof(vk::DeviceAddress);
-        copies.emplace_back(offset, backing.start * sizeof(vk::DeviceAddress), copy_size);
+        LOG_INFO(Render, "Making range start={}, end={} resident", range.start, range.end);
+
+        for (u64 block = range.start; block < range.end; ++block) {
+            *(bda_addrs++) = arena->BufferDeviceAddress() + (block << block_shift) - arena->cpu_addr;
+        }
+        const u64 copy_size = (range.end - range.start) * sizeof(vk::DeviceAddress);
+        copies.emplace_back(offset, range.start * sizeof(vk::DeviceAddress), copy_size);
         offset += copy_size;
     }
 
@@ -673,50 +589,21 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     runtime.CopyBuffer(staging.buffer, bda_pagetable_buffer.get(), copies);
 }
 
-std::pair<const Buffer*, u64> BufferCache::ObtainVertexBuffer(
-    VAddr device_addr, u32 size, std::span<const VertexFetch::Range> reads) {
-    if (reads.empty() || size <= STREAM_THRESHOLD) return ObtainBuffer(device_addr, size);
-    for (const auto& read : reads) {
-        if (!read.size || read.offset >= size || read.size > size - read.offset)
-            return ObtainBuffer(device_addr, size);
-    }
-    if (reads.size() == 1 && reads[0].offset == 0 && reads[0].size == size)
-        return ObtainBuffer(device_addr, size);
-    // The VkBuffer still spans the original descriptor. Only pages that the
-    // immutable direct-draw indices can fetch need residency and an upload.
-    const auto* arena = GetArena(device_addr >> block_shift, (device_addr + size - 1) >> block_shift);
-    BbHitch::Trace::Point("vertex descriptor extent", device_addr, size);
-    for (const auto& read : reads) {
-        const VAddr address = device_addr + read.offset;
-        EnsureResident(arena, address >> block_shift, (address + read.size - 1) >> block_shift);
-        BbHitch::Trace::Point("vertex fetch upload range", address, read.size);
-        SynchronizeMemory(arena, address, read.size, false, false);
-    }
-    return {arena, arena->Offset(device_addr)};
-}
-
 bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size,
                                     bool is_written, bool is_texel_buffer) {
-    const auto upload_started = BbHitch::Trace::Enabled() ? BbHitch::Trace::Clock::now()
-                                                       : BbHitch::Trace::Clock::time_point{};
     boost::container::small_vector<vk::BufferCopy, 4> copies;
     size_t total_size_bytes{};
     const Buffer* src_buffer{};
-    const bool synchronous = is_written &&
-        EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise;
-    memory_tracker->ForEachUploadRange(device_addr, size, is_written, [&](u64 addr, u64 size) {
-        copies.emplace_back(total_size_bytes, addr, size);
-        total_size_bytes += size;
-    }, [&] {
-        src_buffer = UploadCopies(arena, copies, total_size_bytes, synchronous);
-    });
-    // bbport: through UploadCopies, which copies the guest data on the copy threads
+    memory_tracker->ForEachUploadRange(
+        device_addr, size, is_written,
+        [&](u64 addr, u64 size) {
+            copies.emplace_back(total_size_bytes, addr, size);
+            total_size_bytes += size;
+        },
+        [&] { src_buffer = UploadCopies(arena, copies, total_size_bytes); });
+
     if (src_buffer) {
         runtime.CopyBuffer(src_buffer, arena, copies);
-        if (upload_started != BbHitch::Trace::Clock::time_point{}) {
-            BbHitch::Trace::Record("buffer upload batch", upload_started, BbHitch::Trace::Clock::now(),
-                                   arena->cpu_addr + copies.front().dstOffset, total_size_bytes);
-        }
     }
     if (is_texel_buffer && !is_written) {
         return SynchronizeMemoryFromImage(arena, device_addr, size);
@@ -725,7 +612,7 @@ bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 
 }
 
 const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::BufferCopy> copies,
-                                        size_t total_size_bytes, bool synchronous) {
+                                        size_t total_size_bytes) {
     if (copies.empty()) {
         return nullptr;
     }
@@ -734,7 +621,7 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
     // bbport: the guest memory is copied into staging on the copy threads, started now in
     // groups of about 1 MiB; submission and guest-visible fences wait for them
     // (Scheduler::WaitHostCopies).
-    if (!synchronous && !BbToggle::Disabled(BbToggle::DeferredUploads) && total_size_bytes < 1_MB) {
+    if (!BbToggle::Disabled(BbToggle::DeferredUploads) && total_size_bytes < 1_MB) {
         // Small uploads join the calling thread's batch.
         for (auto& copy : copies) {
             SmallGuestCopy({
@@ -750,7 +637,7 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
         }
         return staging.buffer;
     }
-    if (!synchronous && !BbToggle::Disabled(BbToggle::DeferredUploads)) {
+    if (!BbToggle::Disabled(BbToggle::DeferredUploads)) {
         struct HostCopy {
             VAddr source;
             u8* destination;
@@ -803,26 +690,13 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
 }
 
 bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size) {
-    if (const auto meta = texture_cache.GetMetaInfo(device_addr)) {
-        if (meta->type == TextureCache::MetaType::HTile) {
+    if (auto type = texture_cache.IsMeta(device_addr)) {
+        if (*type == TextureCache::MetaType::HTile) {
             static constexpr u32 ZmaskUncompressed = 0xf;
             runtime.FillBuffer(arena, arena->Offset(device_addr), size, ZmaskUncompressed);
             return true;
-        } else if (meta->type == TextureCache::MetaType::CMask) {
-            const auto expanded_value = CmaskColorExpandedValue(meta->num_samples);
-            if (!expanded_value) {
-                LOG_WARNING(Render_Vulkan,
-                            "Unsupported CMask sample count: address={:#x}, size={:#x}, "
-                            "samples={}, owner={}:{}",
-                            device_addr, size, meta->num_samples, meta->owner_id.index,
-                            meta->owner_uid);
-                return false;
-            }
-            runtime.FillBuffer(arena, arena->Offset(device_addr), size, *expanded_value);
-            return true;
         } else {
-            LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}",
-                        magic_enum::enum_name(meta->type));
+            LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));
         }
     }
     // bbport: most texel buffers alias no image; remember misses until images change.
@@ -876,20 +750,414 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
     return true;
 }
 
+void BufferCache::NoteChunkUse(VAddr device_addr, u64 size) {
+    const u64 last = std::min<u64>((device_addr + size - 1) >> CHUNK_BITS, chunk_used.size() - 1);
+    for (u64 chunk = device_addr >> CHUNK_BITS; chunk <= last; ++chunk) {
+        chunk_used[chunk] = arena_now;
+        if (chunk_flags[chunk] & CHUNK_RELEASED) {
+            chunk_flags[chunk] &= ~CHUNK_RELEASED;
+            ++refetched_chunks;
+        }
+    }
+}
+
+void BufferCache::KeepFaultedRange(VAddr device_addr, u64 size) {
+    const u64 last = std::min<u64>((device_addr + size - 1) >> CHUNK_BITS, chunk_used.size() - 1);
+    for (u64 chunk = device_addr >> CHUNK_BITS; chunk <= last; ++chunk) {
+        if (!(chunk_flags[chunk] & CHUNK_FAULTED)) {
+            chunk_flags[chunk] |= CHUNK_FAULTED;
+            ++faulted_chunks;
+        }
+    }
+}
+
+std::optional<u32> BufferCache::NewSlab(u32 type_index, bool vram) {
+    const auto [result, memory] = instance.GetDevice().allocateMemory(vk::MemoryAllocateInfo{
+        .allocationSize = SLAB_SIZE,
+        .memoryTypeIndex = type_index,
+    });
+    if (result != vk::Result::eSuccess) {
+        return std::nullopt;
+    }
+    Slab slab{.memory = memory, .vram = vram, .pieces = static_cast<u32>(SLAB_SIZE >> block_shift)};
+    for (u32 piece = slab.pieces; piece-- > 0;) {
+        slab.free.push_back(piece);
+    }
+    u32 index = static_cast<u32>(slabs.size());
+    for (u32 i = 0; i < slabs.size(); ++i) {
+        if (!slabs[i].memory) {
+            index = i;
+            break;
+        }
+    }
+    if (index == slabs.size()) {
+        slabs.push_back(std::move(slab));
+    } else {
+        slabs[index] = std::move(slab);
+    }
+    slab_of[static_cast<VkDeviceMemory>(memory)] = index;
+    (vram ? vram_slab_bytes : system_slab_bytes) += SLAB_SIZE;
+    return index;
+}
+
+std::optional<BufferCache::Run> BufferCache::TakeRun(u64 count) {
+    if (!released.empty()) {
+        PutBackReleased();
+    }
+    const auto take = [&](u32 index) {
+        Slab& slab = slabs[index];
+        const u32 first = slab.free.back();
+        slab.free.pop_back();
+        u32 n = 1;
+        while (n < count && !slab.free.empty() && slab.free.back() == first + n) {
+            slab.free.pop_back();
+            ++n;
+        }
+        slab.used += n;
+        if (slab.reserve) {
+            reserve_used += u64{n} << block_shift;
+        }
+        return Run{index, first, n};
+    };
+    const auto find = [&](bool vram, bool reserve) -> std::optional<u32> {
+        for (u32 i = 0; i < slabs.size(); ++i) {
+            const Slab& slab = slabs[i];
+            if (slab.memory && slab.vram == vram && slab.reserve == reserve && !slab.free.empty()) {
+                return i;
+            }
+        }
+        return std::nullopt;
+    };
+    if (const auto slab = find(true, false)) {
+        return take(*slab);
+    }
+    // BB_ARENA_LIMIT_MB=N: VRAM counts as full once N MiB of slabs are in it (tests the fallbacks).
+    static const u64 arena_limit = [] {
+        const char* env = std::getenv("BB_ARENA_LIMIT_MB");
+        return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
+    }();
+    if (arena_now >= vram_full_until && (!arena_limit || vram_slab_bytes + SLAB_SIZE <= arena_limit)) {
+        if (const auto slab = NewSlab(arena_memory_type_index, true)) {
+            return take(*slab);
+        }
+        // VRAM full: game memory no binding used for a while makes room for the next requests.
+        vram_full_until = arena_now + 5;
+        ReleaseIdleChunks(2 * SLAB_SIZE, 10);
+    }
+    // bbport: VRAM full. The guest memory the GPU uses is backed here; on 4-8 GB cards it ran
+    // out ("ErrorOutOfDeviceMemory" stopped the game). Another memory type the arena accepts,
+    // outside VRAM (system memory the GPU reaches), is slower but keeps the game going.
+    if (const auto slab = find(false, false)) {
+        return take(*slab);
+    }
+    const auto& props = instance.GetMemoryProperties();
+    const u32 vram_heap = props.memoryTypes[arena_memory_type_index].heapIndex;
+    for (u32 type = 0; type < props.memoryTypeCount; ++type) {
+        if (((arena_memory_type_bits >> type) & 1) == 0 || props.memoryTypes[type].heapIndex == vram_heap) {
+            continue;
+        }
+        if (const auto slab = NewSlab(type, false)) {
+            Vulkan::NoteOverBudget("buffer");
+            return take(*slab);
+        }
+    }
+    // The reserve kept at start for this (no other memory type on NVIDIA).
+    if (const auto slab = find(true, true)) {
+        const u64 quarter_before = reserve_used * 4 / reserve_size;
+        const bool first_use = reserve_used == 0;
+        const Run run = take(*slab);
+        if (first_use || reserve_used * 4 / reserve_size != quarter_before) {
+            std::printf("GPU: video memory full: game memory from its reserve (%llu of %llu MiB used)\n",
+                        static_cast<unsigned long long>(reserve_used >> 20),
+                        static_cast<unsigned long long>(reserve_size >> 20));
+            std::fflush(stdout);
+        }
+        return run;
+    }
+    return std::nullopt;
+}
+
+void BufferCache::PutBackReleased() {
+    bool returned = false;
+    while (!released.empty() && scheduler.IsFree(released.front().tick)) {
+        const Released& item = released.front();
+        Slab& slab = slabs[item.slab];
+        for (u32 i = 0; i < item.count; ++i) {
+            slab.free.push_back(item.piece + i);
+        }
+        slab.used -= item.count;
+        if (slab.reserve) {
+            reserve_used -= u64{item.count} << block_shift;
+        }
+        released.pop_front();
+        returned = true;
+    }
+    if (!returned) {
+        return;
+    }
+    // Slabs without pieces in use go back to the driver; one in VRAM stays for the next area.
+    bool spare_vram_slab = false;
+    for (Slab& slab : slabs) {
+        if (!slab.memory) {
+            continue;
+        }
+        std::ranges::sort(slab.free, std::greater<>{}); // the lowest is taken first
+        if (slab.reserve || slab.pinned || slab.used != 0) {
+            continue;
+        }
+        if (slab.vram && !spare_vram_slab) {
+            spare_vram_slab = true;
+            continue;
+        }
+        if (arena_debug) {
+            std::printf("Game memory: slab %zu freed (%s)\n", static_cast<std::size_t>(&slab - slabs.data()),
+                        slab.vram ? "VRAM" : "system memory");
+            std::fflush(stdout);
+        }
+        instance.GetDevice().freeMemory(slab.memory);
+        slab_of.erase(static_cast<VkDeviceMemory>(slab.memory));
+        (slab.vram ? vram_slab_bytes : system_slab_bytes) -= SLAB_SIZE;
+        slab.memory = vk::DeviceMemory{};
+        slab.free.clear();
+        slab.free.shrink_to_fit();
+    }
+}
+
+u64 BufferCache::ReleaseChunk(u64 chunk) {
+    const u64 chunk_blocks = CHUNK_SIZE >> block_shift;
+    const u64 first = chunk * chunk_blocks;
+    const u64 end = first + chunk_blocks;
+    boost::container::small_vector<Backing, 8> parts;
+    resident_ranges.ForEachInRange(first, end, [&](const Backing& backing) {
+        const u64 start = std::max(first, backing.start);
+        const u64 stop = std::min(end, backing.end);
+        if (start < stop) {
+            parts.push_back(backing.SubRange(start, stop));
+        }
+    });
+    if (parts.empty()) {
+        return 0;
+    }
+    const Buffer* arena = address_space[first >> blocks_per_arena_page_shift];
+    const u64 tick = scheduler.CurrentTick();
+    u64 bytes = 0;
+    for (const auto& part : parts) {
+        const u64 blocks = part.end - part.start;
+        // The shaders' page table now, the memory once the GPU is past this (FlushUnbinds): a
+        // shader reading it in between faults and binds it again.
+        runtime.FillBuffer(bda_pagetable_buffer.get(), part.start * sizeof(vk::DeviceAddress),
+                           blocks * sizeof(vk::DeviceAddress), 0u);
+        unbinds.push_back({
+            .arena = arena,
+            .start = part.start,
+            .end = part.end,
+            .slab = slab_of.at(static_cast<VkDeviceMemory>(part.memory)),
+            .piece = static_cast<u32>(part.offset),
+            .clear_tick = tick,
+        });
+        // Uploaded again from the game's memory when it is bound again.
+        memory_tracker->MarkRegionAsCpuModified(part.start << block_shift, blocks << block_shift);
+        bytes += blocks << block_shift;
+    }
+    resident_ranges.Subtract(first, end);
+    arena_backed -= bytes;
+    released_bytes += bytes;
+    ++released_chunks;
+    chunk_flags[chunk] |= CHUNK_RELEASED;
+    if (arena_debug) {
+        std::printf("Game memory: released chunk %#llx (%zu parts, %llu KiB) of arena %p at tick %llu\n",
+                    static_cast<unsigned long long>(chunk << CHUNK_BITS), parts.size(),
+                    static_cast<unsigned long long>(bytes >> 10), static_cast<const void*>(arena),
+                    static_cast<unsigned long long>(tick));
+        std::fflush(stdout);
+    }
+    return bytes;
+}
+
+void BufferCache::FlushUnbinds() {
+    if (unbinds.empty()) {
+        return;
+    }
+    // Called while submitting: the submission signals the tick before the current one.
+    const u64 tick = scheduler.CurrentTick() - 1;
+    std::erase_if(unbinds, [&](const Unbind& unbind) {
+        if (!scheduler.IsFree(unbind.clear_tick)) {
+            return false;
+        }
+        BindsForArena(unbind.arena)->binds.push_back(vk::SparseMemoryBind{
+            .resourceOffset = (unbind.start << block_shift) - unbind.arena->cpu_addr,
+            .size = (unbind.end - unbind.start) << block_shift,
+            .memory = vk::DeviceMemory{},
+            .memoryOffset = 0,
+        });
+        released.push_back({tick, unbind.slab, unbind.piece, static_cast<u32>(unbind.end - unbind.start)});
+        if (arena_debug) {
+            std::printf("Game memory: unbind %#llx-%#llx of arena %p with submission %llu\n",
+                        static_cast<unsigned long long>(unbind.start << block_shift),
+                        static_cast<unsigned long long>(unbind.end << block_shift),
+                        static_cast<const void*>(unbind.arena), static_cast<unsigned long long>(tick));
+            std::fflush(stdout);
+        }
+        return true;
+    });
+}
+
+void BufferCache::CancelUnbinds(const Buffer* arena, u64 start, u64 end) {
+    if (unbinds.empty()) [[likely]] {
+        return;
+    }
+    // The new bind replaces their pieces there: taken again once the GPU is past it.
+    const u64 tick = scheduler.CurrentTick();
+    for (std::size_t i = 0; i < unbinds.size();) {
+        const Unbind unbind = unbinds[i];
+        if (unbind.arena != arena || unbind.end <= start || end <= unbind.start) {
+            ++i;
+            continue;
+        }
+        const u64 a = std::max(start, unbind.start);
+        const u64 b = std::min(end, unbind.end);
+        released.push_back({tick, unbind.slab, unbind.piece + static_cast<u32>(a - unbind.start),
+                            static_cast<u32>(b - a)});
+        if (arena_debug) {
+            std::printf("Game memory: bound again before its unbind: %#llx-%#llx of arena %p\n",
+                        static_cast<unsigned long long>(a << block_shift),
+                        static_cast<unsigned long long>(b << block_shift), static_cast<const void*>(arena));
+            std::fflush(stdout);
+        }
+        Unbind head = unbind;
+        head.end = a;
+        Unbind tail = unbind;
+        tail.start = b;
+        tail.piece += static_cast<u32>(b - unbind.start);
+        if (head.start < head.end) {
+            unbinds[i++] = head;
+            if (tail.start < tail.end) {
+                unbinds.insert(unbinds.begin() + i++, tail);
+            }
+        } else if (tail.start < tail.end) {
+            unbinds[i++] = tail;
+        } else {
+            unbinds.erase(unbinds.begin() + i);
+        }
+    }
+}
+
+u64 BufferCache::ReleaseIdleChunks(u64 wanted, u32 idle_seconds) {
+    if (BbToggle::Disabled(BbToggle::ArenaRelease) || resident_ranges.Empty()) {
+        return 0;
+    }
+    const u64 chunk_shift = CHUNK_BITS - block_shift;
+    std::vector<std::pair<u32, u64>> idle; // last use, chunk
+    u64 previous = ~u64{0};
+    for (const auto& backing : resident_ranges) {
+        for (u64 chunk = backing.start >> chunk_shift; chunk <= (backing.end - 1) >> chunk_shift;
+             ++chunk) {
+            if (chunk == previous) {
+                continue;
+            }
+            previous = chunk;
+            if (arena_now - chunk_used[chunk] < idle_seconds || (chunk_flags[chunk] & CHUNK_FAULTED)) {
+                continue;
+            }
+            // GPU-written data lives only here: it stays.
+            const VAddr address = chunk << CHUNK_BITS;
+            if (gpu_modified_ranges.Intersects(address, CHUNK_SIZE) ||
+                memory_tracker->IsRegionGpuModified(address, CHUNK_SIZE)) {
+                continue;
+            }
+            idle.emplace_back(chunk_used[chunk], chunk);
+        }
+    }
+    std::ranges::sort(idle);
+    u64 bytes = 0;
+    for (const auto& [used, chunk] : idle) {
+        if (bytes >= wanted) {
+            break;
+        }
+        bytes += ReleaseChunk(chunk);
+    }
+    return bytes;
+}
+
+void BufferCache::ReportArena(bool force) {
+    if (!force && (arena_now - arena_last_report < 60 || (!released_chunks && !system_slab_bytes))) {
+        return;
+    }
+    arena_last_report = arena_now;
+    u32 live = 0;
+    for (const auto& slab : slabs) {
+        live += slab.memory ? 1 : 0;
+    }
+    std::printf("Game memory: %llu MiB bound (slabs: %llu MiB in VRAM, %llu MiB in system memory, "
+                "reserve %llu of %llu MiB used), %u slabs; released %llu MiB in %llu chunks so far, "
+                "%llu of them needed again; %llu MiB kept (read by shaders directly)\n",
+                static_cast<unsigned long long>(arena_backed >> 20),
+                static_cast<unsigned long long>(vram_slab_bytes >> 20),
+                static_cast<unsigned long long>(system_slab_bytes >> 20),
+                static_cast<unsigned long long>(reserve_used >> 20),
+                static_cast<unsigned long long>(reserve_size >> 20), live,
+                static_cast<unsigned long long>(released_bytes >> 20),
+                static_cast<unsigned long long>(released_chunks),
+                static_cast<unsigned long long>(refetched_chunks),
+                static_cast<unsigned long long>((faulted_chunks * CHUNK_SIZE) >> 20));
+    std::fflush(stdout);
+}
+
+void BufferCache::RunArenaCollector() {
+    const u64 now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
+    arena_now = static_cast<u32>((now_ns - arena_start_ns) / 1'000'000'000ull);
+    if (!released.empty()) {
+        PutBackReleased();
+    }
+    if (arena_now == arena_last_collect) {
+        return;
+    }
+    arena_last_collect = arena_now;
+    // BB_ARENA_TARGET_MB=N: released down to N MiB bound on any GPU (tests); else when VRAM in
+    // use passes 85% of the driver's budget.
+    static const u64 target = [] {
+        const char* env = std::getenv("BB_ARENA_TARGET_MB");
+        return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
+    }();
+    static const u32 idle_seconds = [] {
+        const char* env = std::getenv("BB_ARENA_IDLE_SECONDS");
+        return env ? static_cast<u32>(std::strtoul(env, nullptr, 10)) : 60u;
+    }();
+    u64 wanted = 0;
+    if (target) {
+        wanted = arena_backed > target ? arena_backed - target : 0;
+    } else if (instance.CanReportMemoryUsage()) {
+        const u64 budget = instance.GetDeviceMemoryBudgetNow();
+        const u64 used = instance.GetDeviceMemoryUsage();
+        const u64 mark = budget / 100 * 85;
+        if (budget && used > mark) {
+            wanted = std::max<u64>(used - mark, SLAB_SIZE);
+        }
+    }
+    if (wanted) {
+        ReleaseIdleChunks(wanted, idle_seconds);
+    }
+    ReportArena(false);
+}
+
 void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
+    FlushUnbinds();
     if (pending_binds.empty()) {
         return;
     }
 
     std::vector<vk::SparseBufferMemoryBindInfo> buffer_binds;
     buffer_binds.reserve(pending_binds.size());
-
+    std::size_t total = 0;
     for (const auto& binds : pending_binds) {
         buffer_binds.emplace_back(vk::SparseBufferMemoryBindInfo{
             .buffer = binds.arena->Handle(),
             .bindCount = static_cast<u32>(binds.binds.size()),
             .pBinds = binds.binds.data(),
         });
+        total += binds.binds.size();
     }
 
     const u64 signal_tick = memory_semaphore.NextTick();
@@ -909,17 +1177,20 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
     };
 
     info.AddWait(signal_sema, signal_tick);
-    {
-        // Submit callbacks prepare their commands outside the queue lock. Sparse
-        // binding is a queue operation too, and must serialize with submit/present.
-        const auto started = BbHitch::Clock::now();
-        std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
-        BbHitch::Record("sparse queue lock", started);
-        BbHitch::Scope hitch{"vkQueueBindSparse"};
-        const auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
-        if (submit_result == vk::Result::eErrorDeviceLost) instance.ReportDeviceLost("sparse binding");
-        ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
+    if (submit_result == vk::Result::eErrorDeviceLost) {
+        instance.ReportDeviceLost("sparse binding");
     }
+    ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    // bbport: a bind that failed never signals: the submission waiting for it (and the game) would
+    // stop without a word.
+    if (submit_result != vk::Result::eSuccess) {
+        std::printf("GPU: game memory binding %s: %zu binds in %zu buffers\n",
+                    vk::to_string(submit_result).c_str(), total, buffer_binds.size());
+        std::fflush(stdout);
+    }
+    ASSERT_MSG(submit_result == vk::Result::eSuccess, "Game memory binding failed: {}",
+               vk::to_string(submit_result));
 
     pending_binds.clear();
 }

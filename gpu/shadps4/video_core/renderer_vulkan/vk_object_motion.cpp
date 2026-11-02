@@ -70,8 +70,28 @@ ObjectMotion::ObjectMotion(const Instance& instance_, Scheduler& scheduler_)
     const auto props = instance.GetPhysicalDevice().getProperties();
     const char* forced = std::getenv("BB_OBJECT_MOTION");
     if (props.vendorID == 0x1002 && props.deviceID < 0x7440 && !(forced && forced[0] == '1')) {
+        BbSettings::Get().object_motion_unavailable = "Not available on RX 6000 and older Radeon cards: "
+                                                       "they lose the device with it.";
         std::printf("Object motion: off on this AMD GPU (RX 6000 and older lose the device with it; "
                     "BB_OBJECT_MOTION=1 turns it on)\n");
+        return;
+    }
+    // bbport: under 6 GB of VRAM it costs ~225 MiB (its 128 MiB of vertex history and the extra
+    // attachments) that textures need more: off there unless BB_OBJECT_MOTION=1 asks for it.
+    const auto& memory = instance.GetMemoryProperties();
+    u64 vram = 0;
+    for (u32 heap = 0; heap < memory.memoryHeapCount; ++heap) {
+        if (memory.memoryHeaps[heap].flags & vk::MemoryHeapFlagBits::eDeviceLocal) {
+            vram = std::max<u64>(vram, memory.memoryHeaps[heap].size);
+        }
+    }
+    if (props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu && vram < (6ull << 30) - (256ull << 20) &&
+        !(forced && forced[0] == '1')) {
+        BbSettings::Get().object_motion_unavailable = "Not available under 6 GB of video memory: "
+                                                       "textures need it more.";
+        std::printf("Object motion: off with %llu MiB of VRAM (under 6 GB the memory goes to "
+                    "textures; BB_OBJECT_MOTION=1 turns it on)\n",
+                    (unsigned long long)(vram >> 20));
         return;
     }
     void* mapped = nullptr;
@@ -88,7 +108,11 @@ ObjectMotion::ObjectMotion(const Instance& instance_, Scheduler& scheduler_)
     Shader::MotionVectors::params_address = params_address;
     Shader::MotionVectors::positions_address = positions_address;
     enabled = true;
+    const char* cache_setting = std::getenv("BB_OBJECT_MOTION_CACHE");
+    cache_enabled = !cache_setting || std::strcmp(cache_setting, "0") != 0;
     std::printf("Object motion: on (%u vertices per frame)\n", PositionsPerFrame);
+    std::printf("Object motion: target cache %s (BB_OBJECT_MOTION_CACHE=0|1)\n",
+                cache_enabled ? "on" : "off");
 }
 
 ObjectMotion::~ObjectMotion() {
@@ -180,7 +204,9 @@ u32 ObjectMotion::PrepareDraw(const DrawInfo& draw) {
 
 ObjectMotion::Target& ObjectMotion::EnsureImage(u32 width, u32 height) {
     Target* slot = nullptr;
-    for (auto& target : targets) {
+    const u32 target_count = cache_enabled ? u32(targets.size()) : 1u;
+    for (u32 index = 0; index < target_count; ++index) {
+        auto& target = targets[index];
         if (target.image && target.width == width && target.height == height) {
             target.used_frame = frame;
             return target;

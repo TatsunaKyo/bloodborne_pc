@@ -48,8 +48,9 @@ inline std::array<uint8_t, Bytes> Render(const Inputs& inputs) { return Encode(D
 std::string KeyLabel(const std::string& input);
 
 /// Other controllers' buttons in the place of the PlayStation ones, by position: Cross is the
-/// bottom face button (Xbox A, Switch B), Circle the right one (Xbox B, Switch A).
-enum Pad : int { PadXbox, PadSwitch, PadCount };
+/// bottom face button (Xbox A, Switch B), Circle the right one (Xbox B, Switch A). PlayStation's
+/// own are drawn too, for a rebound action whose button the game has no picture of in memory.
+enum Pad : int { PadXbox, PadSwitch, PadPlayStation, PadCount };
 /// `icon` as `pad`'s button, in the game's style; false for an icon that stays the game's own
 /// (the d-pad and the sticks, which every controller has alike).
 bool DrawPad(Icon icon, Pad pad, Pixels& out);

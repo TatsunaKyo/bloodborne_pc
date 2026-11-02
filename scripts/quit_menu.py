@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Quit to Desktop in the game's own menus (bbport.ini quit_to_desktop, game version 01.09).
 
-Both menus keep entries of FromSoftware's PC builds that the console game removes: "Opinion
-Box" on the title menu and "Language" in the System menu. The patches show them, as Quit to
-Desktop, and change what they do:
+The title menu keeps an entry of FromSoftware's PC builds that the console game hides, "Opinion
+Box"; the patches show it as Quit to Desktop. The System menu gets a new entry in the world, where
+the game builds its Language entry only to remove it again (outside the world Language stays, as
+in the game):
 
 - Title menu: the entry tells the port to close the game ("bb:q"). Nothing is lost there.
 - System menu (in the world): the entry runs Exit Game, so the game saves and leaves the world as
@@ -14,13 +15,16 @@ Desktop, and change what they do:
   title screen is built ("bb:t", the Play Online / Play Offline choice or the title menu).
 
 The messages go through the game's sceSystemServiceLaunchWebBrowser import, which the port
-answers itself (src/runtime_services.c). The new code lives where the Language entry's old
-handler and item code were. `text` writes the entries' texts as a mod layer (mods.py --layer):
-the game's menu text archives with those strings replaced.
+answers itself (src/runtime_services.c). The new code lives past the end of the code segment, in
+the rest of its last 4 KiB page (mapped with it, unused by the game; src/probe.c lets patches
+write there). `text` writes the entries' texts as a mod layer (mods.py --layer): the game's menu
+text archives with those strings added.
 """
 import argparse
+import os
 import struct
 import sys
+import threading
 import zlib
 from pathlib import Path
 
@@ -37,21 +41,23 @@ OPINION_INVOKE = 0x1B46030   # the Opinion Box callback
 OPINION_SLOT = 0x533B960     # its vtable slot
 TITLE_CONDITION = 0x1B4ABF3  # call: is the Opinion Box shown
 ONLINE_LABEL = 0x1B390A7     # call TEXT: "Play Online", the first screen after leaving the world
-SYSTEM_ITEM = 0x1BB4441      # the Language item's callback and add, up to SYSTEM_CONDITION
-SYSTEM_CONDITION = 0x1BB44C1 # in the world: keep the item; title System menu: remove it
-SYSTEM_KEEP, SYSTEM_REMOVE = 0x1BB4561, 0x1BB44D3
+SYSTEM_ITEM = 0x1BB4412      # the Language item: its texts, then the item (Exit Game's is in r13)
+SYSTEM_TEXT = 0x1BB441E      # SYSTEM_ITEM after its first two instructions
+SYSTEM_KEEP = 0x1BB4561      # after the Language item's condition: the item stays
 EXIT_DIALOG = 0x1C0CA1B      # Exit Game's confirmation text (mov esi, 0xcc; mov edx, 110000)
-CAVE = 0x1BB4BE0             # the Language item's handler, 128 bytes, unused after SYSTEM_ITEM
+CODE_END = 0x50D96DC         # end of the code segment; up to its 4 KiB page end nothing is there
+CAVE = 0x50D9700
+CAVE_END = (CODE_END + 0xFFF) & ~0xFFF
 
 # Text ids (menu.msgbnd.dcx): FMG 200 item names, 201 one-line help, 204 dialogs.
-TITLE_ID, SYSTEM_ID, DIALOG_ID = 401307, 110005, 110005
+# SYSTEM_ID is free in 200 and 201 (110005 is Language's), DIALOG_ID in 204.
+TITLE_ID, SYSTEM_ID, DIALOG_ID = 401307, 110006, 110005
 ORIGINAL = {
     TITLE_CONDITION: 'e8c8eef9ff',
     ONLINE_LABEL: 'e814fcfaff',
-    SYSTEM_ITEM: '488d05d88c7803 48898570dfffff 488d058a070000',
-    SYSTEM_CONDITION: '4584ff 750d e87556f3ff 84c0 0f858e000000',
+    SYSTEM_ITEM: '4c8db5a0dfffff bec8000000 bab5ad0100',
+    SYSTEM_KEEP: '488bbd90dfffff',
     EXIT_DIALOG: 'becc000000 bab0ad0100',
-    CAVE: '554889e5415741565348 83ec38 4989fe',
 }
 
 
@@ -63,7 +69,7 @@ class Code:
     """Machine code placed at an image offset, with rip-relative references."""
 
     def __init__(self, offset):
-        self.offset, self.data = offset, bytearray()
+        self.offset, self.data, self.messages = offset, bytearray(), []
 
     @property
     def here(self):
@@ -82,8 +88,10 @@ class Code:
         self.data += bytes.fromhex(prefix) + struct.pack('<i', target - (self.here + 7))
 
     def browser(self, message):
-        """Calls the browser import with `message` (8-byte aligned stack at the call)."""
-        self.lea('488d3d', message)
+        """Calls the browser import with message string number `message` (placed by link();
+        8-byte aligned stack at the call)."""
+        self.messages.append((len(self.data), message))
+        self.raw('488d3d00000000')  # lea rdi, [rip + string]
         self.raw('31f6')  # xor esi, esi
         self.call(BROWSER)
 
@@ -91,71 +99,75 @@ class Code:
 def code_writes():
     """(offset, bytes) writes, the vtable slot holding a patch-base address (probe.c rebases it)."""
     cave = Code(CAVE)
-    strings = {}
-    string_at = CAVE + 0x60
-    for name in ('t', 'q', 'p', 'd'):
-        strings[name] = string_at
-        string_at += 5
     # Title menu condition: tell the port the title menu is being built; always show the entry.
     title_condition = cave.here
     cave.raw('4883ec08')       # sub rsp, 8
-    cave.browser(strings['t'])
+    cave.browser(0)
     cave.raw('4883c408b001c3')  # add rsp, 8; mov al, 1; ret
     # Title menu entry: close the game, then the entry's own job as before.
     title_invoke = cave.here
     cave.raw('57564883ec08')   # push rdi; push rsi; sub rsp, 8
-    cave.browser(strings['q'])
+    cave.browser(1)
     cave.raw('4883c4085e5f')   # add rsp, 8; pop rsi; pop rdi
     cave.jmp(OPINION_INVOKE)
     # System menu entry (handler(out, context) like Exit Game's): mark the quit, then Exit Game.
     system_handler = cave.here
     cave.raw('57564883ec08')
-    cave.browser(strings['p'])
+    cave.browser(2)
     cave.raw('4883c4085e5f')
     cave.jmp(EXIT_HANDLER)
-    if cave.here > CAVE + 0x60:
-        raise ValueError('quit menu code does not fit')
-    cave.data = cave.data.ljust(0x60, b'\xcc')
-    for name in ('t', 'q', 'p', 'd'):
-        cave.data += f'bb:{name}'.encode() + b'\0'
-
-    # The Language item's callback becomes Exit Game's kind ({context, handler}); the context is
-    # the one Exit Game's item just used, still at [rbp-0x1fe0].
-    item = Code(SYSTEM_ITEM)
-    item.raw('488b8520e0ffff')  # mov rax, [rbp-0x1fe0]
-    item.raw('48898570dfffff')  # mov [rbp-0x2090], rax
-    item.lea('488d05', system_handler)
-    item.raw('48898578dfffff')  # mov [rbp-0x2088], rax
-    item.raw('488d9570dfffff')  # lea rdx, [rbp-0x2090]
-    item.raw('48899590dfffff')  # mov [rbp-0x2070], rdx
-    item.raw('31c94c89ef4c89f6')  # xor ecx, ecx; mov rdi, r13; mov rsi, r14
-    item.call(ADD_DELEGATE)
-    item.raw('4989c5')         # mov r13, rax
-    item.raw('eb' + format(SYSTEM_CONDITION - (item.here + 2), '02x'))
     # Exit Game's confirmation text: Quit to Desktop's when the port says so.
-    dialog = item.here
-    item.raw('4883ec08')
-    item.browser(strings['d'])
-    item.raw('4883c408')
-    item.raw('becc000000bab0ad0100')  # mov esi, 0xcc; mov edx, 110000
-    item.raw('85c07405')               # test eax, eax; jz +5
-    item.raw('ba' + struct.pack('<I', DIALOG_ID).hex() + 'c3')  # mov edx, DIALOG_ID; ret
+    dialog = cave.here
+    cave.raw('4883ec08')
+    cave.browser(3)
+    cave.raw('4883c408')
+    cave.raw('becc000000bab0ad0100')  # mov esi, 0xcc; mov edx, 110000
+    cave.raw('85c07405')               # test eax, eax; jz +5
+    cave.raw('ba' + struct.pack('<I', DIALOG_ID).hex() + 'c3')  # mov edx, DIALOG_ID; ret
     # The Play Online / Play Offline label: the game is back at the title screen.
-    online = item.here
-    item.raw('575652')         # push rdi; push rsi; push rdx (the text lookup's arguments)
-    item.browser(strings['t'])
-    item.raw('5a5e5f')         # pop rdx; pop rsi; pop rdi
-    item.jmp(TEXT)
-    if item.here > SYSTEM_CONDITION:
-        raise ValueError('System menu code does not fit')
-    item.data = item.data.ljust(SYSTEM_CONDITION - SYSTEM_ITEM, b'\xcc')
+    online = cave.here
+    cave.raw('575652')         # push rdi; push rsi; push rdx (the text lookup's arguments)
+    cave.browser(0)
+    cave.raw('5a5e5f')         # pop rdx; pop rsi; pop rdi
+    cave.jmp(TEXT)
+    # The System menu's Language item. Outside the world (r15b clear) the game's own, which
+    # shows when the game allows it. In the world, where the game removes it, Quit to Desktop:
+    # an item with a {context, handler} callback like Exit Game's, whose context is still at
+    # [rbp-0x1fe0].
+    system_item = cave.here
+    cave.raw('4c8db5a0dfffff')  # lea r14, [rbp-0x2060] (the two instructions replaced)
+    cave.raw('bec8000000')      # mov esi, 0xc8
+    cave.raw('4584ff')          # test r15b, r15b
+    cave.raw('7505')            # jnz quit
+    cave.jmp(SYSTEM_TEXT)       # the game's Language item
+    cave.raw('ba' + struct.pack('<I', SYSTEM_ID).hex())  # quit: mov edx, SYSTEM_ID
+    cave.raw('4c89f7')          # mov rdi, r14
+    cave.call(TEXT)
+    cave.raw('488dbde0dfffff')  # lea rdi, [rbp-0x2020]
+    cave.raw('bec9000000')      # mov esi, 0xc9
+    cave.raw('ba' + struct.pack('<I', SYSTEM_ID).hex())
+    cave.call(TEXT)
+    cave.raw('488b8520e0ffff')  # mov rax, [rbp-0x1fe0]
+    cave.raw('48898570dfffff')  # mov [rbp-0x2090], rax
+    cave.lea('488d05', system_handler)
+    cave.raw('48898578dfffff')  # mov [rbp-0x2088], rax
+    cave.raw('488d9570dfffff')  # lea rdx, [rbp-0x2090]
+    cave.raw('48899590dfffff')  # mov [rbp-0x2070], rdx
+    cave.raw('31c94c89ef4c89f6')  # xor ecx, ecx; mov rdi, r13; mov rsi, r14
+    cave.call(ADD_DELEGATE)
+    cave.raw('4989c5')          # mov r13, rax
+    cave.jmp(SYSTEM_KEEP)
+    strings = cave.here
+    for name in 'tqpd':
+        cave.data += f'bb:{name}'.encode() + b'\0'
+    for at, message in cave.messages:
+        cave.data[at + 3:at + 7] = rel32(CAVE + at, 7, strings + 5 * message)
+    if cave.here > CAVE_END:
+        raise ValueError('quit menu code does not fit')
 
-    condition = Code(SYSTEM_CONDITION)
-    condition.raw('4584ff')        # test r15b, r15b (in the world)
-    condition.raw('0f85' + rel32(SYSTEM_CONDITION + 3, 6, SYSTEM_KEEP).hex())
-    condition.raw('eb' + format(SYSTEM_REMOVE - (condition.here + 2), '02x'))
-    condition.data = condition.data.ljust(SYSTEM_REMOVE - SYSTEM_CONDITION, b'\x90')
-
+    item = Code(SYSTEM_ITEM)
+    item.jmp(system_item)
+    item.raw('90' * (SYSTEM_TEXT - item.here))
     title = Code(TITLE_CONDITION)
     title.call(title_condition)
     exit_dialog = Code(EXIT_DIALOG)
@@ -163,9 +175,16 @@ def code_writes():
     exit_dialog.raw('0f1f440000')
     online_label = Code(ONLINE_LABEL)
     online_label.call(online)
-    return [(c.offset, bytes(c.data)) for c in (cave, item, condition, title, exit_dialog,
-                                                online_label)] + \
+    return [(c.offset, bytes(c.data)) for c in (cave, item, title, exit_dialog, online_label)] + \
            [(OPINION_SLOT, struct.pack('<Q', EBOOT_BASE + title_invoke))]
+
+
+def check_segments(segments):
+    """segments: [(start, end)] of the eboot's PT_LOADs. Raises unless the code segment ends at
+    CODE_END and nothing else lies in the rest of its page."""
+    if not any(end == CODE_END for _, end in segments) or \
+            any(start < CAVE_END and end > CODE_END for start, end in segments if end != CODE_END):
+        raise ValueError('Quit to Desktop: unexpected code segment layout')
 
 
 def check_original(image_bytes):
@@ -287,6 +306,55 @@ def pack_dcx(template, body):
     return bytes(header) + packed
 
 
+# Level 9 is slow: the 22 language menu archives, packed one after another, took 5.5 s of every
+# game start here and as much again in rebirth.py. zlib lets the other threads run while it
+# compresses, so they are packed side by side (the same bytes on any thread). At most 8 at once:
+# each archive in work holds about 12 MB.
+PACK_THREADS = min(8, os.cpu_count() or 1)
+
+
+def in_parallel(function, items):
+    """function(item) for every item, in their order, on up to PACK_THREADS threads (for work that
+    spends its time in zlib). A result comes once it and all before it are done, so a failure
+    stops the caller at the same item as a plain loop; items not started by then are left out."""
+    items = list(items)
+    count = min(PACK_THREADS, len(items))
+    if count < 2:
+        yield from map(function, items)
+        return
+    # Plain threads, not concurrent.futures: Bloodborne.exe (PyInstaller) runs these scripts with
+    # the standard modules it bundles, and concurrent is not among them.
+    results, done = [None] * len(items), [threading.Event() for _ in items]
+    order, lock, stop = iter(range(len(items))), threading.Lock(), threading.Event()
+
+    def work():
+        while not stop.is_set():
+            with lock:
+                i = next(order, None)
+            if i is None:
+                return
+            try:
+                results[i] = (True, function(items[i]))
+            except BaseException as error:  # raised for the caller at its item
+                results[i] = (False, error)
+            done[i].set()
+    threads = [threading.Thread(target=work, daemon=True) for _ in range(count)]
+    for thread in threads:
+        thread.start()
+    try:
+        for i in range(len(items)):
+            done[i].wait()
+            ok, value = results[i]
+            results[i] = None  # the caller has it now
+            if not ok:
+                raise value
+            yield value
+    finally:
+        stop.set()
+        for thread in threads:
+            thread.join()
+
+
 def bnd4_files(data):
     """[(entry offset, data offset, size)] of a BND4 with 0x24-byte entries."""
     if data[:4] != b'BND4':
@@ -318,8 +386,9 @@ def rebuild_bnd4(data, replace):
     return bytes(out)
 
 
-def menu_texts(archive, texts):
-    """menu.msgbnd.dcx with the Quit to Desktop strings."""
+def menu_texts(archive, texts, extra=None):
+    """menu.msgbnd.dcx with the Quit to Desktop strings, and `extra` ({FMG id: {text id: text}},
+    PC Settings') when given."""
     name, title_help, system_help, question = texts
     bnd = unpack_dcx(archive)
     files = {file_id: bnd[offset:offset + length] for _, offset, length, file_id in bnd4_files(bnd)}
@@ -331,6 +400,7 @@ def menu_texts(archive, texts):
                              (204, {DIALOG_ID: question})):
         strings = read_fmg(files[file_id])
         strings.update(changes)
+        strings.update((extra or {}).get(file_id, {}))
         replace[file_id] = write_fmg(files[file_id], strings)
     return pack_dcx(archive, rebuild_bnd4(bnd, replace))
 
@@ -382,12 +452,18 @@ def shift_depth(data, timeline, depth, dy, edits):
                 edits[body] = moved(swf.read_matrix(data, span[0])[0], dy)
 
 
+def row_count(rows):
+    return next(n for n in range(64) if f'Item_{n}_0' not in rows)
+
+
 def add_row(data, timeline, rows, inserts, after):
-    """A sixth Item_5_0 after Item_4_0 in `timeline` (start, end): its first placement and its
-    animation (each later Item_4_0 keyframe, one row lower) at a free depth below it. Returns
-    the row step in twips."""
-    code, body, length, _, matrix = rows['Item_4_0']
-    step = matrix[2][1] - rows['Item_3_0'][4][2][1]
+    """A next row (Item_5_0 after Item_4_0, ...) in `timeline` (start, end): its first placement
+    and its animation (each later keyframe of the last row, one row lower) at a free depth below
+    it. Returns the row step in twips."""
+    last = row_count(rows) - 1
+    name, new = f'Item_{last}_0\0'.encode(), f'Item_{last + 1}_0\0'.encode()
+    code, body, length, _, matrix = rows[f'Item_{last}_0']
+    step = matrix[2][1] - rows[f'Item_{last - 1}_0'][4][2][1]
     depth = depth_of(data, body, code)
     used = {depth_of(data, b, c) for c, _, b, _ in swf.tags(data, *timeline) if c in (26, 70)}
     free = next(d for d in range(depth + 1, depth + 64) if d not in used)
@@ -399,9 +475,9 @@ def add_row(data, timeline, rows, inserts, after):
         if span:
             matrix = swf.read_matrix(data, span[0])[0]
             record = record[:span[0] - body] + swf.write_matrix(moved(matrix, step)) + record[span[1] - body:]
-        return swf.tag(code, bytes(record).replace(b'Item_4_0\0', b'Item_5_0\0'))
+        return swf.tag(code, bytes(record).replace(name, new))
     first = copy(code, body, length)
-    if b'Item_5_0\0' not in first:
+    if new not in first:
         raise ValueError('unexpected list row')
     inserts[timeline[0]] = inserts.get(timeline[0], b'') + first
     for c, _, b, n in swf.tags(data, *timeline):
@@ -428,17 +504,17 @@ def taller_title(data):
     return rebuild(data, {}, inserts, after)
 
 
-def taller_list(data, panel=SYSTEM_PANEL):
-    """The System menu panel: a sixth row, what sits below the rows (frame edge, separator, help
-    and button guide) one row lower, the panel half a row higher to stay centred. The panel
-    animates as it opens: the moves apply to every frame."""
+def taller_list(data, panel=SYSTEM_PANEL, rows_wanted=6):
+    """The System menu panel: one more row (None once it has `rows_wanted`), what sits below the
+    rows (frame edge, separator, help and button guide) one row lower, the panel half a row
+    higher to stay centred. The panel animates as it opens: the moves apply to every frame."""
     _, sprites, _ = swf.definitions(data)
     start = swf.stage_start(data)
     root = placements_in(data, start, len(data))
     code, body, _, character, _ = root[panel['list']]
     timeline = sprites[character]
     rows = placements_in(data, *timeline)
-    if 'Item_5_0' in rows:
+    if row_count(rows) >= rows_wanted:
         return None
     dim, frame_place = rows.get(panel['dim']), rows.get(panel['frame'])
     if not dim or not frame_place or 'StatusBar' not in rows or frame_place[3] not in sprites:
@@ -508,35 +584,50 @@ def rebuild(data, edits, inserts, after=None):
     return out[:4] + struct.pack('<I', len(out)) + out[8:]
 
 
-def write_row_layer(game, out):
+def write_row_layer(game, out, quit=True, pc=False):
+    """The title menu's sixth row (Quit to Desktop) and the System menu's rows: five, one more
+    for Quit to Desktop and three for PC Settings' lines, whose page the settings screen gets too."""
     menu = game / 'dvdroot_ps4' / 'menu'
     target = out / 'dvdroot_ps4' / 'menu'
     target.mkdir(parents=True, exist_ok=True)
-    for name, grow in [(n, taller_title) for n in TITLE_MOVIES] + [(SYSTEM_MOVIE, taller_list)]:
+    system_rows = 5 + quit + 3 * pc
+    movies = ([(n, taller_title) for n in TITLE_MOVIES] if quit else []) + \
+        [(SYSTEM_MOVIE, lambda data: taller_list(data, rows_wanted=system_rows))]
+    for name, grow in movies:
         source = menu / name
         if not source.is_file():
             continue
+        data, grown = source.read_bytes(), False
         try:
-            data = grow(source.read_bytes())
+            while (taller := grow(data)) is not None:
+                data, grown = taller, True
         except (ValueError, KeyError, IndexError, StopIteration, struct.error) as error:
             print(f'Quit to Desktop: {name}: {error}; the list keeps five rows', file=sys.stderr)
             continue
-        if data:
+        if pc and name == SYSTEM_MOVIE:
+            import pc_menu
+            try:
+                data, grown = pc_menu.pc_pages(data) or data, True
+            except (ValueError, KeyError, IndexError, StopIteration, struct.error) as error:
+                print(f'PC Settings: {name}: {error}', file=sys.stderr)
+        if grown:
             (target / name).write_bytes(data)
-    print('Quit to Desktop: title and System menus with six rows')
+    print('Quit to Desktop: title and System menus with six rows' if quit and not pc else
+          f'Menus: System menu with {system_rows} rows')
 
 
-def write_text_layer(game, out):
+def write_text_layer(game, out, extra=None):
     msg = game / 'dvdroot_ps4' / 'msg'
+    sources = [folder / 'menu.msgbnd.dcx' for folder in sorted(p for p in msg.iterdir() if p.is_dir())]
+    sources = [source for source in sources if source.is_file()]
+
+    def texts_for(source):
+        return menu_texts(source.read_bytes(), TEXTS.get(source.parent.name.casefold(), TEXTS['engus']), extra)
     written = 0
-    for folder in sorted(p for p in msg.iterdir() if p.is_dir()):
-        source = folder / 'menu.msgbnd.dcx'
-        if not source.is_file():
-            continue
-        texts = TEXTS.get(folder.name.casefold(), TEXTS['engus'])
-        target = out / 'dvdroot_ps4' / 'msg' / folder.name / source.name
+    for archive, source in zip(in_parallel(texts_for, sources), sources):
+        target = out / 'dvdroot_ps4' / 'msg' / source.parent.name / source.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(menu_texts(source.read_bytes(), texts))
+        target.write_bytes(archive)
         written += 1
     print(f'Quit to Desktop: menu texts for {written} languages')
 
@@ -545,9 +636,15 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('game', type=Path, help='game folder (with dvdroot_ps4)')
     p.add_argument('--out', type=Path, required=True, help='mod layer folder to write')
+    p.add_argument('--no-quit', action='store_true', help='without the Quit to Desktop rows')
+    p.add_argument('--pc', action='store_true', help='with the PC Settings texts and System row')
     a = p.parse_args()
-    write_text_layer(a.game, a.out)
-    write_row_layer(a.game, a.out)
+    extra = None
+    if a.pc:
+        import pc_menu
+        extra = pc_menu.texts()
+    write_text_layer(a.game, a.out, extra)
+    write_row_layer(a.game, a.out, quit=not a.no_quit, pc=a.pc)
 
 
 if __name__ == '__main__':

@@ -138,14 +138,6 @@ public:
         return vk12_features.shaderInt8;
     }
 
-    bool IsMaintenance5Supported() const {
-        return maintenance_5;
-    }
-
-    bool IsMaintenance6Supported() const {
-        return maintenance_6;
-    }
-
     /// bbport: prints the driver's fault report after a device loss (VK_EXT_device_fault), once.
     void ReportDeviceLost(const char* where) const;
 
@@ -307,12 +299,41 @@ public:
 
     /// bbport: FSR 4.1.1 (INT8 model passes and VK_VALVE_shader_mixed_float_dot_product).
     bool IsFsr411Supported() const {
-        return IsFsr4Int8Supported() && mixed_float_dot_product;
+#ifdef _WIN32
+        return fsr4vk || (native_fsr411 && native_fsr411_async);
+#else
+        return native_fsr411 || fsr4vk || (IsFsr4Int8Supported() && mixed_float_dot_product);
+#endif
     }
+    const char* Fsr411Problem() const { return fsr411_problem.empty() ? nullptr : fsr411_problem.c_str(); }
+    const char* NativeFsr411Problem() const { return native_fsr411_problem.empty() ? nullptr : native_fsr411_problem.c_str(); }
+    bool IsFsr411NativeSupported() const { return native_fsr411; }
+    bool IsFsr411AsyncSupported() const { return native_fsr411_async; }
+    int Fsr411NativeStatus() const { return native_fsr411_status; }
+    int FsrDx12InteropStatus() const { return fsr_dx12_interop_status; }
+    int Fsr4VkStatus() const { return fsr4vk_status; }
+    bool IsFg401InteropSupported() const { return fg401_interop; }
+    bool IsFsr4VkSupported() const { return fsr4vk; }
+    bool IsRobustBufferAccessEnabled() const { return features.robustBufferAccess; }
 
     /// VK_KHR_shader_clock is supported.
     bool IsShaderSubgroupClockSupported() const {
         return shader_clock && shader_clock_features.shaderSubgroupClock;
+    }
+
+    /// bbport: VK_KHR_present_id is enabled (present ids for the latency markers).
+    bool IsPresentIdEnabled() const {
+        return present_id;
+    }
+
+    /// bbport: NVIDIA Reflex (VK_NV_low_latency2) is enabled.
+    bool IsNvLowLatencyEnabled() const {
+        return nv_low_latency;
+    }
+
+    /// bbport: AMD Anti-Lag 2 (VK_AMD_anti_lag) is enabled.
+    bool IsAmdAntiLagEnabled() const {
+        return amd_anti_lag;
     }
 
     /// Returns the vendor ID of the physical device
@@ -489,11 +510,6 @@ public:
         return image_view_min_lod;
     }
 
-    /// Returns whether shaderStorageImageMultisample is supported.
-    bool IsMultisampleStorageImageSupported() const {
-        return features.shaderStorageImageMultisample;
-    }
-
     /// Returns whether the device can report memory usage.
     bool CanReportMemoryUsage() const {
         return supports_memory_budget;
@@ -505,6 +521,10 @@ public:
     /// bbport: the driver's current budget of the heaps GetDeviceMemoryUsage counts
     /// (VK_EXT_memory_budget: what this process can use now, other processes included).
     [[nodiscard]] u64 GetDeviceMemoryBudgetNow() const;
+
+    /// bbport: both at once. The collector reads them every pass, and each read is a driver round
+    /// trip.
+    void GetDeviceMemoryStats(u64& usage, u64& budget) const;
 
     /// Returns the total memory budget available to the device.
     [[nodiscard]] u64 GetTotalMemoryBudget() const {
@@ -583,15 +603,24 @@ private:
     bool shader_atomic_float2{};
     bool workgroup_memory_explicit_layout{};
     bool maintenance_5{};
-    bool maintenance_6{};
     bool device_fault{};
     bool maintenance_8{};
     bool attachment_feedback_loop{};
     bool image_2d_view_of_3d{};
     bool image_view_min_lod{};
     bool shader_clock{};
+    bool present_id{};
+    bool nv_low_latency{};
+    bool amd_anti_lag{};
     bool compute_shader_derivatives{};
     bool mixed_float_dot_product{}; // bbport: VK_VALVE_shader_mixed_float_dot_product (FSR 4.1.1)
+    bool fsr4vk{};
+    std::string fsr411_problem;
+    std::string native_fsr411_problem;
+    bool fg401_interop{};
+    bool native_fsr411_async{};
+    bool native_fsr411{}; // Windows: AMD's DX12 runtime through shared GPU memory
+    int native_fsr411_status{5}, fsr_dx12_interop_status{5}, fsr4vk_status{5};
     bool supports_memory_budget{};
     bool win32_surface{};
     bool full_screen_exclusive{};

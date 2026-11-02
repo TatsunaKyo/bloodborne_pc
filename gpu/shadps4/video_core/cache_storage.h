@@ -37,6 +37,7 @@ public:
   /// bbport: removes every cached blob (an incompatible cache is rebuilt, not
   /// ignored).
   void Clear();
+  [[nodiscard]] std::filesystem::path DriverCachePath() const;
 
   bool Save(BlobType type, const std::string &name, std::vector<u8> &&data);
   bool Save(BlobType type, const std::string &name, std::vector<u32> &&data);

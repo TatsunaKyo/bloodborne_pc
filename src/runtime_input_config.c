@@ -191,6 +191,17 @@ int input_binding_keyboard_text(const InputBinding *b, char *out, size_t size) {
     return 1;
 }
 
+const char *input_binding_controller_name(const InputBinding *b) {
+    if (b->extra_count) return NULL;
+    if (b->kind == IN_CBUTTON) {
+        for (size_t i = 0; i < sizeof(kCButtonNames) / sizeof(kCButtonNames[0]); ++i)
+            if (kCButtonNames[i].value == b->value) return kCButtonNames[i].name;
+    }
+    if (b->kind == IN_AXIS && b->value == SDL_GAMEPAD_AXIS_LEFT_TRIGGER) return "l2";
+    if (b->kind == IN_AXIS && b->value == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) return "r2";
+    return NULL;
+}
+
 /* ---- Binding resolution for one input token ------------------------------------------ */
 
 static int ResolveInput(const char *token, InputBinding *out) {
@@ -217,13 +228,29 @@ static int ResolveInput(const char *token, InputBinding *out) {
 
 /* ---- Hotkey reservation (HOT-001, HOT-002) -------------------------------------------- */
 
-/* Reserved no matter what the file says: the menu (Insert) and BB_PAD_RECORD (F9).
+/* The key that opens the in-game menu (BB_MENU_KEY, the launcher's Controls page: Insert by
+ * default, "none" for no key): reserved, and Insert bindable once the menu is elsewhere. */
+static int32_t MenuScancode(void) {
+    static int32_t scancode = -2;
+    if (scancode == -2) {
+        const char *name = getenv("BB_MENU_KEY");
+        if (!name || !*name) scancode = SDL_SCANCODE_INSERT;
+        else if (!SDL_strcasecmp(name, "none")) scancode = SDL_SCANCODE_UNKNOWN;
+        else {
+            const SDL_Scancode found = SDL_GetScancodeFromName(name);
+            scancode = found != SDL_SCANCODE_UNKNOWN ? (int32_t)found : SDL_SCANCODE_INSERT;
+        }
+    }
+    return scancode;
+}
+
+/* Reserved no matter what the file says: the menu's key (Insert) and BB_PAD_RECORD (F9).
  * Escape is bindable: the overlay only uses it to close an open menu or cancel text entry,
  * and the pad is neutral while either is open (bbgpu_overlay_captures_input).
  * Used both for game-output bindings and for the hotkey lines themselves (HOT-001): F9 cannot
  * become hotkey_reload_inputs's key either, not just a cross/circle/... binding. */
 static int IsUnconditionallyReserved(int32_t scancode) {
-    return scancode == SDL_SCANCODE_INSERT || scancode == SDL_SCANCODE_F9;
+    return (MenuScancode() != SDL_SCANCODE_UNKNOWN && scancode == MenuScancode()) || scancode == SDL_SCANCODE_F9;
 }
 /* Reserved for game-output bindings specifically: the above, plus whichever key currently
  * toggles the mouse or reloads input.ini (HOT-002). */
@@ -326,6 +353,14 @@ static void ParseMouseSensitivityY(InputConfig *cfg, const char *value) {
     float v = ParseFloatStrict(value, &ok);
     if (!ok || v < 0.1f || v > 10.0f) { ++cfg->warnings; return; }
     cfg->mouse.sensitivity_y = v;
+}
+
+/* mouse_lock_switch = 0..2000: mouse counts that switch the lock-on target (0 = off). */
+static void ParseMouseLockSwitch(InputConfig *cfg, const char *value) {
+    int ok;
+    float v = ParseFloatStrict(value, &ok);
+    if (!ok || v < 0.0f || v > 2000.0f) { ++cfg->warnings; return; }
+    cfg->mouse.lock_switch = (int)v;
 }
 
 /* stick_socd = last|neutral: what two opposite directions held together give (runtime_pad.c,
@@ -449,6 +484,11 @@ static void ParseLine(ParseState *state, char *line) {
         ParseMouseSensitivityY(cfg, input_raw);
         return;
     }
+    if (EqualsCaseInsensitive(output_raw, "mouse_lock_switch")) {
+        if (!state->hotkeys_pass) return;
+        ParseMouseLockSwitch(cfg, input_raw);
+        return;
+    }
     if (EqualsCaseInsensitive(output_raw, "stick_socd")) {
         if (!state->hotkeys_pass) return;
         ParseStickSocd(cfg, input_raw);
@@ -566,6 +606,7 @@ void input_config_parse(InputConfig *out, const char *text) {
     out->mouse.camera_sensitivity = 1.0f;
     out->mouse.sensitivity_y = 1.0f;
     out->mouse.camera_sync = 1;
+    out->mouse.lock_switch = 60;
     for (int i = 0; i < DEADZONE_COUNT; ++i) { out->deadzone[i].inner = 1; out->deadzone[i].outer = 127; }
     out->stick_socd_last = 1;
     /* Defaults that keep a keyboard sprint through direction changes (cassioKenji, PR #74). */

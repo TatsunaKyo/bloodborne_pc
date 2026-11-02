@@ -50,12 +50,28 @@ public:
         }();
         return value;
     }
+    /// bbport: BB_VRR=1, variable refresh rate (G-Sync, FreeSync): V-Sync (FIFO), whose images
+    /// a VRR display shows as they come, and a frame cap a little below the refresh rate so the
+    /// game stays in the display's range (at the refresh rate itself V-Sync queues frames).
+    bool IsVrr() { static const auto value = Flag("BB_VRR", false); return value; }
+    /// The highest frame rate with VRR: 3 FPS or 2.5% below the refresh rate, at most 120.
+    u32 GetVrrLimit() {
+        const u32 hz = BbDisplayRefreshHz();
+        return std::min<u32>(120, hz - std::max<u32>(3, hz / 40));
+    }
     /// Frames per second the present thread lets through; 0 = no limit. BB_FPS_LIMIT overrides.
     u32 GetFrameLimit() {
-        static const u32 value = [] {
+        static const u32 value = [this] {
             const long limit = Number("BB_FPS_LIMIT", -1);
-            if (limit >= 0) return u32(limit);
-            return Number("BB_VBLANK_HZ", 60) > 0 ? 0u : std::min<u32>(BbDisplayRefreshHz(), 120);
+            u32 value = limit >= 0 ? u32(limit)
+                        : Number("BB_VBLANK_HZ", 60) > 0
+                            ? 0u
+                            : std::min<u32>(BbDisplayRefreshHz(), 120);
+            // VRR: uncapped (BB_VBLANK_HZ=0) frame rates stay below the refresh rate.
+            if (IsVrr() && Number("BB_VBLANK_HZ", 60) <= 0 && (value == 0 || value > GetVrrLimit())) {
+                value = GetVrrLimit();
+            }
+            return value;
         }();
         return value;
     }
@@ -64,6 +80,8 @@ public:
     bool IsDumpShaders() { static const auto value = Flag("BB_DUMP_SHADERS", false); return value; }
     bool IsFsrEnabled() { static const auto value = Flag("BB_FSR1", false); return value; }
     bool IsHdrAllowed() { static const auto value = Flag("BB_HDR", false); return value; }
+    // bbport: gamma 2.2 for the SDR picture when Windows runs the display in HDR (post_process.frag).
+    bool IsHdrGammaEnabled() { static const auto value = Flag("BB_HDR_GAMMA", true); return value; }
     bool IsInlineFetchShader() { return false; }
     bool IsNullGPU() { static const auto value = Flag("BB_NULL_GPU", false); return value; }
     bool IsPatchShaders() { return false; }

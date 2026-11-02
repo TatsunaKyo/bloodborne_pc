@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <vector>
 
 #include "common/logging/log.h"
@@ -86,9 +87,43 @@ static bool CanAccess(uintptr_t addr, size_t len, bool write) {
            protection == PAGE_EXECUTE_READWRITE || protection == PAGE_EXECUTE_WRITECOPY;
 }
 
+// The checks of the camera update (the game's thread), once per frame of mouse motion: the
+// regions found readable and writable are kept, so the same game memory is not asked about again.
+// VirtualQuery can cost far more than a frame's budget allows on some PCs (security software
+// that watches it): four of them per frame took a player at 120 FPS down to 60-70 while the mouse
+// moved. An entry is asked about again after a second, in case the game freed it.
+static bool CanAccessCached(uintptr_t addr, size_t len, bool write) {
+    struct Region {
+        uintptr_t start, end;
+        bool writable;
+        int64_t checkedMs;
+    };
+    static Region regions[8] = {};
+    static size_t next = 0;
+    const int64_t now = static_cast<int64_t>(GetTickCount64());
+    for (const Region& r : regions) {
+        if (addr >= r.start && addr + len <= r.end && now - r.checkedMs < 1000) {
+            return !write || r.writable;
+        }
+    }
+    if (!CanAccess(addr, len, write)) {
+        return false;
+    }
+    MEMORY_BASIC_INFORMATION mbi{};
+    VirtualQuery(reinterpret_cast<const void*>(addr), &mbi, sizeof(mbi));
+    const DWORD protection = mbi.Protect & 0xff;
+    const uintptr_t start = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+    regions[next] = {start, start + mbi.RegionSize,
+                     protection == PAGE_READWRITE || protection == PAGE_WRITECOPY ||
+                         protection == PAGE_EXECUTE_READWRITE || protection == PAGE_EXECUTE_WRITECOPY,
+                     now};
+    next = (next + 1) % std::size(regions);
+    return true;
+}
+
 template <typename T>
 static T ReadMem(uintptr_t addr) {
-    if (!CanAccess(addr, sizeof(T), false)) {
+    if (!CanAccessCached(addr, sizeof(T), false)) {
         return T{};
     }
     return *reinterpret_cast<const volatile T*>(addr);
@@ -96,7 +131,7 @@ static T ReadMem(uintptr_t addr) {
 
 template <typename T>
 static bool WriteMem(uintptr_t addr, T val) {
-    if (!CanAccess(addr, sizeof(T), true)) {
+    if (!CanAccessCached(addr, sizeof(T), true)) {
         return false;
     }
     *reinterpret_cast<volatile T*>(addr) = val;
@@ -389,6 +424,12 @@ static void AddFloat(std::atomic<float>& value, float add) {
     }
 }
 
+bool BloodborneCam::IsLockedOn() const noexcept {
+    if (m_lockedOn.load(std::memory_order_relaxed)) return true;
+    const int64_t last = m_lastApplyMs.load(std::memory_order_relaxed);
+    return m_enabled.load(std::memory_order_relaxed) && last && NowMs() - last > 100;
+}
+
 void BloodborneCam::OnMouseMotion(float xrel, float yrel) {
     if (!m_enabled.load(std::memory_order_acquire) || !m_trampoline) {
         return;
@@ -512,7 +553,7 @@ void BloodborneCam::Turn(uintptr_t pitch, float xrel, float yrel) {
 // the drawn position is pivot - direction * r, direction = (sin y cos p, -sin p, cos y cos p).
 void BloodborneCam::TurnDrawnPosition(uintptr_t camera, float turnPitch, float turnYaw) {
 #ifdef _WIN32
-    if (!CanAccess(camera + 0xD0, 0x40, true)) {
+    if (!CanAccessCached(camera + 0xD0, 0x40, true)) {
         return;
     }
 #endif

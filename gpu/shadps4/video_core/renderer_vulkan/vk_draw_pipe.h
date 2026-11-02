@@ -13,8 +13,6 @@
 
 #include <cstdlib>
 #include "bbport_threads.h"
-#include "bbport_copy.h"
-#include "bbport_hitch.h"
 
 #include <array>
 #include <atomic>
@@ -108,12 +106,17 @@ public:
         if (consumed.load(std::memory_order_acquire) == head) {
             return;
         }
-        BbHitch::Scope hitch{"draw pipe drain"};
         ++drains;
         const u32 slot = reason < NumReasons ? reason : ReasonRasterizer;
         ++drains_by_reason[slot];
         const u64 start = __rdtsc();
-        WaitUntilConsumed(head);
+        for (u32 spins = 0; consumed.load(std::memory_order_acquire) != head; ++spins) {
+            if (spins < 4096) {
+                __builtin_ia32_pause();
+            } else {
+                std::this_thread::yield();
+            }
+        }
         const u64 waited = __rdtsc() - start;
         drain_cycles += waited;
         cycles_by_reason[slot] += waited;
@@ -148,40 +151,13 @@ private:
     }
 
     void WaitForSpace(u64 at, u64 size) {
-        if (at + size > Capacity) {
-            WaitUntilConsumed(at + size - Capacity);
-        }
-    }
-
-    void WaitUntilConsumed(u64 minimum) {
-        for (u32 spins = 0; consumed.load(std::memory_order_acquire) < minimum; ++spins) {
-            if (spins < 4096) {
-                __builtin_ia32_pause();
-                continue;
-            }
-            // Long resource/driver work must not leave the producer runnable,
-            // competing with the recorder, copy workers and guest job threads.
-            consumed_sleeping.store(true, std::memory_order_seq_cst);
-            const u64 seen = consumed.load(std::memory_order_seq_cst);
-            if (seen < minimum) {
-                consumed.wait(seen, std::memory_order_seq_cst);
-            }
-            consumed_sleeping.store(false, std::memory_order_seq_cst);
-        }
-    }
-
-    void PublishConsumed(u64 at) {
-        // Pair the progress publication and waiter check in one SC order: a
-        // waiter either sees the progress or receives the notification.
-        consumed.store(at, std::memory_order_seq_cst);
-        if (consumed_sleeping.load(std::memory_order_seq_cst)) {
-            consumed.notify_one();
+        while (at + size - consumed.load(std::memory_order_acquire) > Capacity) {
+            __builtin_ia32_pause();
         }
     }
 
     void Run(std::stop_token stop) {
         Common::SetCurrentThreadName("bb:DrawRec");
-        BbHitch::Trace::SetRole("draw recording");
         on_stage_b = true;
         stage_b_tid.store(static_cast<u32>(gettid()), std::memory_order_release);
         u64 at = 0;
@@ -219,20 +195,14 @@ private:
             const auto* header = reinterpret_cast<const Header*>(ring.get() + at % Capacity);
             if (header->size == 0) {
                 at += Capacity - at % Capacity;
-                PublishConsumed(at);
+                consumed.store(at, std::memory_order_release);
                 continue;
             }
             const u64 start = __rdtsc();
             handler(context, reinterpret_cast<const u8*>(header + 1), header->payload);
             busy_cycles.fetch_add(__rdtsc() - start, std::memory_order_relaxed);
             at += header->size;
-            // A drained draw queue must not hide guest reads in stage B's thread-local
-            // copy batch. Publish them before stage A can replace their source memory.
-            // Flush once at the end of a queued burst, keeping copies batched per burst.
-            if (at == published.load(std::memory_order_acquire)) {
-                BbCopy::FlushBatch();
-            }
-            PublishConsumed(at);
+            consumed.store(at, std::memory_order_release);
         }
     }
 
@@ -244,7 +214,6 @@ private:
     u32 pending_size = 0;
     alignas(64) std::atomic<u64> published{0};
     alignas(64) std::atomic<u64> consumed{0};
-    std::atomic<bool> consumed_sleeping{false};
     alignas(64) std::atomic<u32> wake{0};
     std::atomic<bool> sleeping{false};
     std::atomic<u32> stage_b_tid{0};

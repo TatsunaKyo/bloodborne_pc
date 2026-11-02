@@ -4,7 +4,7 @@
 #include <thread>
 #include <cstdint>
 #include <cstddef>
-#include <setjmp.h>
+#include "bbport_toggles.h"
 // Renderer tests have no guest process. Clock/host-thread services work; guest accesses abort.
 // A headless fixture has no SDL display; do not pull the game frontend into it.
 #ifndef BB_TEST_LINKED_GPU

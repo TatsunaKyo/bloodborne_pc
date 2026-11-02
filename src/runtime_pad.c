@@ -69,6 +69,9 @@ static size_t reads;
 static uint8_t connected_count;
 static uint64_t last_mouse_sample_us; /* CNV-003: dt since the previous mouse-to-stick sample */
 static double smoothed_mouse_stick_x, smoothed_mouse_stick_y; /* mouse_to_axis's EMA state */
+static double lock_switch_x, lock_switch_y;  /* lock_switch_flick: motion gathered while locked on */
+static int lock_flick_x, lock_flick_y;       /* the flick being sent */
+static uint64_t lock_flick_until_us, lock_flick_ready_us;
 
 static uint64_t now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t); return (uint64_t)t.tv_sec*1000000u+(uint64_t)t.tv_nsec/1000u; }
 static uint8_t trigger(int16_t v) { int x=v>>7; return (uint8_t)(x<0 ? 0 : x>255 ? 255 : x); }
@@ -369,6 +372,29 @@ static int apply_deadzone(int value, int inner, int outer) {
     return value<0 ? -(int)scaled : (int)scaled;
 }
 
+/* MIX-004 / DZN-001: combine the destination trigger's bindings before deadzone.
+ * A key/button contributes a full press; a later idle axis must not overwrite it.
+ * Config limits use 1..127, scaled to the trigger's 0..255 range. Keep the default
+ * (1,127) exactly as before so existing trigger sensitivity is unchanged. */
+static uint8_t trigger_output_value(const HostState *host, const InputConfig *cfg,
+                                    InputOutput out, DeadzoneTarget target) {
+    int value=0;
+    for (int i=0;i<cfg->table.binding_count[out];++i) {
+        const InputBinding *b=&cfg->table.bindings[out][i];
+        if (b->kind==IN_AXIS) {
+            if (host->gamepad) value+=trigger(SDL_GetGamepadAxis(host->gamepad,(SDL_GamepadAxis)b->value));
+        } else if (binding_held(host,b)) value+=255;
+    }
+    if (value>255) value=255;
+    const AxisDeadzone *dz=&cfg->deadzone[target];
+    if (dz->inner==1 && dz->outer==127) return (uint8_t)value;
+    const int inner=dz->inner*255/127, outer=dz->outer*255/127;
+    /* Outer first also makes equal limits a step, including full travel at 127,127. */
+    if (value>=outer) return 255;
+    if (value<=inner) return 0;
+    return (uint8_t)((value-inner)*255/(outer-inner));
+}
+
 /* MOU-009: converts raw mouse motion straight into shadPS4's linear response (magnitude*speed +
  * speed_offset*128, over a 33 ms window -- shadPS4's fixed poll interval, kept as the unit
  * mouse_movement_params' defaults are tuned for), with no filtering of the raw delta itself, and
@@ -447,6 +473,33 @@ static void mouse_to_axis(float dx, float dy, double dt_ms, const MouseParams *m
     *out_y=y<-127?-127:y>127?127:y;
 }
 
+/* Lock-on target switching with the direct mouse camera, as in Dark Souls III on PC: while
+ * locked on, the game turns the camera and the right stick only switches targets, with a flick.
+ * Mouse motion through mouse_to_axis gave a flick only for very fast swipes (a normal move stays
+ * well inside the game's threshold, and the output lerp softens it further), so moving the mouse
+ * did not switch. Here motion is gathered (fading over ~150 ms, so slow drift does not add up),
+ * and once it passes mouse_lock_switch counts the stick is pushed fully that way for 100 ms, then
+ * left neutral for 250 ms so the game sees each flick on its own. Returns 1 while it sends one. */
+static int lock_switch_flick(float dx, float dy, double dt_ms, int threshold, int *out_x, int *out_y) {
+    const uint64_t now=now_us();
+    const double fade=exp(-dt_ms/150.0);
+    lock_switch_x=lock_switch_x*fade+dx;
+    lock_switch_y=lock_switch_y*fade+dy;
+    if (now>=lock_flick_ready_us && (fabs(lock_switch_x)>=threshold || fabs(lock_switch_y)>=threshold)) {
+        const int horizontal=fabs(lock_switch_x)>=fabs(lock_switch_y);
+        lock_flick_x=horizontal ? (lock_switch_x<0 ? -127 : 127) : 0;
+        lock_flick_y=horizontal ? 0 : (lock_switch_y<0 ? -127 : 127);
+        printf("Mouse: lock-on switch %s\n",lock_flick_x<0 ? "left" : lock_flick_x>0 ? "right" : lock_flick_y<0 ? "up" : "down");
+        lock_flick_until_us=now+100000;
+        lock_flick_ready_us=now+350000;
+        lock_switch_x=lock_switch_y=0.0;
+    }
+    if (now<lock_flick_until_us) { *out_x=lock_flick_x; *out_y=lock_flick_y; return 1; }
+    if (now<lock_flick_ready_us) lock_switch_x=lock_switch_y=0.0; /* no motion saved up meanwhile */
+    *out_x=*out_y=0;
+    return 0;
+}
+
 /* GUD-002: the loaded config is immutable once published; a reload (F8) builds a whole new one
  * off the pad lock (I/O stays off the hot path) and only the pointer swap happens under `lock`,
  * which already serializes every call into this file through pad_read_state. */
@@ -491,6 +544,19 @@ static void configure_prompts(const InputConfig *cfg) {
         list[icon]=text[icon];
     }
     bbgpu_prompts_configure(list,PROMPT_ICONS);
+    /* On a controller: the button each one-action icon's action is bound to ("" for none), so
+     * a rebound action shows its new button. */
+    const char *pad[PROMPT_ICONS];
+    for (int icon=0;icon<PROMPT_ICONS;++icon) {
+        pad[icon]="";
+        if (prompt_output_count[icon]!=1) continue;
+        const InputOutput out=prompt_outputs[icon][0];
+        for (int i=0;i<cfg->table.binding_count[out];++i) {
+            const char *name=input_binding_controller_name(&cfg->table.bindings[out][i]);
+            if (name) { pad[icon]=name; break; }
+        }
+    }
+    bbgpu_prompts_configure_pad(pad,PROMPT_ICONS);
 }
 static void ensure_config_loaded(void) {
     if (config_initialized) return;
@@ -554,6 +620,9 @@ static void sample_host(PadData *d) {
     d->connected=1; d->connected_count=connected_count ? connected_count : 1;
     d->timestamp=now_us();
     SDL_Gamepad *g=current_gamepad();
+    /* The controller as it is now, not as the window thread last took its events (up to a
+     * millisecond or two before): SDL locks its joysticks for this itself. */
+    if (g) SDL_UpdateGamepads();
     if (bbgpu_overlay_captures_input()) return; /* settings menu open: neutral input */
     const InputConfig *cfg=active_config();
     BbMouseInput mouse; bbgpu_mouse_take(&mouse); /* MOU-008: drains dx/dy; buttons/wheel persist */
@@ -575,19 +644,10 @@ static void sample_host(PadData *d) {
         InputOutput out=plain_buttons[i];
         if (button_output_held(&host,cfg,out)) d->buttons|=button_bit(out);
     }
-    /* OUT-003/OUT-004: l2/r2 carry both a button bit and an analog value. A gatilho físico
-     * passes its own reading; a plain button/key bound to l2/r2 snaps the analog to 255,
-     * matching the pre-existing keyboard behavior (KBD-006). */
-    for (int i=0;i<cfg->table.binding_count[OUT_L2];++i) {
-        const InputBinding *b=&cfg->table.bindings[OUT_L2][i];
-        if (b->kind==IN_AXIS) { if (host.gamepad) d->l2=trigger(SDL_GetGamepadAxis(host.gamepad,(SDL_GamepadAxis)b->value)); }
-        else if (binding_held(&host,b)) d->l2=255;
-    }
-    for (int i=0;i<cfg->table.binding_count[OUT_R2];++i) {
-        const InputBinding *b=&cfg->table.bindings[OUT_R2][i];
-        if (b->kind==IN_AXIS) { if (host.gamepad) d->r2=trigger(SDL_GetGamepadAxis(host.gamepad,(SDL_GamepadAxis)b->value)); }
-        else if (binding_held(&host,b)) d->r2=255;
-    }
+    /* OUT-003/OUT-004: derive both the analog value and button bit from the combined,
+     * deadzone-adjusted trigger output. Digital bindings still give a full 255 press. */
+    d->l2=trigger_output_value(&host,cfg,OUT_L2,DEADZONE_L2);
+    d->r2=trigger_output_value(&host,cfg,OUT_R2,DEADZONE_R2);
     if (d->l2>INPUT_TRIGGER_BUTTON_THRESHOLD) d->buttons|=BTN_L2;
     if (d->r2>INPUT_TRIGGER_BUTTON_THRESHOLD) d->buttons|=BTN_R2;
 
@@ -628,17 +688,34 @@ static void sample_host(PadData *d) {
         if (dt_ms<1.0) dt_ms=1.0;
         if (dt_ms>100.0) dt_ms=100.0;
         last_mouse_sample_us=now;
+        const float sx=mouse.dx*input_mouse_scale_x(&cfg->mouse), sy=mouse.dy*input_mouse_scale_y(&cfg->mouse);
         int mx=0, my=0;
-        mouse_to_axis(mouse.dx*input_mouse_scale_x(&cfg->mouse),mouse.dy*input_mouse_scale_y(&cfg->mouse),
-                      dt_ms,&cfg->mouse,&mx,&my);
-        int *tx=cfg->mouse.stick==1 ? &lx : &rx, *ty=cfg->mouse.stick==1 ? &ly : &ry;
-        *tx+=mx; *ty+=my;
-        *tx=*tx<-127?-127:*tx>127?127:*tx; *ty=*ty<-127?-127:*ty>127?127:*ty;
+        static int was_locked=-1;
+        static double locked_motion;
+        if (mouse.locked_on!=was_locked) {
+            if (was_locked>=0 && mouse.locked_on) printf("Mouse: lock-on seen: mouse motion switches targets\n");
+            else if (was_locked>=0) printf("Mouse: lock-on ended (%.0f counts of mouse motion meanwhile)\n",locked_motion);
+            was_locked=mouse.locked_on;
+            locked_motion=0.0;
+        }
+        if (mouse.locked_on) locked_motion+=fabs(mouse.dx)+fabs(mouse.dy);
+        if (mouse.locked_on && cfg->mouse.lock_switch>0) {
+            /* The right stick switches targets; the stick's smoothing starts fresh afterwards. */
+            smoothed_mouse_stick_x=smoothed_mouse_stick_y=0.0;
+            if (lock_switch_flick(sx,sy,dt_ms,cfg->mouse.lock_switch,&mx,&my)) { rx=mx; ry=my; }
+        } else {
+            lock_switch_x=lock_switch_y=0.0;
+            mouse_to_axis(sx,sy,dt_ms,&cfg->mouse,&mx,&my);
+            int *tx=cfg->mouse.stick==1 ? &lx : &rx, *ty=cfg->mouse.stick==1 ? &ly : &ry;
+            *tx+=mx; *ty+=my;
+            *tx=*tx<-127?-127:*tx>127?127:*tx; *ty=*ty<-127?-127:*ty>127?127:*ty;
+        }
     } else {
         /* MOU-005/CNV-002: no stale dt or velocity-filter memory survives a capture gap -- the
          * next capture must start the EMA fresh, not carry over speed from before the gap. */
         last_mouse_sample_us=0;
         smoothed_mouse_stick_x=smoothed_mouse_stick_y=0.0;
+        lock_switch_x=lock_switch_y=0.0;
     }
 
     if (button_output_held(&host,cfg,OUT_LEFTJOYSTICK_HALFMODE)) { lx/=2; ly/=2; }
@@ -745,6 +822,9 @@ static void record_sample(const PadData *d) {
             record_start=now_us();
             memset(&record_last,0xff,sizeof(record_last));
             printf("Runtime: pad recording started (%s, F9 stops)\n",path);
+        } else {
+            /* e.g. C:\ itself, which needs administrator rights: said, not silently nothing. */
+            printf("Runtime: pad recording cannot write %s: %s\n",path,strerror(errno));
         }
     }
     f9_was_down=f9;
@@ -762,9 +842,10 @@ static PadSample *replay; static size_t replay_count, replay_next;
 static void replay_sample(PadData *d) {
     if (!replay_armed) return;
     if (!replay_start) {
-        static int loaded;
-        if (!loaded) {
-            loaded=1;
+        /* Read at every start: a test with several routes writes the next one into the same file
+         * (read once, every later "replay" played the first route again). */
+        {
+            replay_count=0;
             const char *path=getenv("BB_PAD_REPLAY");
             FILE *f=path ? fopen(path,"r") : NULL;
             PadSample s; unsigned v[8]; size_t cap=0;
@@ -809,7 +890,9 @@ static void touch_ids(PadData *d) {
     else if (!since) since=d->timestamp;
     d->touch_held_time=d->touch_count ? (uint32_t)(d->timestamp-since) : 0;
 }
+void bbgpu_input_note_read(void); /* gpu/shim/bbgpu.cpp: input freshness log */
 static void sample(PadData *d) {
+    bbgpu_input_note_read();
     reload_config_if_requested();
     sample_host(d);
     if (bbgpu_overlay_captures_input()) { hold_after_capture=1; return; }

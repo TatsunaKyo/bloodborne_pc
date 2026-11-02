@@ -1,531 +1,952 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "video_core/renderer_vulkan/vk_frame_generation.h"
+#ifdef _WIN32
+#include "vk_fg401_native.h"
+#include "fg401_support.h"
+#include "fused_fg_ui.h"
+#endif
+
 #include <algorithm>
 #include <cstdio>
-#include <cmath>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <locale>
-#include <sstream>
-#include "bbport_background.h"
+#include <string>
+
+#include <vk_mem_alloc.h>
+
 #include "bbport_settings.h"
 #include "ffx_vk_fsr3_3_1_5_bridge.h"
-#include "video_core/host_shaders/frame_generation_copy_comp.h"
-#include <vk_mem_alloc.h>
+#include "video_core/host_shaders/frame_gen_inputs_comp.h"
+#include "video_core/host_shaders/frame_gen_ui_comp.h"
+#include "video_core/renderer_vulkan/vk_dlss.h"
+#include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_shader_util.h"
 
 namespace Vulkan {
+
 namespace {
-constexpr auto usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage |
-                       vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
-bool CreateImage(vk::Device device, VmaAllocator allocator, FrameGeneration::Image& image,
-                 vk::UniqueImageView& view, vk::Format format, u32 width, u32 height) {
-    if (!image.Create(allocator,format,width,height)) return false;
-    auto result=device.createImageViewUnique({
-        .image=vk::Image(image), .viewType=vk::ImageViewType::e2D, .format=format,
-        .subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}});
-    if (result.result!=vk::Result::eSuccess) return false;
-    view=std::move(result.value);
-    return true;
-}
-FfxVkFsr3_3_1_6FrameGenerationImage Describe(vk::Image image, vk::Format format, u32 w, u32 h) {
-    return {VkImage(image), VkFormat(format), w, h, VK_IMAGE_LAYOUT_GENERAL, VkImageUsageFlags(usage)};
-}
-void WriteBarrier(vk::CommandBuffer cmdbuf, vk::Image image) {
-    const vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask=vk::AccessFlagBits2::eNone,
-        .dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,
-        .dstAccessMask=vk::AccessFlagBits2::eShaderWrite,
-        .oldLayout=vk::ImageLayout::eUndefined, .newLayout=vk::ImageLayout::eGeneral,
-        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
-        .image=image, .subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}};
-    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&barrier});
-}
-}
 
-FrameGeneration::Image::~Image() {
-    if (image) vmaDestroyImage(allocator,VkImage(image),allocation);
-}
-bool FrameGeneration::Image::Create(VmaAllocator allocator_, vk::Format format, u32 w, u32 h) {
-    return Create(allocator_, format, w, h, usage);
-}
-bool FrameGeneration::Image::Create(VmaAllocator allocator_, vk::Format format, u32 w, u32 h,
-                                    vk::ImageUsageFlags image_usage) {
-    const vk::ImageCreateInfo info{.imageType=vk::ImageType::e2D,.format=format,.extent={w,h,1},
-        .mipLevels=1,.arrayLayers=1,.samples=vk::SampleCountFlagBits::e1,.usage=image_usage};
-    const VkImageCreateInfo raw=info;
-    const VmaAllocationCreateInfo allocation_info{
-        .flags=VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,.usage=VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
-    VkImage handle{}; VmaAllocation next_allocation{};
-    if (vmaCreateImage(allocator_,&raw,&allocation_info,&handle,&next_allocation,nullptr)!=VK_SUCCESS)
-        return false;
-    if (image) vmaDestroyImage(allocator,VkImage(image),allocation);
-    allocator=allocator_; allocation=next_allocation; image=handle;
-    return true;
-}
-
-bool FrameGeneration::FreezeDepth(vk::Device device, VmaAllocator allocator, vk::CommandBuffer command,
-                                  vk::Image source, vk::Format format, u32 w, u32 h,
-                                  std::shared_ptr<FrameGenerationDepthCopy>& copy) {
-    if (!source || !w || !h || (format != vk::Format::eD32Sfloat &&
-        format != vk::Format::eD32SfloatS8Uint && format != vk::Format::eR32Sfloat)) return false;
-    const bool depth_format = format != vk::Format::eR32Sfloat;
-    const vk::ImageAspectFlags copied_aspect = depth_format ? vk::ImageAspectFlagBits::eDepth
-                                                          : vk::ImageAspectFlagBits::eColor;
-    const auto all_aspects = copied_aspect | (format == vk::Format::eD32SfloatS8Uint
-        ? vk::ImageAspectFlagBits::eStencil : vk::ImageAspectFlags{});
-    // A shared owner keeps the previous scene's *contents*, not just its handle.
-    // A later scene must not overwrite depth retained by a display/FG snapshot.
-    const bool fresh = !copy || copy.use_count() > 1 || copy->width != w ||
-                       copy->height != h || copy->format != format;
-    if (fresh) {
-        auto next = std::make_shared<FrameGenerationDepthCopy>();
-        if (!next->depth.Create(allocator, format, w, h, vk::ImageUsageFlagBits::eSampled |
-            vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst)) return false;
-        auto view = device.createImageViewUnique({.image=vk::Image(next->depth),
-            .viewType=vk::ImageViewType::e2D,.format=format,
-            .subresourceRange={copied_aspect,0,1,0,1}});
-        if (view.result != vk::Result::eSuccess) return false;
-        next->view = std::move(view.value); next->format=format; next->width=w; next->height=h;
-        copy = std::move(next);
+/// The hudless copy viewed like the presenter views the display buffer (`requested`): the
+/// copy's channel order, the requested sRGB decoding.
+vk::Format HudlessViewFormat(vk::Format storage, vk::Format requested) {
+    const bool srgb =
+        requested == vk::Format::eR8G8B8A8Srgb || requested == vk::Format::eB8G8R8A8Srgb;
+    switch (storage) {
+    case vk::Format::eR8G8B8A8Unorm:
+    case vk::Format::eR8G8B8A8Srgb:
+        return srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+    case vk::Format::eB8G8R8A8Unorm:
+    case vk::Format::eB8G8R8A8Srgb:
+        return srgb ? vk::Format::eB8G8R8A8Srgb : vk::Format::eB8G8R8A8Unorm;
+    default:
+        return requested;
     }
-    const vk::MemoryBarrier2 source_ready{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask=vk::AccessFlagBits2::eMemoryWrite,
-        .dstStageMask=vk::PipelineStageFlagBits2::eTransfer,.dstAccessMask=vk::AccessFlagBits2::eTransferRead};
-    const vk::ImageMemoryBarrier2 before{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
-            .srcAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite,
-            .dstStageMask=vk::PipelineStageFlagBits2::eTransfer,.dstAccessMask=vk::AccessFlagBits2::eTransferWrite,
-            .oldLayout=fresh ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
-            .newLayout=vk::ImageLayout::eGeneral,
-            .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
-            .image=vk::Image(copy->depth),.subresourceRange={all_aspects,0,1,0,1}};
-    command.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&source_ready,
-                             .imageMemoryBarrierCount=1,.pImageMemoryBarriers=&before});
-    const vk::ImageCopy region{.srcSubresource={copied_aspect,0,0,1},
-        .dstSubresource={copied_aspect,0,0,1},.extent={w,h,1}};
-    command.copyImage(source,vk::ImageLayout::eGeneral,vk::Image(copy->depth),vk::ImageLayout::eGeneral,region);
-    const vk::MemoryBarrier2 after{.srcStageMask=vk::PipelineStageFlagBits2::eTransfer,
-        .srcAccessMask=vk::AccessFlagBits2::eTransferRead|vk::AccessFlagBits2::eTransferWrite,
-        .dstStageMask=vk::PipelineStageFlagBits2::eAllCommands,
-        .dstAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite};
-    command.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&after});
-    return true;
 }
 
-bool FrameGeneration::FreezeMotion(vk::Device device, VmaAllocator allocator,
-                                   vk::CommandBuffer command, vk::Image source,
-                                   const std::shared_ptr<FrameGenerationDepthCopy>& copy) {
-    if (!source || !copy || copy.use_count() != 1 || !copy->width || !copy->height)
-        return false;
-    const bool fresh = !copy->motion.image;
-    if (fresh) {
-        // Publish the image/view together: allocation/view failure leaves a
-        // retryable slot rather than an image with a missing descriptor view.
-        Image image;
-        if (!image.Create(allocator, vk::Format::eR16G16Sfloat, copy->width, copy->height))
-            return false;
-        auto view = device.createImageViewUnique({.image = vk::Image(image),
-            .viewType = vk::ImageViewType::e2D, .format = vk::Format::eR16G16Sfloat,
-            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}});
-        if (view.result != vk::Result::eSuccess) return false;
-        std::swap(copy->motion.allocator, image.allocator);
-        std::swap(copy->motion.allocation, image.allocation);
-        std::swap(copy->motion.image, image.image);
-        copy->motion_view = std::move(view.value);
+constexpr vk::ImageUsageFlags InputUsage =
+    vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled;
+
+int DlssMaxCount() {
+    const Dlss* dlss = Dlss::Get();
+    return dlss ? dlss->FrameGenMaxCount() : 0;
+}
+
+/// BB_FRAME_DUMP_TRIGGER (tools/drive.py `shot`): the frame the presenter dumps also gets its
+/// frame generation inputs written to BB_DUMP_DIR as fg_depth_WxH.raw (f32) and
+/// fg_motion_WxH.raw (two f16 per pixel). General layout, after the commands recorded so far.
+void DumpInput(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
+               vk::Image image, u32 w, u32 h, const char* name) {
+    const VkBufferCreateInfo buffer_ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                       .size = VkDeviceSize(w) * h * 4,
+                                       .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    const VmaAllocationCreateInfo alloc_ci{
+        .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST};
+    VkBuffer buffer{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(instance.GetAllocator(), &buffer_ci, &alloc_ci, &buffer, &allocation,
+                        &info) != VK_SUCCESS) {
+        return;
     }
-    const vk::MemoryBarrier2 ready{
+    const vk::MemoryBarrier2 written{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                                     .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                                     .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                                     .dstAccessMask = vk::AccessFlagBits2::eTransferRead};
+    cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &written});
+    cmdbuf.copyImageToBuffer(image, vk::ImageLayout::eGeneral, buffer,
+                             vk::BufferImageCopy{.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                                                 .imageExtent = {w, h, 1}});
+    const char* dir = std::getenv("BB_DUMP_DIR");
+    char path[512];
+    std::snprintf(path, sizeof(path), "%s/fg_%s_%ux%u.raw", dir && *dir ? dir : "out/dump", name,
+                  w, h);
+    scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation, info,
+                                      size = buffer_ci.size, file = std::string{path}] {
+        vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
+        if (FILE* f = std::fopen(file.c_str(), "wb")) {
+            std::fwrite(info.pMappedData, 1, size, f);
+            std::fclose(f);
+        }
+        vmaDestroyBuffer(allocator, buffer, allocation);
+    });
+}
+
+bool DumpRequested() {
+    static const char* trigger = std::getenv("BB_FRAME_DUMP_TRIGGER");
+    return trigger && std::filesystem::exists(trigger);
+}
+
+} // namespace
+
+FrameGenerator::FrameGenerator(const Instance& instance_, Scheduler& scheduler_)
+    : instance{instance_}, scheduler{scheduler_} {
+    auto& settings = BbSettings::Get();
+#ifdef _WIN32
+    const auto ids = instance.GetPhysicalDevice()
+                         .getProperties2<vk::PhysicalDeviceProperties2,
+                                         vk::PhysicalDeviceIDProperties>();
+    const auto& id = ids.get<vk::PhysicalDeviceIDProperties>();
+    for (const int choice : {BbSettings::FrameGenFsr401, BbSettings::FrameGenFsr402}) {
+        const auto version = choice == BbSettings::FrameGenFsr402 ? Fg402Version : Fg401Version;
+        auto support = ProbeFg401(id.deviceLUID.data(), version);
+        if (support.supported && (!instance.IsFg401InteropSupported() || !id.deviceLUIDValid))
+            support = {false, "interop"};
+        const auto support_message = Fg401SupportMessage(support);
+        BbSettings::ConfigureFg401Support(support.supported, support_message.c_str(), choice);
+        std::printf("ML-FG %s support: %s (%s)\n", Fg401VersionName(version),
+                    support.supported ? "available" : "unavailable", support.reason.c_str());
+        if (settings.frame_gen == choice && !support.supported)
+            Fail(choice, support_message.c_str());
+    }
+#endif
+    const int dlss_max = DlssMaxCount();
+    settings.dlssg_max_multiplier = dlss_max + 1;
+    // BB_DEPTH_INVERTED=1: the game's depth is 1 at the near plane (reversed Z). For DLSS;
+    // FSR-Vulkan's frame generation interface has no such option (0 at the near plane).
+    if (const char* env = std::getenv("BB_DEPTH_INVERTED")) {
+        depth_inverted = env[0] == '1';
+    }
+    if (settings.frame_gen == BbSettings::FrameGenDlss && dlss_max < 1) {
+        const Dlss* dlss = Dlss::Get();
+        std::printf("Frame generation: DLSS Frame Generation unavailable (%s); using FSR 3.1\n",
+                    !dlss ? "bbport_dlss.dll and nvngx_dlss.dll are not installed"
+                    : !dlss->Available() ? "DLSS is unavailable on this system"
+                                         : "GeForce RTX 40 or newer, nvngx_dlssg.dll and a "
+                                           "current driver are needed");
+        settings.frame_gen_problem = "DLSS Frame Generation needs a GeForce RTX 40 or newer";
+        settings.frame_gen = BbSettings::FrameGenFsr3;
+    }
+    if (settings.ActiveFrameGen() != BbSettings::FrameGenOff) {
+        const int max = settings.ActiveFrameGen() == BbSettings::FrameGenDlss ? dlss_max + 1 : 2;
+        std::printf("Frame generation: %s, %dx\n",
+                    settings.ActiveFrameGen() == BbSettings::FrameGenDlss      ? "DLSS"
+                    : settings.ActiveFrameGen() == BbSettings::FrameGenFsr401 ? "AMD ML-FG 4.0.1"
+                    : settings.ActiveFrameGen() == BbSettings::FrameGenFsr402 ? "AMD ML-FG 4.0.2"
+                                                                        : "FSR 3.1",
+                    std::min(settings.frame_gen_multiplier.load(), max));
+    }
+}
+
+FrameGenerator::~FrameGenerator() {
+#ifdef _WIN32
+    if (fg401_completion_scheduler) {
+        fg401_completion_scheduler->Finish();
+    }
+    fsr401_overlap.reset();
+    fg401_fused_ui.reset();
+    fg401_completion_scheduler.reset();
+#endif
+    DestroyFsr3();
+    if (Dlss* dlss = Dlss::Get()) {
+        dlss->ReleaseFrameGen();
+    }
+}
+
+bool FrameGenerator::Wanted() const {
+    return BbSettings::Get().ActiveFrameGen() != BbSettings::FrameGenOff;
+}
+
+u32 FrameGenerator::WantedCount() const {
+    const auto& settings = BbSettings::Get();
+    switch (settings.ActiveFrameGen()) {
+    case BbSettings::FrameGenDlss:
+        return u32(std::clamp(settings.frame_gen_multiplier.load() - 1, 1,
+                              std::clamp(DlssMaxCount(), 1, int(MaxGenerated))));
+    case BbSettings::FrameGenFsr3:
+    case BbSettings::FrameGenFsr401:
+    case BbSettings::FrameGenFsr402:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+void FrameGenerator::Skip() {
+    detached_completion = {};
+    captured = false;
+    hudless_captured = false;
+    reset = true;
+}
+
+void FrameGenerator::DrainOverlap() {
+#ifdef _WIN32
+    if (fg401_completion_scheduler) {
+        fg401_completion_scheduler->Finish();
+    }
+#endif
+}
+
+void FrameGenerator::Release() {
+    Skip();
+    if (!depth_image && !hudless_image && !fsr3 && last_provider == 0) {
+        return; // nothing held
+    }
+    // Submitted frames may still use them; the open command buffer does not.
+    scheduler.WaitSubmitted();
+    DestroyFsr3();
+#ifdef _WIN32
+    if (fg401_completion_scheduler) {
+        fg401_completion_scheduler->Finish();
+    }
+    fsr401_overlap.reset();
+    fg401_fused_ui.reset();
+    fg401_completion_scheduler.reset();
+#endif
+    if (Dlss* dlss = Dlss::Get()) {
+        dlss->ReleaseFrameGen();
+    }
+    depth_view.reset();
+    motion_view.reset();
+    depth_image = VideoCore::UniqueImage{};
+    motion_image = VideoCore::UniqueImage{};
+    input_width = input_height = 0;
+    hudless_views.clear();
+    hudless_image = VideoCore::UniqueImage{};
+    hudless_width = hudless_height = 0;
+    last_provider = 0;
+    last_hudless = false;
+    std::printf("Frame generation: off, its memory freed\n");
+}
+
+void FrameGenerator::CreatePipeline() {
+    if (pipeline) {
+        return;
+    }
+    const auto device = instance.GetDevice();
+    const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
+        {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+        {1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+    }};
+    desc_layout = Check(device.createDescriptorSetLayoutUnique({
+        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .bindingCount = u32(bindings.size()),
+        .pBindings = bindings.data(),
+    }));
+    const vk::PushConstantRange push{vk::ShaderStageFlagBits::eCompute, 0, 2 * sizeof(float)};
+    pipeline_layout = Check(device.createPipelineLayoutUnique({
+        .setLayoutCount = 1,
+        .pSetLayouts = &*desc_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &push,
+    }));
+    const auto compute = [&](std::span<const u32> code, vk::PipelineLayout layout) {
+        const auto module = CompileSPV(code, device);
+        auto made = Check(device.createComputePipelineUnique(
+            {}, vk::ComputePipelineCreateInfo{
+                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                              .module = module,
+                              .pName = "main"},
+                    .layout = layout,
+                }));
+        device.destroyShaderModule(module);
+        return made;
+    };
+    pipeline = compute(FRAME_GEN_INPUTS_COMP, *pipeline_layout);
+    // The UI over generated frames: the generated frame (storage), the frame and the frame
+    // without UI (sampled).
+    const std::array<vk::DescriptorSetLayoutBinding, 3> ui_bindings{{
+        {0, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+        {1, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+        {2, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+    }};
+    ui_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .bindingCount = u32(ui_bindings.size()),
+        .pBindings = ui_bindings.data(),
+    }));
+    const vk::PushConstantRange ui_push{vk::ShaderStageFlagBits::eCompute, 0, 2 * sizeof(s32)};
+    ui_pipeline_layout = Check(device.createPipelineLayoutUnique({
+        .setLayoutCount = 1,
+        .pSetLayouts = &*ui_desc_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &ui_push,
+    }));
+    ui_pipeline = compute(FRAME_GEN_UI_COMP, *ui_pipeline_layout);
+}
+
+void FrameGenerator::EnsureInputs(u32 w, u32 h) {
+    if (depth_image && input_width == w && input_height == h) {
+        return;
+    }
+    // The previous frame's generation may still read the old images.
+    scheduler.WaitSubmitted();
+    const auto device = instance.GetDevice();
+    const auto make = [&](VideoCore::UniqueImage& image, vk::UniqueImageView& view,
+                          vk::Format format) {
+        view.reset();
+        image = VideoCore::UniqueImage(device, instance.GetAllocator());
+        image.Create(vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D,
+            .format = format,
+            .extent = {w, h, 1},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = InputUsage,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        });
+        view = Check(device.createImageViewUnique({
+            .image = vk::Image(image),
+            .viewType = vk::ImageViewType::e2D,
+            .format = format,
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        }));
+    };
+    make(depth_image, depth_view, vk::Format::eR32Sfloat);
+    make(motion_image, motion_view, vk::Format::eR16G16Sfloat);
+    input_width = w;
+    input_height = h;
+    reset = true;
+}
+
+vk::ImageView FrameGenerator::BeginCapture(vk::CommandBuffer cmdbuf, vk::ImageView depth, u32 w,
+                                           u32 h) {
+    if (!Wanted() || !depth || !w || !h) {
+        return {};
+    }
+    CreatePipeline();
+    EnsureInputs(w, h);
+    // Last frame's contents are not needed.
+    std::array<vk::ImageMemoryBarrier2, 2> to_write{};
+    for (u32 i = 0; i < 2; ++i) {
+        to_write[i] = {
+            .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderRead,
+            .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = i == 0 ? vk::Image(depth_image) : vk::Image(motion_image),
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        };
+    }
+    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 2, .pImageMemoryBarriers = to_write.data()});
+    const vk::DescriptorImageInfo depth_info{.imageView = depth,
+                                             .imageLayout = vk::ImageLayout::eGeneral};
+    const vk::DescriptorImageInfo depth_out{.imageView = *depth_view,
+                                            .imageLayout = vk::ImageLayout::eGeneral};
+    const std::array<vk::WriteDescriptorSet, 2> writes{{
+        {.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampledImage,
+         .pImageInfo = &depth_info},
+        {.dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage,
+         .pImageInfo = &depth_out},
+    }};
+    const std::array<float, 2> size{float(w), float(h)};
+    cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
+    cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *pipeline_layout, 0, writes);
+    cmdbuf.pushConstants(*pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(size),
+                         size.data());
+    cmdbuf.dispatch((w + 7) / 8, (h + 7) / 8, 1);
+    return *motion_view;
+}
+
+void FrameGenerator::EndCapture(vk::CommandBuffer cmdbuf, std::array<float, 2> jitter,
+                                bool motion_valid, Camera camera) {
+    std::array<vk::ImageMemoryBarrier2, 2> to_read{};
+    for (u32 i = 0; i < 2; ++i) {
+        to_read[i] = {
+            .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+            .oldLayout = vk::ImageLayout::eGeneral,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = i == 0 ? vk::Image(depth_image) : vk::Image(motion_image),
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        };
+    }
+    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 2, .pImageMemoryBarriers = to_read.data()});
+    DumpIfRequested(cmdbuf, depth_image, input_width, input_height, "depth");
+    DumpIfRequested(cmdbuf, motion_image, input_width, input_height, "motion");
+    if (!motion_valid) {
+        reset = true; // no camera this frame: the frames are not related
+    }
+    captured = true;
+    capture_jitter = jitter;
+    if (camera.near_plane > 0.0f && camera.far_plane > camera.near_plane &&
+        camera.vertical_fov > 0.0f) {
+        capture_camera = camera;
+    }
+    capture_camera.has_matrices = motion_valid && camera.has_matrices;
+    const auto capture_now = std::chrono::steady_clock::now();
+    const float dt = std::chrono::duration<float, std::milli>(capture_now - last_capture).count();
+    last_capture = capture_now;
+    capture_frame_ms = dt > 0 && dt < 200 ? dt : 16.6f;
+}
+
+void FrameGenerator::CaptureHudless(vk::CommandBuffer cmdbuf, vk::Image source, vk::Format format,
+                                    u32 w, u32 h) {
+    if (!Wanted() || !captured || hudless_captured || !w || !h) {
+        return; // only for a frame with the game's scene, and before its UI
+    }
+    if (!hudless_image || hudless_format != format || hudless_width != w || hudless_height != h) {
+        // The presenter of the previous frame may still read the old copy.
+        scheduler.WaitSubmitted();
+        hudless_views.clear();
+        hudless_image = VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
+        hudless_image.Create(vk::ImageCreateInfo{
+            .flags = vk::ImageCreateFlagBits::eMutableFormat,
+            .imageType = vk::ImageType::e2D,
+            .format = format,
+            .extent = {w, h, 1},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        });
+        hudless_format = format;
+        hudless_width = w;
+        hudless_height = h;
+    }
+    const auto barrier = [&](vk::ImageLayout from, vk::ImageLayout to,
+                             vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access,
+                             vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access) {
+        const vk::ImageMemoryBarrier2 b{
+            .srcStageMask = src_stage,
+            .srcAccessMask = src_access,
+            .dstStageMask = dst_stage,
+            .dstAccessMask = dst_access,
+            .oldLayout = from,
+            .newLayout = to,
+            .image = vk::Image(hudless_image),
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        };
+        cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &b});
+    };
+    barrier(vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            vk::PipelineStageFlagBits2::eAllCommands, vk::AccessFlagBits2::eShaderRead,
+            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite);
+    cmdbuf.copyImage(source, vk::ImageLayout::eTransferSrcOptimal, vk::Image(hudless_image),
+                     vk::ImageLayout::eTransferDstOptimal,
+                     vk::ImageCopy{.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                                   .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                                   .extent = {w, h, 1}});
+    barrier(vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eAllCommands, vk::AccessFlagBits2::eShaderRead);
+    hudless_captured = true;
+    static bool reported = false;
+    if (!reported) {
+        reported = true;
+        std::printf("Frame generation: the picture before the UI, %ux%u %s\n", w, h,
+                    vk::to_string(format).c_str());
+    }
+}
+
+vk::ImageView FrameGenerator::Hudless(vk::Format format, vk::Extent2D& size) {
+    if (!hudless_captured || !captured || !hudless_image) {
+        return {};
+    }
+    size = vk::Extent2D{hudless_width, hudless_height};
+    format = HudlessViewFormat(hudless_format, format);
+    for (const auto& view : hudless_views) {
+        if (view.format == format) {
+            return *view.view;
+        }
+    }
+    hudless_views.push_back({
+        format,
+        Check(instance.GetDevice().createImageViewUnique({
+            .image = vk::Image(hudless_image),
+            .viewType = vk::ImageViewType::e2D,
+            .format = format,
+            .components = {vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
+                           vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eOne},
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        })),
+    });
+    return *hudless_views.back().view;
+}
+
+void FrameGenerator::ComposeUi(vk::CommandBuffer cmdbuf, vk::ImageView color,
+                               vk::ImageView hudless, const Output& output, u32 width,
+                               u32 height) {
+    const vk::ImageMemoryBarrier2 written{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+        .oldLayout = vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .image = output.image,
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+    };
+    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &written});
+    const vk::DescriptorImageInfo output_info{.imageView = output.view,
+                                              .imageLayout = vk::ImageLayout::eGeneral};
+    const vk::DescriptorImageInfo color_info{.imageView = color,
+                                             .imageLayout = vk::ImageLayout::eGeneral};
+    const vk::DescriptorImageInfo hudless_info{.imageView = hudless,
+                                               .imageLayout = vk::ImageLayout::eGeneral};
+    const std::array<vk::WriteDescriptorSet, 3> writes{{
+        {.dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage,
+         .pImageInfo = &output_info},
+        {.dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampledImage,
+         .pImageInfo = &color_info},
+        {.dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampledImage,
+         .pImageInfo = &hudless_info},
+    }};
+    const std::array<s32, 2> size{s32(width), s32(height)};
+    cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *ui_pipeline);
+    cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *ui_pipeline_layout, 0, writes);
+    cmdbuf.pushConstants(*ui_pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(size),
+                         size.data());
+    cmdbuf.dispatch((width + 7) / 8, (height + 7) / 8, 1);
+}
+
+void FrameGenerator::DumpIfRequested(vk::CommandBuffer cmdbuf, vk::Image image, u32 w, u32 h,
+                                     const char* name) {
+    if (DumpRequested()) {
+        DumpInput(instance, scheduler, cmdbuf, image, w, h, name);
+    }
+}
+
+u32 FrameGenerator::Generate(vk::CommandBuffer& cmdbuf, vk::Image color, vk::ImageView color_view,
+                             vk::ImageUsageFlags color_usage, vk::Image hudless,
+                             vk::ImageView hudless_view, u32 width, u32 height,
+                             std::span<const Output> outputs) {
+    detached_completion = {};
+    const auto now = std::chrono::steady_clock::now();
+    float frame_ms = std::chrono::duration<float, std::milli>(now - last_generate).count();
+    last_generate = now;
+    if (!(frame_ms > 0.0f && frame_ms < 200.0f)) {
+        frame_ms = 16.6f;
+    }
+    if (captured && BbSettings::IsMlFrameGen(BbSettings::Get().ActiveFrameGen())) {
+        frame_ms = capture_frame_ms;
+    }
+    // Views the FSR 3.1 context took for frames the GPU has finished.
+    while (fsr3 && !fsr3_pending.empty() && scheduler.IsFree(fsr3_pending.front().tick)) {
+        ffxVkFsr3_3_1_6FrameGenerationContextRetireFrame(fsr3, fsr3_pending.front().frame_id);
+        fsr3_pending.pop_front();
+    }
+    const auto& settings = BbSettings::Get();
+    const int active = settings.ActiveFrameGen();
+    if (BbSettings::IsMlFrameGen(active) && !settings.MlFgSupported(active)) {
+        const char* problem = settings.MlFgProblem(active);
+        Fail(active, problem ? problem : "ML-FG support check failed.");
+    }
+    const int provider = settings.ActiveFrameGen();
+    const bool had_capture = captured;
+    captured = false;
+    hudless_captured = false;
+    if (provider != last_provider) {
+        last_provider = provider;
+        reset = true;
+    }
+    if (provider == BbSettings::FrameGenOff || !had_capture || outputs.empty() || !width ||
+        !height) {
+        // A frame without the game's scene (menu, movie, loading), or none wanted (paused for
+        // the display): start over afterwards.
+        reset = true;
+        return 0;
+    }
+    // FSR 3.1 keeps the previous input: it cannot switch between frames with and without UI.
+    const bool with_hudless = hudless && hudless_view;
+    if (with_hudless != last_hudless) {
+        last_hudless = with_hudless;
+        reset = true;
+        if (++hudless_changes <= 4) {
+            std::printf("Frame generation: %s\n",
+                        with_hudless ? "UI kept out of the generated frames"
+                                     : "frames without a picture before the UI");
+        }
+    }
+    // The composed frame is read by compute (FSR 3.1) or NGX after the post pass wrote it.
+    const vk::ImageMemoryBarrier2 color_ready{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite |
+                         vk::AccessFlagBits2::eShaderWrite | vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+        .oldLayout = vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .image = color,
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+    };
+    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &color_ready});
+    if (with_hudless) {
+        auto hudless_ready = color_ready;
+        hudless_ready.image = hudless;
+        cmdbuf.pipelineBarrier2(
+            {.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &hudless_ready});
+    }
+    // The outputs' previous contents (presented already) are not needed.
+    std::array<vk::ImageMemoryBarrier2, MaxGenerated> to_write{};
+    const u32 used = std::min<u32>(u32(outputs.size()), MaxGenerated);
+    for (u32 i = 0; i < used; ++i) {
+        to_write[i] = {
+            .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask = vk::AccessFlagBits2::eNone,
+            .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderWrite | vk::AccessFlagBits2::eShaderRead,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = outputs[i].image,
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        };
+    }
+    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = used, .pImageMemoryBarriers = to_write.data()});
+    u32 generated = 0;
+#ifdef _WIN32
+    if (OverlapWanted()) {
+        generated = GenerateFsr401Overlap(cmdbuf, with_hudless ? hudless : color, color_view,
+                                          with_hudless ? hudless_view : vk::ImageView{}, width,
+                                          height, outputs[0], frame_ms);
+    } else
+#endif
+    if (provider == BbSettings::FrameGenDlss) {
+        const u32 count = std::min(WantedCount(), used);
+        generated = GenerateDlss(cmdbuf, color, color_view, with_hudless ? hudless : vk::Image{},
+                                 with_hudless ? hudless_view : vk::ImageView{}, width, height,
+                                 outputs, count, frame_ms);
+    } else if (with_hudless) {
+        // The picture without UI is interpolated, then this frame's UI goes on top.
+        generated = GenerateFsr3(cmdbuf, hudless, color_usage, width, height, outputs[0], frame_ms);
+        if (generated) {
+            ComposeUi(cmdbuf, color_view, hudless_view, outputs[0], width, height);
+        }
+    } else {
+        generated = GenerateFsr3(cmdbuf, color, color_usage, width, height, outputs[0], frame_ms);
+    }
+    if (generated) {
+        reset = false;
+        // Detached completion records its own output barriers on the consumer queue.
+        if (detached_completion.semaphore) return generated;
+        // Presented after this submission: the writes go to the transfer that copies them.
+        std::array<vk::ImageMemoryBarrier2, MaxGenerated> written{};
+        for (u32 i = 0; i < generated; ++i) {
+            written[i] = to_write[i];
+            written[i].srcStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+            written[i].srcAccessMask = vk::AccessFlagBits2::eShaderWrite;
+            written[i].dstStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+            written[i].dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+            written[i].oldLayout = vk::ImageLayout::eGeneral;
+        }
+        cmdbuf.pipelineBarrier2(
+            {.imageMemoryBarrierCount = generated, .pImageMemoryBarriers = written.data()});
+    } else {
+        reset = true;
+    }
+    return generated;
+}
+
+void FrameGenerator::DestroyFsr3() {
+    if (!fsr3) {
+        return;
+    }
+    scheduler.WaitSubmitted();
+    ffxVkFsr3_3_1_6FrameGenerationContextRetireFrame(fsr3, fsr3_frame_id);
+    ffxVkFsr3_3_1_6FrameGenerationContextDestroy(fsr3);
+    fsr3 = nullptr;
+    fsr3_pending.clear();
+}
+
+bool FrameGenerator::OverlapWanted() {
+#ifdef _WIN32
+    const auto& settings = BbSettings::Get();
+    const int active = settings.ActiveFrameGen();
+    return BbSettings::IsMlFrameGen(active) && settings.MlFgSupported(active);
+#else
+    return false;
+#endif
+}
+
+#ifdef _WIN32
+u32 FrameGenerator::GenerateFsr401Overlap(vk::CommandBuffer& draw_command, vk::Image source,
+                                          vk::ImageView color_view, vk::ImageView hudless_view,
+                                          u32 width, u32 height, const Output& output,
+                                          float frame_ms) {
+    if (!capture_camera.has_world_camera) {
+        return 0;
+    }
+    if (!fg401_completion_scheduler) {
+        if (instance.GetPresentQueue() == instance.GetGraphicsQueue()) {
+            Fail(BbSettings::Get().ActiveFrameGen(), "ML-FG requires a separate completion queue");
+            return 0;
+        }
+        fg401_completion_scheduler =
+            std::make_unique<Scheduler>(instance, false, instance.GetPresentQueue());
+        fsr401_overlap = std::make_unique<Fg401Native>(instance, scheduler, true);
+    }
+    auto& completion = *fg401_completion_scheduler;
+    fsr401_overlap->SetWorldCamera(capture_camera.view_to_world);
+    Fsr4Upscaler::Frame f{};
+    f.cmdbuf = draw_command;
+    f.color = {source, {}, width, height, ColorFormat};
+    f.depth = {vk::Image(depth_image), *depth_view, input_width, input_height,
+               vk::Format::eR32Sfloat};
+    f.motion = {vk::Image(motion_image), *motion_view, input_width, input_height,
+                vk::Format::eR16G16Sfloat};
+    f.output = {output.image, output.view, width, height, ColorFormat};
+    f.render_width = input_width;
+    f.render_height = input_height;
+    f.jitter = capture_jitter;
+    f.frame_ms = frame_ms;
+    f.near_plane = capture_camera.near_plane;
+    f.far_plane = capture_camera.far_plane;
+    f.vertical_fov = capture_camera.vertical_fov;
+    f.reset = reset;
+    f.hdr = false;
+    if (!fsr401_overlap->RecordOverlap(f, completion)) {
+        draw_command = scheduler.CommandBuffer();
+        Fail(BbSettings::Get().ActiveFrameGen(), fsr401_overlap->Error().c_str());
+        return 0;
+    }
+    draw_command = scheduler.CommandBuffer();
+    const auto command = f.cmdbuf;
+    if (hudless_view) {
+        if (!fg401_fused_ui) {
+            fg401_fused_ui = std::make_unique<FusedFgUi>(instance);
+        }
+        fg401_fused_ui->Record(command, output.image, output.view, f.output.image, f.output.view,
+                               color_view, hudless_view, width, height);
+    } else {
+        std::array<vk::ImageMemoryBarrier2, 2> before{};
+        for (u32 i = 0; i < 2; ++i) {
+            before[i] = {
+                .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .srcAccessMask =
+                    vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                .dstAccessMask = i == 0 ? vk::AccessFlagBits2::eTransferRead
+                                        : vk::AccessFlagBits2::eTransferWrite,
+                .oldLayout = vk::ImageLayout::eGeneral,
+                .newLayout = vk::ImageLayout::eGeneral,
+                .image = i == 0 ? f.output.image : output.image,
+                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+            };
+        }
+        command.pipelineBarrier2(
+            {.imageMemoryBarrierCount = 2, .pImageMemoryBarriers = before.data()});
+        const vk::ImageCopy copy{.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                                 .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                                 .extent = {width, height, 1}};
+        command.copyImage(f.output.image, vk::ImageLayout::eGeneral, output.image,
+                          vk::ImageLayout::eGeneral, copy);
+        auto after = before[1];
+        after.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        after.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        after.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+        after.dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite;
+        command.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &after});
+    }
+    const vk::ImageMemoryBarrier2 written{
         .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
         .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .dstAccessMask = vk::AccessFlagBits2::eTransferRead};
-    const vk::ImageMemoryBarrier2 before{
-        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
-        .oldLayout = fresh ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
-        .newLayout = vk::ImageLayout::eGeneral,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = vk::Image(copy->motion),
-        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
-    command.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &ready,
-                             .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &before});
-    const vk::ImageCopy region{.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .extent = {copy->width, copy->height, 1}};
-    command.copyImage(source, vk::ImageLayout::eGeneral, vk::Image(copy->motion),
-                      vk::ImageLayout::eGeneral, region);
-    const vk::MemoryBarrier2 complete{
-        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .srcAccessMask = vk::AccessFlagBits2::eTransferRead | vk::AccessFlagBits2::eTransferWrite,
         .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite};
-    command.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &complete});
-    return true;
-}
-FrameGeneration::FrameGeneration(vk::PhysicalDevice physical_, vk::Device device_,
-                                 VmaAllocator allocator_, Submissions submissions_)
-    : physical{physical_}, device{device_}, allocator{allocator_},
-      submissions{std::move(submissions_)} {}
-FrameGeneration::~FrameGeneration() { Reset(); }
-
-bool FrameGeneration::EnsureCopyPipeline() {
-    if (copy_pipeline) return true;
-    std::array<vk::DescriptorSetLayoutBinding,6> bindings{};
-    for (u32 i=0;i<6;++i) bindings[i]={
-        .binding=i, .descriptorType=i<2 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,
-        .descriptorCount=1, .stageFlags=vk::ShaderStageFlagBits::eCompute};
-    auto descriptors=device.createDescriptorSetLayoutUnique({
-        .flags=vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
-        .bindingCount=u32(bindings.size()),.pBindings=bindings.data()});
-    if (descriptors.result!=vk::Result::eSuccess) return false;
-    copy_descriptors=std::move(descriptors.value);
-    const vk::PushConstantRange range{.stageFlags=vk::ShaderStageFlagBits::eCompute,.offset=0,.size=20};
-    auto layout=device.createPipelineLayoutUnique({
-        .setLayoutCount=1,.pSetLayouts=&*copy_descriptors,.pushConstantRangeCount=1,.pPushConstantRanges=&range});
-    if (layout.result!=vk::Result::eSuccess) return false;
-    copy_layout=std::move(layout.value);
-    auto shader=device.createShaderModuleUnique({.codeSize=sizeof(FRAME_GENERATION_COPY_COMP),
-                                                 .pCode=FRAME_GENERATION_COPY_COMP});
-    if (shader.result!=vk::Result::eSuccess) return false;
-    auto pipeline=device.createComputePipelineUnique({},vk::ComputePipelineCreateInfo{
-        .stage={.stage=vk::ShaderStageFlagBits::eCompute,.module=*shader.value,.pName="main"},.layout=*copy_layout});
-    if (pipeline.result!=vk::Result::eSuccess) return false;
-    copy_pipeline=std::move(pipeline.value);
-    return true;
-}
-
-void FrameGeneration::Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSource& source,
-                              vk::ImageView color_view, u32 w, u32 h, vk::Format format,
-                              std::shared_ptr<Snapshot>& snapshot) {
-    auto& settings=BbSettings::Get();
-    const bool nvidia=settings.frame_generation==BbSettings::FrameGenerationNvidia;
-    const bool sdr_unorm=format==vk::Format::eR8G8B8A8Unorm || format==vk::Format::eB8G8R8A8Unorm;
-    const bool hdr=format==vk::Format::eA2B10G10R10UnormPack32 || format==vk::Format::eA2R10G10B10UnormPack32;
-    if (settings.frame_generation >= BbSettings::FrameGenerationNativeFsr || settings.frame_generation == BbSettings::FrameGenerationOff ||
-        settings.upscaler==BbSettings::UpscalerOff ||
-        (settings.frame_generation==BbSettings::FrameGenerationFsr && failed.load(std::memory_order_relaxed)) || !source.valid ||
-        !source.depth_view || !source.motion_view || !source.render_width || !source.render_height || !w || !h ||
-        (!settings.window_focused && settings.background_mode!=BbSettings::BackgroundRun) ||
-        (!hdr && format != vk::Format::eB8G8R8A8Srgb && format != vk::Format::eR8G8B8A8Srgb &&
-                 format != vk::Format::eB8G8R8A8Unorm && format != vk::Format::eR8G8B8A8Unorm)) {
-        snapshot.reset(); return;
-    }
-    if (!EnsureCopyPipeline()) {
-        settings.frame_generation_problem="FG input pipeline could not be created. The real frame is kept.";
-        failed=true;
-        snapshot.reset(); return;
-    }
-    // A 4K scene can be displayed in a smaller window. Keep FI render dimensions
-    // within the final color extent, scaling motion vectors in pixels with them.
-    const float scale=std::min({1.0f,float(w)/source.render_width,float(h)/source.render_height});
-    const u32 rw=std::max(1u,u32(source.render_width*scale));
-    const u32 rh=std::max(1u,u32(source.render_height*scale));
-    if (!snapshot || snapshot->width!=w || snapshot->height!=h || snapshot->hdr!=hdr || snapshot->sdr_unorm!=sdr_unorm || snapshot->nvidia_input_only!=nvidia ||
-        snapshot->source.render_width!=rw || snapshot->source.render_height!=rh) {
-        snapshot=std::make_shared<Snapshot>(); snapshot->width=w; snapshot->height=h; snapshot->hdr=hdr;
-        snapshot->nvidia_input_only=nvidia;
-        snapshot->sdr_unorm=sdr_unorm;
-        // NVIDIA consumes WSI color directly. Keep only a 1x1 descriptor dummy,
-        // rather than allocating/copying three unused full-resolution FP16 images.
-        if (!CreateImage(device,allocator,snapshot->color,snapshot->color_view,vk::Format::eR16G16B16A16Sfloat,nvidia ? 1u : w,nvidia ? 1u : h) ||
-            (!nvidia && !CreateImage(device,allocator,snapshot->generated,snapshot->generated_view,vk::Format::eR16G16B16A16Sfloat,w,h)) ||
-            !CreateImage(device,allocator,snapshot->depth,snapshot->depth_view,vk::Format::eR32Sfloat,rw,rh) ||
-            !CreateImage(device,allocator,snapshot->motion,snapshot->motion_view,vk::Format::eR16G16Sfloat,rw,rh) ||
-            ((hdr || sdr_unorm) && !nvidia && !CreateImage(device,allocator,snapshot->encoded,snapshot->encoded_view,vk::Format::eR16G16B16A16Sfloat,w,h))) {
-            settings.frame_generation_problem="FG could not allocate its input images. The real frame is kept.";
-            failed=true;
-            snapshot.reset(); return;
-        }
-    }
-    snapshot->source=source;
-    snapshot->source.render_width=rw; snapshot->source.render_height=rh;
-    snapshot->source.jitter[0]*=float(rw)/source.render_width;
-    snapshot->source.jitter[1]*=float(rh)/source.render_height;
-    WriteBarrier(cmdbuf,vk::Image(snapshot->color));
-    WriteBarrier(cmdbuf,vk::Image(snapshot->depth));
-    WriteBarrier(cmdbuf,vk::Image(snapshot->motion));
-    const vk::MemoryBarrier2 source_ready{
-        .srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite,
-        .dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,
-        .dstAccessMask=vk::AccessFlagBits2::eShaderRead};
-    cmdbuf.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&source_ready});
-    const std::array<vk::DescriptorImageInfo,6> images{{
-        {.imageView=color_view,.imageLayout=vk::ImageLayout::eGeneral},
-        {.imageView=source.depth_view,.imageLayout=vk::ImageLayout::eGeneral},
-        {.imageView=source.motion_view,.imageLayout=vk::ImageLayout::eGeneral},
-        {.imageView=*snapshot->color_view,.imageLayout=vk::ImageLayout::eGeneral},
-        {.imageView=*snapshot->depth_view,.imageLayout=vk::ImageLayout::eGeneral},
-        {.imageView=*snapshot->motion_view,.imageLayout=vk::ImageLayout::eGeneral}}};
-    std::array<vk::WriteDescriptorSet,6> writes{};
-    for (u32 i=0;i<6;++i) writes[i]={.dstBinding=i,.descriptorCount=1,
-        .descriptorType=i<2 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,.pImageInfo=&images[i]};
-    cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute,*copy_pipeline);
-    cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,*copy_layout,0,writes);
-    const std::array<u32,5> render_size{source.render_width,source.render_height,rw,rh,nvidia ? 3u : hdr ? 1u : sdr_unorm ? 4u : 0u};
-    cmdbuf.pushConstants(*copy_layout,vk::ShaderStageFlagBits::eCompute,0,20,render_size.data());
-    cmdbuf.dispatch(((nvidia ? rw : w)+7)/8,((nvidia ? rh : h)+7)/8,1);
-    const vk::MemoryBarrier2 complete{
-        .srcStageMask=vk::PipelineStageFlagBits2::eComputeShader,.srcAccessMask=vk::AccessFlagBits2::eShaderWrite,
-        .dstStageMask=vk::PipelineStageFlagBits2::eAllCommands,.dstAccessMask=vk::AccessFlagBits2::eMemoryRead};
-    cmdbuf.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&complete});
-}
-
-void FrameGeneration::CaptureDiagnostic(Scheduler& scheduler, vk::Device device,
-    VmaAllocator allocator, vk::CommandBuffer command, const Snapshot& snapshot,
-    vk::Image backbuffer, vk::Format format, u32 output_width, u32 output_height,
-    uint32_t submission_frame, uint32_t generated, const BbCapture::FrameGenerationCamera& camera) {
-    const char* trigger = std::getenv("BB_FG_CAPTURE_TRIGGER");
-    const char* directory = std::getenv("BB_FG_CAPTURE_DIR");
-    if (!trigger || !directory || !*directory) return;
-    static BbCapture::FrameGenerationRequest request;
-    const auto& source = snapshot.source;
-    const auto capture = request.Poll(trigger, source.render_width, source.render_height,
-                                     output_width, output_height);
-    if (!capture) return;
-    (void)device;
-    const auto folder = std::filesystem::u8path(directory);
-    const std::string prefix = "fg" + std::to_string(capture->index);
-    const std::array images{vk::Image(snapshot.depth), vk::Image(snapshot.motion), backbuffer};
-    const std::array layouts{vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
-                            vk::ImageLayout::ePresentSrcKHR};
-    const std::array widths{source.render_width, source.render_width, output_width};
-    const std::array heights{source.render_height, source.render_height, output_height};
-    const std::array names{"depth", "motion", "real_color"};
-    struct Readback { VkBuffer buffer{}; VmaAllocation allocation{}; VmaAllocationInfo info{}; };
-    std::array<Readback,3> readbacks{};
-    // Allocate the whole set before recording any GPU command. A failed set
-    // changes no image layout and cannot leave a partially recorded capture.
-    for (u32 i=0; i<3; ++i) {
-        const VkBufferCreateInfo buffer{.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .size=uint64_t(widths[i])*heights[i]*4, .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT};
-        const VmaAllocationCreateInfo allocation{
-            .flags=VMA_ALLOCATION_CREATE_MAPPED_BIT|VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
-            .usage=VMA_MEMORY_USAGE_AUTO_PREFER_HOST};
-        if (vmaCreateBuffer(allocator,&buffer,&allocation,&readbacks[i].buffer,
-                            &readbacks[i].allocation,&readbacks[i].info)!=VK_SUCCESS) {
-            for (const auto& readback:readbacks)
-                if (readback.buffer) vmaDestroyBuffer(allocator,readback.buffer,readback.allocation);
-            std::puts("NVIDIA FG capture: incomplete set (host allocation failed).");
-            return;
-        }
-    }
-    std::array<vk::ImageMemoryBarrier2,3> barriers{};
-    for (u32 i=0; i<3; ++i) barriers[i]={
-        .srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite,
-        .dstStageMask=vk::PipelineStageFlagBits2::eTransfer,
-        .dstAccessMask=vk::AccessFlagBits2::eTransferRead,
-        .oldLayout=layouts[i],.newLayout=vk::ImageLayout::eTransferSrcOptimal,
-        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
-        .image=images[i],.subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}};
-    command.pipelineBarrier2({.imageMemoryBarrierCount=3,.pImageMemoryBarriers=barriers.data()});
-    for (u32 i=0; i<3; ++i) {
-        command.copyImageToBuffer(images[i],vk::ImageLayout::eTransferSrcOptimal,readbacks[i].buffer,
-            vk::BufferImageCopy{.imageSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},
-                               .imageExtent={widths[i],heights[i],1}});
-        const auto file=folder/(prefix+"_"+names[i]+"_"+std::to_string(widths[i])+"x"+
-                                std::to_string(heights[i])+".raw");
-        const auto readback=readbacks[i];
-        const uint64_t bytes=uint64_t(widths[i])*heights[i]*4;
-        scheduler.DeferPriorityOperation([allocator,readback,bytes,file] {
-            auto temporary=file;temporary+=".partial";
-            const bool readable=vmaInvalidateAllocation(allocator,readback.allocation,0,VK_WHOLE_SIZE)==VK_SUCCESS;
-            bool written=false;
-            if (readable) {
-                std::ofstream stream(temporary,std::ios::binary);
-                stream.write(static_cast<const char*>(readback.info.pMappedData),std::streamsize(bytes));
-                stream.close(); written=bool(stream);
-            }
-            std::error_code error;
-            if (written) std::filesystem::rename(temporary,file,error);
-            if (!written || error) {
-                std::filesystem::remove(temporary,error);
-                std::puts("NVIDIA FG capture: readback file failed; set remains incomplete.");
-            }
-            vmaDestroyBuffer(allocator,readback.buffer,readback.allocation);
-        });
-    }
-    for (u32 i=0; i<3; ++i) {
-        barriers[i].srcStageMask=vk::PipelineStageFlagBits2::eTransfer;
-        barriers[i].srcAccessMask=vk::AccessFlagBits2::eTransferRead;
-        barriers[i].dstStageMask=vk::PipelineStageFlagBits2::eAllCommands;
-        barriers[i].dstAccessMask=vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite;
-        barriers[i].oldLayout=vk::ImageLayout::eTransferSrcOptimal;
-        barriers[i].newLayout=layouts[i];
-    }
-    const vk::MemoryBarrier2 host_ready{
-        .srcStageMask=vk::PipelineStageFlagBits2::eTransfer,
-        .srcAccessMask=vk::AccessFlagBits2::eTransferWrite,
-        .dstStageMask=vk::PipelineStageFlagBits2::eHost,
-        .dstAccessMask=vk::AccessFlagBits2::eHostRead};
-    command.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&host_ready,
-        .imageMemoryBarrierCount=3,.pImageMemoryBarriers=barriers.data()});
-    std::ostringstream json;json.imbue(std::locale::classic());json<<std::setprecision(9);
-    const auto array=[&](const char* name,const auto& values) {
-        json<<",\n\""<<name<<"\":[";
-        for (size_t i=0; i<values.size(); ++i) {
-            if (i) json<<',';
-            if (std::isfinite(values[i])) json<<values[i];else json<<"null";
-        }
-        json<<']';
+        .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+        .oldLayout = vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .image = output.image,
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
     };
-    json<<"{\"schema\":1,\"stage\":\"nvidia_tagged_inputs\",\"capture_frame\":"<<capture->index
-        <<",\"requested_frames\":"<<capture->count<<",\"submission_frame\":"<<submission_frame
-        <<",\"generated_frames\":"<<generated<<",\"raw_bytes\":"<<capture->bytes
-        <<",\"render_width\":"<<source.render_width<<",\"render_height\":"<<source.render_height
-        <<",\"output_width\":"<<output_width<<",\"output_height\":"<<output_height
-        <<",\"tagged_color_width\":"<<snapshot.width<<",\"tagged_color_height\":"<<snapshot.height
-        <<",\"color_vulkan_format\":"<<uint32_t(format)
-        <<",\"depth_format\":\"r32f\",\"motion_format\":\"rg16f\",\"matrix_layout\":\"row_major\""
-        <<",\"reset\":"<<(camera.reset?"true":"false")
-        <<",\"depth_inverted\":false,\"camera_motion_included\":true,\"far_plane\":3000"
-        <<",\"near_plane\":"<<source.near_plane<<",\"vertical_fov\":"<<source.vertical_fov;
-    array("motion_scale",camera.motion_scale);array("jitter",source.jitter);
-    array("view",source.view);array("inverse_view",source.inverse_view);
-    array("previous_view",source.previous_view);array("previous_inverse_view",source.previous_inverse_view);
-    array("projection",source.projection);array("previous_projection",source.previous_projection);
-    array("view_to_clip",camera.view_to_clip);array("clip_to_view",camera.clip_to_view);
-    array("clip_to_previous",camera.clip_to_previous);array("previous_to_clip",camera.previous_to_clip);
-    json<<"}\n";
-    scheduler.DeferPriorityOperation([file=folder/(prefix+".json"),text=json.str()] {
-        std::ofstream output(file,std::ios::binary);output<<text;
-    });
-    std::printf("NVIDIA FG capture: set %u/%u, submission %u, tagged inputs + real backbuffer (%llu bytes).\n",
-        capture->index+1,capture->count,submission_frame,(unsigned long long)capture->bytes);
+    command.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &written});
+    detached_completion = {completion.GetWorkSemaphore()->Handle(), completion.CurrentTick()};
+    fsr401_overlap->FlushOverlap(completion);
+    return 1;
 }
 
-void FrameGeneration::RetireCompleted() {
-    while (!pending.empty() && submissions.is_free(pending.front().tick)) {
-        if (context) ffxVkFsr3_3_1_6FrameGenerationContextRetireFrame(context,pending.front().id);
-        pending.pop_front();
+#endif
+
+u32 FrameGenerator::GenerateFsr3(vk::CommandBuffer cmdbuf, vk::Image color,
+                                 vk::ImageUsageFlags color_usage, u32 width, u32 height,
+                                 const Output& output, float frame_ms) {
+    if (fsr3 && (fsr3_width != width || fsr3_height != height ||
+                 fsr3_render_width != input_width || fsr3_render_height != input_height)) {
+        DestroyFsr3();
     }
-}
-void FrameGeneration::Invalidate() {
-    history=false;
-    if (BbSettings::Get().frame_generation==BbSettings::FrameGenerationOff ||
-        BbSettings::Get().frame_generation==BbSettings::FrameGenerationFsr)
-        BbSettings::Get().frame_generation_active=0;
-}
-void FrameGeneration::Reset() {
-    if (context) {
-        submissions.wait_submitted();
-        ffxVkFsr3_3_1_6FrameGenerationContextDestroy(context); context=nullptr;
-    }
-    pending.clear(); recording={}; Invalidate();
-}
-bool FrameGeneration::Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Snapshot>& snapshot) {
-    auto& settings=BbSettings::Get();
-    RetireCompleted();
-    if (settings.frame_generation!=BbSettings::FrameGenerationFsr ||
-        settings.upscaler==BbSettings::UpscalerOff || !snapshot ||
-        (!settings.window_focused && settings.background_mode!=BbSettings::BackgroundRun)) {
-        Invalidate();
-        if (settings.frame_generation==BbSettings::FrameGenerationNvidia && context) Reset();
-        if (settings.frame_generation==BbSettings::FrameGenerationOff) { Reset(); failed=false; settings.frame_generation_problem=nullptr; }
-        return false;
-    }
-    if (failed) return false;
-    // Keep the FI/OF context within its buffered-frame budget without growing
-    // a presentation queue or treating ordinary GPU back-pressure as a failure.
-    if (pending.size()>=2) { submissions.wait(pending.front().tick); RetireCompleted(); }
-    const auto& source=snapshot->source;
-    if (context && (width!=snapshot->width || height!=snapshot->height ||
-        render_width!=source.render_width || render_height!=source.render_height || context_hdr!=snapshot->hdr)) Reset();
-    if (!context) {
+    if (!fsr3) {
         const FfxVkFsr3_3_1_6FrameGenerationCreateInfo create{
-            VkPhysicalDevice(physical),VkDevice(device),
-            source.render_width,source.render_height,snapshot->width,snapshot->height,VK_FORMAT_R16G16B16A16_SFLOAT};
-        const auto result=ffxVkFsr3_3_1_6FrameGenerationContextCreate(&create,&context);
-        if (result!=FFX_VK_FSR3_3_1_6_FRAMEGEN_OK) {
-            std::printf("FSR Frame Generation: context creation failed (%d)\n",int(result));
-            settings.frame_generation_problem="FSR FG could not create its GPU context. Turn it off and on to retry.";
-            failed=true; Invalidate(); return false;
+            .physicalDevice = instance.GetPhysicalDevice(),
+            .device = instance.GetDevice(),
+            .maxRenderWidth = input_width,
+            .maxRenderHeight = input_height,
+            .displayWidth = width,
+            .displayHeight = height,
+            .colorFormat = static_cast<VkFormat>(ColorFormat),
+        };
+        if (ffxVkFsr3_3_1_6FrameGenerationContextCreate(&create, &fsr3) !=
+            FFX_VK_FSR3_3_1_6_FRAMEGEN_OK) {
+            fsr3 = nullptr;
+            Fail(BbSettings::FrameGenFsr3, "FSR 3.1 frame generation context creation failed");
+            return 0;
         }
-        width=snapshot->width; height=snapshot->height;
-        context_hdr=snapshot->hdr;
-        render_width=source.render_width; render_height=source.render_height;
-        std::printf("FSR Frame Generation: %ux%u render, %ux%u display, analytical 3.1.6\n",render_width,render_height,width,height);
+        fsr3_width = width;
+        fsr3_height = height;
+        fsr3_render_width = input_width;
+        fsr3_render_height = input_height;
+        reset = true;
+        FfxVkFsr3_3_1_6FrameGenerationMemoryUsage usage{};
+        ffxVkFsr3_3_1_6FrameGenerationContextGetMemoryUsage(fsr3, &usage);
+        std::printf("Frame generation: FSR 3.1 %ux%u (depth and motion %ux%u), %.1f MB\n", width,
+                    height, input_width, input_height, usage.totalUsageInBytes / 1e6);
     }
-    const u64 current_pause=BbBackground::PausedNanoseconds();
-    const bool reset=!history || source.reset || paused_ns!=current_pause;
-    paused_ns=current_pause;
-    WriteBarrier(cmdbuf,vk::Image(snapshot->generated));
-    FfxVkFsr3_3_1_6FrameGenerationPrepareInfo prepare{};
-    prepare.commandBuffer=cmdbuf;
-    prepare.color=Describe(vk::Image(snapshot->color),vk::Format::eR16G16B16A16Sfloat,width,height);
-    prepare.depth=Describe(vk::Image(snapshot->depth),vk::Format::eR32Sfloat,render_width,render_height);
-    prepare.motionVectors=Describe(vk::Image(snapshot->motion),vk::Format::eR16G16Sfloat,render_width,render_height);
-    prepare.renderWidth=render_width; prepare.renderHeight=render_height;
-    prepare.jitterOffsetX=source.jitter[0]; prepare.jitterOffsetY=source.jitter[1];
-    prepare.motionVectorScaleX=prepare.motionVectorScaleY=1.0f;
-    prepare.frameTimeMilliseconds=std::clamp(source.frame_ms,1.0f,100.0f);
-    prepare.minLuminance=0.0f; prepare.maxLuminance=snapshot->hdr ? 10000.0f : 80.0f;
-    prepare.transferFunction=FFX_VK_FSR3_3_1_6_FRAMEGEN_TRANSFER_SCRGB;
-    prepare.cameraNear=source.near_plane; prepare.cameraFar=3000.0f;
-    prepare.viewSpaceToMeters=1.0f; prepare.cameraVerticalFovRadians=source.vertical_fov;
-    for (u32 i=0;i<3;++i) {
-        prepare.cameraPosition[i]=source.inverse_view[i*4+3];
-        prepare.cameraRight[i]=source.inverse_view[i*4];
-        prepare.cameraUp[i]=source.inverse_view[i*4+1];
-        prepare.cameraForward[i]=source.inverse_view[i*4+2];
+    const auto image = [](vk::Image handle, vk::Format format, u32 w, u32 h,
+                          vk::ImageUsageFlags usage) {
+        return FfxVkFsr3_3_1_6FrameGenerationImage{
+            .image = handle,
+            .format = static_cast<VkFormat>(format),
+            .width = w,
+            .height = h,
+            .layout = VK_IMAGE_LAYOUT_GENERAL,
+            .usage = static_cast<VkImageUsageFlags>(usage),
+        };
+    };
+    const u64 id = ++fsr3_frame_id;
+    FfxVkFsr3_3_1_6FrameGenerationPrepareInfo prepare{
+        .commandBuffer = cmdbuf,
+        .color = image(color, ColorFormat, width, height, color_usage),
+        .depth = image(depth_image, vk::Format::eR32Sfloat, input_width, input_height, InputUsage),
+        .motionVectors =
+            image(motion_image, vk::Format::eR16G16Sfloat, input_width, input_height, InputUsage),
+        .renderWidth = input_width,
+        .renderHeight = input_height,
+        .jitterOffsetX = capture_jitter[0],
+        .jitterOffsetY = capture_jitter[1],
+        .motionVectorScaleX = 1.0f,
+        .motionVectorScaleY = 1.0f,
+        .frameTimeMilliseconds = frame_ms,
+        .minLuminance = 0.0f,
+        .maxLuminance = 1.0f,
+        .transferFunction = FFX_VK_FSR3_3_1_6_FRAMEGEN_TRANSFER_SRGB,
+        .cameraNear = capture_camera.near_plane,
+        .cameraFar = capture_camera.far_plane,
+        .viewSpaceToMeters = 1.0f,
+        .cameraVerticalFovRadians = capture_camera.vertical_fov,
+        .cameraPosition = {0.0f, 0.0f, 0.0f},
+        .cameraUp = {0.0f, 1.0f, 0.0f},
+        .cameraRight = {1.0f, 0.0f, 0.0f},
+        .cameraForward = {0.0f, 0.0f, 1.0f},
+        .frameId = id,
+        .reset = reset ? VK_TRUE : VK_FALSE,
+    };
+    if (ffxVkFsr3_3_1_6FrameGenerationContextRecordPrepare(fsr3, &prepare) !=
+        FFX_VK_FSR3_3_1_6_FRAMEGEN_OK) {
+        fsr3_pending.push_back({id, scheduler.CurrentTick()});
+        Fail(BbSettings::FrameGenFsr3, "FSR 3.1 frame generation (prepare) failed");
+        return 0;
     }
-    prepare.frameId=++frame_id; prepare.reset=reset;
-    recording={frame_id,0,snapshot};
-    auto result=ffxVkFsr3_3_1_6FrameGenerationContextRecordPrepare(context,&prepare);
-    if (result==FFX_VK_FSR3_3_1_6_FRAMEGEN_OK) {
-        FfxVkFsr3_3_1_6FrameGenerationDispatchInfo dispatch{};
-        dispatch.commandBuffer=cmdbuf; dispatch.color=prepare.color;
-        dispatch.output=Describe(vk::Image(snapshot->generated),vk::Format::eR16G16B16A16Sfloat,width,height);
-        dispatch.displayWidth=width; dispatch.displayHeight=height;
-        dispatch.interpolationWidth=width; dispatch.interpolationHeight=height;
-        dispatch.frameTimeMilliseconds=prepare.frameTimeMilliseconds;
-        dispatch.cameraNear=prepare.cameraNear; dispatch.cameraFar=prepare.cameraFar;
-        dispatch.viewSpaceToMeters=prepare.viewSpaceToMeters;
-        dispatch.cameraVerticalFovRadians=prepare.cameraVerticalFovRadians;
-        dispatch.minLuminance=prepare.minLuminance; dispatch.maxLuminance=prepare.maxLuminance;
-        dispatch.transferFunction=prepare.transferFunction; dispatch.frameId=frame_id; dispatch.reset=reset;
-        result=ffxVkFsr3_3_1_6FrameGenerationContextRecordDispatch(context,&dispatch);
+    const FfxVkFsr3_3_1_6FrameGenerationDispatchInfo dispatch{
+        .commandBuffer = cmdbuf,
+        .color = prepare.color,
+        .output = image(output.image, ColorFormat, width, height,
+                        InputUsage | vk::ImageUsageFlagBits::eTransferSrc),
+        .distortionField = {},
+        .displayWidth = width,
+        .displayHeight = height,
+        .frameTimeMilliseconds = frame_ms,
+        .cameraNear = prepare.cameraNear,
+        .cameraFar = prepare.cameraFar,
+        .viewSpaceToMeters = 1.0f,
+        .cameraVerticalFovRadians = capture_camera.vertical_fov,
+        .minLuminance = 0.0f,
+        .maxLuminance = 1.0f,
+        .transferFunction = FFX_VK_FSR3_3_1_6_FRAMEGEN_TRANSFER_SRGB,
+        .frameId = id,
+        .reset = prepare.reset,
+    };
+    const auto result = ffxVkFsr3_3_1_6FrameGenerationContextRecordDispatch(fsr3, &dispatch);
+    fsr3_pending.push_back({id, scheduler.CurrentTick()});
+    if (result != FFX_VK_FSR3_3_1_6_FRAMEGEN_OK) {
+        Fail(BbSettings::FrameGenFsr3, "FSR 3.1 frame generation (dispatch) failed");
+        return 0;
     }
-    if (result!=FFX_VK_FSR3_3_1_6_FRAMEGEN_OK) {
-        std::printf("FSR Frame Generation: prepare/dispatch failed (%d)\n",int(result));
-        settings.frame_generation_problem="FSR FG dispatch failed. The real frame is kept; turn FG off and on to retry.";
-        failed=true; Invalidate(); return false;
-    }
-    if (snapshot->hdr || snapshot->sdr_unorm) {
-        // FI writes linear FP16; a plain blit into a PQ swapchain would clamp
-        // the HDR highlights. Encode into stable FP16 PQ, then blit to UNORM10.
-        const vk::MemoryBarrier2 ready{.srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
-            .srcAccessMask=vk::AccessFlagBits2::eMemoryWrite,.dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,
-            .dstAccessMask=vk::AccessFlagBits2::eShaderRead};
-        cmdbuf.pipelineBarrier2({.memoryBarrierCount=1,.pMemoryBarriers=&ready});
-        WriteBarrier(cmdbuf,vk::Image(snapshot->encoded));
-        const std::array<vk::DescriptorImageInfo,6> images{{
-            {.imageView=*snapshot->generated_view,.imageLayout=vk::ImageLayout::eGeneral},
-            {.imageView=source.depth_view,.imageLayout=vk::ImageLayout::eGeneral},
-            {.imageView=source.motion_view,.imageLayout=vk::ImageLayout::eGeneral},
-            {.imageView=*snapshot->encoded_view,.imageLayout=vk::ImageLayout::eGeneral},
-            {.imageView=*snapshot->depth_view,.imageLayout=vk::ImageLayout::eGeneral},
-            {.imageView=*snapshot->motion_view,.imageLayout=vk::ImageLayout::eGeneral}}};
-        std::array<vk::WriteDescriptorSet,6> writes{};
-        for (u32 i=0;i<6;++i) writes[i]={.dstBinding=i,.descriptorCount=1,
-            .descriptorType=i<2 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage,.pImageInfo=&images[i]};
-        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute,*copy_pipeline);
-        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,*copy_layout,0,writes);
-        const std::array<u32,5> parameters{source.render_width,source.render_height,render_width,render_height,snapshot->hdr ? 2u : 5u};
-        cmdbuf.pushConstants(*copy_layout,vk::ShaderStageFlagBits::eCompute,0,20,parameters.data());
-        cmdbuf.dispatch((width+7)/8,(height+7)/8,1);
-    }
-    history=true; settings.frame_generation_active=reset ? 0 : 2;
-    settings.frame_generation_problem=nullptr;
-    return !reset;
+    return 1;
 }
-void FrameGeneration::Submitted(u64 tick) {
-    if (recording.snapshot) { recording.tick=tick; pending.push_back(std::move(recording)); recording={}; }
+
+u32 FrameGenerator::GenerateDlss(vk::CommandBuffer cmdbuf, vk::Image color,
+                                 vk::ImageView color_view, vk::Image hudless,
+                                 vk::ImageView hudless_view, u32 width, u32 height,
+                                 std::span<const Output> outputs, u32 count, float frame_ms) {
+    (void)frame_ms; // DLSS Frame Generation measures the time itself
+    Dlss* dlss = Dlss::Get();
+    if (!dlss || dlss->FrameGenMaxCount() < 1) {
+        Fail(BbSettings::FrameGenDlss, "DLSS Frame Generation is unavailable");
+        return 0;
+    }
+    const Dlss::FrameGenDesc desc{width, height, ColorFormat, input_width, input_height};
+    if (!dlss->HasFrameGen(desc)) {
+        // The previous feature may still be used by submitted work; `cmdbuf` stays open.
+        scheduler.WaitSubmitted();
+        dlss->ReleaseFrameGen();
+        if (!dlss->CreateFrameGen(cmdbuf, desc)) {
+            Fail(BbSettings::FrameGenDlss, "DLSS Frame Generation feature creation failed");
+            return 0;
+        }
+        reset = true;
+    }
+    const auto resource = [](vk::Image image, vk::ImageView view, vk::Format format, u32 w,
+                             u32 h) {
+        return Dlss::Resource{image, view, format, vk::ImageAspectFlagBits::eColor, w, h};
+    };
+    for (u32 index = 1; index <= count; ++index) {
+        const bool ok = dlss->EvaluateFrameGen(
+            cmdbuf, {
+                        .backbuffer = resource(color, color_view, ColorFormat, width, height),
+                        .depth = resource(depth_image, *depth_view, vk::Format::eR32Sfloat,
+                                          input_width, input_height),
+                        .motion = resource(motion_image, *motion_view, vk::Format::eR16G16Sfloat,
+                                           input_width, input_height),
+                        .output = resource(outputs[index - 1].image, outputs[index - 1].view,
+                                           ColorFormat, width, height),
+                        .hudless = hudless ? resource(hudless, hudless_view, ColorFormat, width,
+                                                      height)
+                                           : Dlss::Resource{},
+                        .jitter_x = capture_jitter[0],
+                        .jitter_y = capture_jitter[1],
+                        .camera_near = capture_camera.near_plane,
+                        .camera_far = capture_camera.far_plane,
+                        .camera_fov = capture_camera.vertical_fov,
+                        .depth_inverted = depth_inverted,
+                        .has_matrices = capture_camera.has_matrices,
+                        .view_to_clip = capture_camera.view_to_clip,
+                        .clip_to_prev_clip = capture_camera.clip_to_prev_clip,
+                        .prev_clip_to_clip = capture_camera.prev_clip_to_clip,
+                        .reset = reset,
+                        .count = count,
+                        .index = index,
+                    });
+        if (!ok) {
+            Fail(BbSettings::FrameGenDlss, "DLSS Frame Generation evaluation failed");
+            return 0;
+        }
+    }
+    return count;
 }
+
+void FrameGenerator::Fail(int provider, const char* reason) {
+    auto& settings = BbSettings::Get();
+    BbSettings::FrameGenFailure(provider, reason);
+    std::printf("Frame generation: %s; active=%s, selected=%s\n", reason,
+                BbSettings::FrameGenName(settings.ActiveFrameGen()),
+                BbSettings::FrameGenName(settings.frame_gen));
+    reset = true;
+}
+
 } // namespace Vulkan

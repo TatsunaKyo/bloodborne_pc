@@ -25,7 +25,7 @@ std::deque<Flip> flips;
 
 bool Wanted() {
     const auto& s = BbSettings::Get();
-    return s.amd_antilag && (s.window_focused || s.background_mode == BbSettings::BackgroundRun);
+    return !s.native_latency_owner && s.amd_antilag && (s.window_focused || s.background_mode == BbSettings::BackgroundRun);
 }
 void Send(bool enabled, const VkAntiLagPresentationInfoAMD* presentation = nullptr) {
     const VkAntiLagDataAMD data{VK_STRUCTURE_TYPE_ANTI_LAG_DATA_AMD, nullptr,

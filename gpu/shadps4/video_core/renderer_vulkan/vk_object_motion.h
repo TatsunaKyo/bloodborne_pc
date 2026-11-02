@@ -101,6 +101,7 @@ private:
 
     u64 frame = 0;
     u32 params_used = 0;
+    bool cache_enabled = true; ///< bounded per-size targets; explicit startup opt-out available
     std::array<Target, 4> targets;
     Target* current = nullptr; ///< last attached or read
 };

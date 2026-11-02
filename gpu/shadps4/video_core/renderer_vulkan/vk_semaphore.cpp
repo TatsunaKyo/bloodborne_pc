@@ -9,7 +9,7 @@
 
 namespace Vulkan {
 
-constexpr u64 WAIT_TIMEOUT = std::numeric_limits<u64>::max();
+constexpr u64 kWaitTimeout = std::numeric_limits<u64>::max();
 
 Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
     const vk::StructureChain semaphore_chain = {
@@ -34,6 +34,9 @@ void Semaphore::Refresh() {
     do {
         this_tick = gpu_tick.load(std::memory_order_acquire);
         auto [counter_result, cntr] = instance.GetDevice().getSemaphoreCounterValue(*semaphore);
+        if (counter_result == vk::Result::eErrorDeviceLost) {
+            instance.ReportDeviceLost("reading the GPU tick");
+        }
         ASSERT_MSG(counter_result == vk::Result::eSuccess,
                    "Failed to get master semaphore value: {}", vk::to_string(counter_result));
         counter = cntr;
@@ -62,8 +65,17 @@ void Semaphore::Wait(u64 tick) {
         .pValues = &tick,
     };
 
-    while (instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT) != vk::Result::eSuccess) {
+    // bbport: only a timeout is retried. Device loss returns at once, so retrying it spun
+    // forever: the game showed its last frame with the sound still playing.
+    vk::Result result;
+    while ((result = instance.GetDevice().waitSemaphores(&wait_info, kWaitTimeout)) ==
+           vk::Result::eTimeout) {
     }
+    if (result == vk::Result::eErrorDeviceLost) {
+        instance.ReportDeviceLost("waiting for the GPU");
+    }
+    ASSERT_MSG(result == vk::Result::eSuccess, "Failed to wait for the GPU: {}",
+               vk::to_string(result));
     Refresh();
 }
 

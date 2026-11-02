@@ -92,7 +92,11 @@ void wsa_start() {
 sockfd_t sock_udp() {
     wsa_start();
     const sockfd_t fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd != INVALID_SOCKET) sock_set_nonblock(fd, true); // blocking calls wait with WSAPoll
+    if (fd != INVALID_SOCKET) {
+        sock_set_nonblock(fd, true); // blocking calls wait with WSAPoll
+        // Not inherited by the in-game restart's new launch: it would hold this port for the next game.
+        ::SetHandleInformation(reinterpret_cast<HANDLE>(fd), HANDLE_FLAG_INHERIT, 0);
+    }
     return fd;
 }
 void sock_setopt_int(sockfd_t fd, int level, int name, int v) {

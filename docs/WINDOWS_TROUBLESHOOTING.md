@@ -24,11 +24,28 @@ Object motion vectors: off
 
 ## Frame rate
 
-- **FSR 4 at 4K on RDNA2: about 6 FPS.** The log shows
-  `FSR 4 v07 INT8 quality model, 2160 tier, output 3840x2160`. The INT8 model is tuned for
-  RDNA3; on an RX 6900 XT use **FSR 3.1** (`upscaler=fsr3` in `bbport.ini`).
+- **FSR 4 on RDNA2: about 6 FPS at 4K (RX 6900 XT), 18 at 1080p (RX 6700 XT).** The model
+  itself is not the cause: with `BB_FSR4_PROFILE=1` in Extra variables the log lists every pass,
+  and at 1080p only the two from `fsr4_shaders\opt` were slow (`model 11` 19.6 ms, `post`
+  26.2 ms of 47.9). AMD's Windows driver kept the per-index table copies glslang made in them
+  in scratch memory; passes rebuilt by `tools/fsr4_optimize.sh` since `single_tables`
+  (`tools/Fsr4SpirvCrossFixes.pm`) take 2.5 ms for the whole of FSR 4 there. With older files,
+  `BB_FSR4_OPT=0` loads the original passes (3.1 ms, but at 1080p output it brings back the
+  pass 11 race: a flickering strip at the left edge), or use **FSR 3.1** (`upscaler=fsr3` in
+  `bbport.ini`). The 4K case was not measured again.
 - The stability settings above cost some speed: the two-stage pipeline is the largest gain
   (20–30 %) when it works.
+- **Graphics cards with 4 or 6 GB.** Discrete GPUs with up to 6.5 GB get a low-VRAM profile, shown in
+  the log as `Low-VRAM profile (4096 MiB card): ...`. It raises the texture budget to the card's
+  memory less 600 MiB. At 1080p output with an upscaler, it also patches the scene size at start
+  instead of changing it live (preset changes then need a restart). On CPUs with up to 4 cores
+  it turns the draw-preparation workers off. **Advanced → Low-VRAM profile** (or `BB_LOW_VRAM=0`/`1`
+  in Extra variables) turns it off or forces it. The profile is from fixdag and bashiku's 4 GB mod.
+  The "Video memory is running low" banner can be switched off there too (**Warn when video memory
+  runs low**, or `BB_VRAM_WARN_MB=0`).
+- **The frame rate falls after some minutes (laptops).** `BB_THERMAL_LOG=1` in Extra variables
+  writes `Thermal: GPU 87 C, 60 W: the driver is slowing the card down to cool it` to the log
+  when an NVIDIA card is throttled for heat (checked every 20 seconds with `nvidia-smi`).
 
 ## Online play
 
@@ -43,9 +60,14 @@ Object motion vectors: off
   Authorities) held an expired `ISRG Root X2` cross-certificate (valid until 2025-09-16,
   thumbprint `151682F5218C0A511C28F4060A73B9CA78CE9A53`), and building the chain from the
   leaf alone first failed with `NotTimeValid`. Outside the game both checks pass once Windows
-  has cached the current intermediates, yet the game kept failing; the cause inside the game
-  is not found yet. Removing the expired certificate is the next thing to try. More detail
-  comes with `BB_GPU_LOG=info` in Extra variables.
+  has cached the current intermediates. The same happened with game.supermedo.com (`YE1`) and
+  the log line `certificate is not trusted by Windows either (error 0x1)`: OpenSSL failed on
+  PCs whose Windows store didn't have the ISRG roots yet, and the port's own fallback also gave
+  Windows the leaf alone (0x1 is `NotTimeValid`); retrying Play Online usually worked. Since
+  1.9.6 the port carries ISRG Root X1, X2, YE and YR itself (`gpu/bbnet/include/windows_trust.h`,
+  checked by `windows-trust-test`), so OpenSSL trusts Let's Encrypt servers without Windows'
+  roots, and the fallback gives Windows the whole chain the server sent. More detail comes with
+  `BB_GPU_LOG=info` in Extra variables.
 
 ## Launcher settings get overwritten
 

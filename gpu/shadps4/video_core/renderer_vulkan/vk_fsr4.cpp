@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <filesystem>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,6 +17,12 @@
 #include "video_core/renderer_vulkan/fsr411/fsr411.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_fsr411_native.h"
+#include "video_core/renderer_vulkan/vk_fsr4vk.h"
+#include "video_core/renderer_vulkan/vk_fsr412_driver.h"
+#ifdef _WIN32
+#include "fsr411_support.h"
+#endif
 
 namespace Vulkan {
 
@@ -71,11 +78,41 @@ struct Fsr4Upscaler::Impl {
     std::unique_ptr<Fsr411::Upscaler> fsr411;
     std::deque<u64> fsr411_ticks; ///< scheduler ticks of its recent frames (constant ring)
     std::string fsr411_described;
+#ifdef _WIN32
+    std::unique_ptr<Fsr411Native> native411;
+    std::unique_ptr<Fsr4Vk> fsr4vk;
+    std::unique_ptr<Fsr412Driver> driver412;
+    int native411_described = -1;
+    int active_method = -1;
+    int attempted_method = -1;
+#endif
 
     Impl(const Instance& instance_, Scheduler& scheduler_)
-        : instance{instance_}, scheduler{scheduler_} {}
+        : instance{instance_}, scheduler{scheduler_} {
+#ifdef _WIN32
+        auto& s = BbSettings::Get();
+        const bool dx12 = instance.IsFsr411NativeSupported() && instance.IsFsr411AsyncSupported();
+        s.fsr41_backend_supported[0][BbSettings::Fsr411Vulkan] = instance.IsFsr4VkSupported();
+        s.fsr41_backend_supported[0][BbSettings::Fsr411Dx12] = dx12;
+        const auto id = instance.GetPhysicalDevice().getProperties2<vk::PhysicalDeviceProperties2,
+            vk::PhysicalDeviceIDProperties>().get<vk::PhysicalDeviceIDProperties>();
+        const auto direct = instance.GetVendorID() != 0x1002
+            ? Fsr411Support{false, "hardware", "AMD GPU required"}
+            : ProbeFsr412Dx12(id.deviceLUID.data());
+        s.fsr41_backend_supported[1][BbSettings::Fsr411Dx12] =
+            instance.IsFsr411AsyncSupported() && direct.supported;
+        int vulkan_status{};
+        s.fsr41_backend_supported[1][BbSettings::Fsr411Vulkan] = Fsr412Driver::Available(instance, &vulkan_status);
+        s.fsr41_status[1][BbSettings::Fsr411Vulkan] = vulkan_status;
+        s.fsr41_status[0][BbSettings::Fsr411Dx12] = instance.Fsr411NativeStatus();
+        s.fsr41_status[1][BbSettings::Fsr411Dx12] = direct.supported ?
+            instance.FsrDx12InteropStatus() : FsrSupportCode(direct);
+        s.fsr41_status[0][BbSettings::Fsr411Vulkan] = instance.Fsr4VkStatus();
+#endif
+    }
 
     ~Impl() {
+        BbSettings::Get().fsr4_method_problem = nullptr;
         Destroy();
     }
 
@@ -231,7 +268,47 @@ struct Fsr4Upscaler::Impl {
         return ffxFsr4VkSetExternalImageState(&backend, &state);
     }
 
-    bool Record411(const Frame& f) {
+    bool Record411(Frame& f, int method) {
+#ifdef _WIN32
+        const auto& settings = BbSettings::Get();
+        const bool use_native = method == BbSettings::Fsr411Dx12;
+        const char* version = settings.upscaler == BbSettings::UpscalerFsr412 ? "4.1.2" : "4.1.1";
+        if (use_native) {
+            // Both Windows providers use the existing host RCAS pass.
+            f.sharpen = false;
+            if (!instance.IsFsr411AsyncSupported()) {
+                const char* detail = instance.NativeFsr411Problem();
+                Fail(std::string("FSR ") + version + ": " + (detail ? detail :
+                    "AMD DX12 shared GPU-fence support unavailable on this device"), true);
+                return false;
+            }
+            if (!native411) native411 = std::make_unique<Fsr411Native>(instance, scheduler);
+            if (!native411->Record(f, true)) {
+                Fail(std::string("FSR ") + version + " AMD DX12: " + native411->Error(), true);
+                return false;
+            }
+            if (native411_described != settings.upscaler) {
+                std::printf("Upscaler: FSR %s through AMD DX12 GPU fences, output %ux%u\n", version, f.output.width, f.output.height);
+                native411_described = settings.upscaler;
+            }
+            problem.clear();
+            return true;
+        }
+        if (instance.IsFsr4VkSupported()) {
+            f.sharpen = false;
+            if (!fsr4vk) fsr4vk = std::make_unique<Fsr4Vk>(instance, scheduler);
+            if (!fsr4vk->Record(f)) {
+                Fail(fsr4vk->Problem() ? fsr4vk->Problem() : "fsr4vk failed", fsr4vk->Fatal());
+                return false;
+            }
+            if (const auto description = fsr4vk->Describe(); description != fsr411_described) {
+                fsr411_described = description;
+                std::printf("Upscaler: FSR 4.1.1 through fsr4vk, %s\n", description.c_str());
+            }
+            problem.clear();
+            return true;
+        }
+#endif
         if (!instance.IsFsr411Supported()) {
             Fail("FSR 4.1.1 needs INT8 dot products and VK_VALVE_shader_mixed_float_dot_product", true);
             return false;
@@ -275,9 +352,92 @@ struct Fsr4Upscaler::Impl {
         return true;
     }
 
-    bool Record(const Frame& f) {
-        if (BbSettings::Get().upscaler == BbSettings::UpscalerFsr411) {
-            return Record411(f);
+    bool RecordMethod(Frame& f, int method) {
+#ifdef _WIN32
+        if(BbSettings::Get().upscaler==BbSettings::UpscalerFsr412 &&
+           method==BbSettings::Fsr411Vulkan){
+            f.sharpen=false;
+            if(!driver412)driver412=std::make_unique<Fsr412Driver>(instance,scheduler);
+            if(!driver412->Record(f)){Fail(driver412->Error(),true);return false;}
+            problem.clear();return true;
+        }
+#endif
+        return Record411(f, method);
+    }
+
+#ifdef _WIN32
+    void ReleaseMethod(Frame& f) {
+        // Previous display/HUD consumers have recorded their reads. Complete those
+        // submissions before destroying cross-API images, contexts or imported fences.
+        if (native411) native411->ReleaseOutput(scheduler.CommandBuffer());
+        scheduler.Finish();
+        native411.reset();
+        fsr4vk.reset();
+        driver412.reset();
+        native411_described = -1;
+        fsr411_described.clear();
+        f.cmdbuf = scheduler.CommandBuffer();
+        f.reset = true;
+    }
+
+    bool RecordSwitchable(Frame& f) {
+        auto& s = BbSettings::Get();
+        const int requested = s.fsr411_backend;
+        const bool change = attempted_method != requested;
+        const int previous = active_method;
+        if (change) {
+            attempted_method = requested;
+            s.fsr4_method_problem = nullptr;
+            if (previous >= 0 && previous == requested) return RecordMethod(f, previous);
+            // A disabled menu item can still be requested by an edited INI/test control.
+            // Retain the running provider when its alternative is unavailable.
+            if (previous >= 0 && !s.FsrMethodSupported(s.upscaler, requested)) {
+                s.fsr4_method_problem = requested == BbSettings::Fsr411Dx12
+                    ? "AMD DX12 unavailable; previous method remains active."
+                    : "Vulkan provider unavailable; previous method remains active.";
+            } else {
+                if (previous >= 0) ReleaseMethod(f);
+                const auto output = f.output;
+                fatal = false;
+                if (RecordMethod(f, requested)) {
+                    active_method = requested;
+                    s.active_fsr411_backend = requested;
+                    std::printf("FSR method active: %s %s; live contexts=%u\n",
+                                BbSettings::UpscalerName(s.upscaler), requested ? "dx12" : "vk",
+                                unsigned(bool(native411)) + unsigned(bool(fsr4vk)) + unsigned(bool(driver412)));
+                    return true;
+                }
+                if (previous < 0) return false; // Initial startup keeps the normal fallback.
+                const std::string failure = problem;
+                ReleaseMethod(f);
+                fatal = false;
+                // Failed initialization is normally before output replacement. Preserve
+                // the caller's output, and recreate only the previous provider on retry.
+                f.output = output;
+                if (!RecordMethod(f, previous)) return false;
+                active_method = previous;
+                s.active_fsr411_backend = previous;
+                // The overlay runs on another thread: publish immutable status text.
+                // Keep the detailed provider error in the log, with the restored method.
+                s.fsr4_method_problem = requested == BbSettings::Fsr411Dx12
+                    ? "AMD DX12 failed; Vulkan remains active. See log."
+                    : "Vulkan failed; AMD DX12 remains active. See log.";
+                std::printf("FSR method switch: restored %s %s after %s\n",
+                            BbSettings::UpscalerName(s.upscaler), previous ? "dx12" : "vk", failure.c_str());
+                return true;
+            }
+        }
+        return RecordMethod(f, active_method >= 0 ? active_method : requested);
+    }
+#endif
+
+    bool Record(Frame& f) {
+        if (BbSettings::Get().upscaler == BbSettings::UpscalerFsr411 || BbSettings::Get().upscaler == BbSettings::UpscalerFsr412) {
+#ifdef _WIN32
+            return RecordSwitchable(f);
+#else
+            return Record411(f, BbSettings::Get().fsr411_backend);
+#endif
         }
         if (fatal) {
             return false;
@@ -383,8 +543,15 @@ Fsr4Upscaler::Fsr4Upscaler(const Instance& instance, Scheduler& scheduler)
 
 Fsr4Upscaler::~Fsr4Upscaler() = default;
 
-bool Fsr4Upscaler::Record(const Frame& frame) {
+bool Fsr4Upscaler::Record(Frame& frame) {
     return impl->Record(frame);
+}
+
+void Fsr4Upscaler::ReleaseOutput(vk::CommandBuffer command) {
+#ifdef _WIN32
+    if (impl->native411)
+        impl->native411->ReleaseOutput(command);
+#endif
 }
 
 const char* Fsr4Upscaler::Problem() const noexcept {

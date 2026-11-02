@@ -145,7 +145,7 @@ bool ApplyReflexOptions(const sl::ReflexOptions& options) {
 }
 bool Wanted() {
     const auto& s=BbSettings::Get();
-    return (s.reflex!=0 || s.frame_generation==BbSettings::FrameGenerationNvidia ||
+    return s.startup_workshop_nvidia && (s.reflex != 0 || s.frame_generation==BbSettings::FrameGenerationNvidia ||
             (s.show_fps && s.show_latency)) &&
            (s.window_focused || s.background_mode==BbSettings::BackgroundRun);
 }
@@ -354,6 +354,7 @@ void PreloadMod() {
     std::printf("DLSSG mod: %ls, loaded=%d, Win32=%lu\n",dll.c_str(),int(mod!=nullptr),mod ? 0ul : GetLastError());
 }
 void* VulkanLoader(void* native) {
+    if (!BbSettings::Get().startup_workshop_nvidia) return native;
     std::scoped_lock lock{mutex};
     if (module) return initialized ? reinterpret_cast<void*>(GetProcAddress(module,"vkGetInstanceProcAddr")) : native;
     wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);

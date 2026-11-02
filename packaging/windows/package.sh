@@ -63,6 +63,7 @@ cp -r scripts patches "$dest/"
 # Legacy CPU (Intel 3rd generation and older): the translation plan scripts/cpu_compat.py applies.
 mkdir -p "$dest/tools" && cp tools/legacy-cpu-plan.json "$dest/tools/"
 cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
+cp packaging/windows/BB-Report-Tool.bat "$dest/"
 cp -r docs "$dest/"
 cp packaging/windows/bbport.menu.ini "$dest/"
 if [[ -d fsr4_shaders ]]; then cp -r fsr4_shaders "$dest/"; fi
