@@ -1,7 +1,7 @@
 name: Regression checks
 on:
   push:
-    branches: [windows]
+    branches: [windows, 'polish/**']
   pull_request:
     branches: [windows]
   workflow_dispatch:
