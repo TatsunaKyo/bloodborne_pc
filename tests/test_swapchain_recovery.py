@@ -32,6 +32,10 @@ using u32 = unsigned;
 #define ASSERT_MSG(value, ...) assert(value)
 template<class... T> void SetObjectName(T&&...) {}
 using namespace std::chrono_literals;
+using u64=std::uint64_t;
+namespace LowLatency {void PresentStart(u64){} void PresentEnd(u64){}}
+struct PresentScheduler {int ExecutionQueue(){return 0;}} present_scheduler;
+constexpr u64 latency_id=0;
 struct Scheduler { static std::mutex submit_mutex; };
 std::mutex Scheduler::submit_mutex;
 std::mutex gate;
@@ -73,6 +77,7 @@ struct Frame { int amd_token{}; BbHitch::FramePath hitch_path{}; };
 struct Window { int GetWidth() { return 1920; } int GetHeight() { return 1080; } };
 struct Swapchain {
     bool Present() { return false; }
+    bool Present(int,u64) {return Present();}
     void Recreate(int, int) {
         auto probe = std::async(std::launch::async, [] {
             if (!Scheduler::submit_mutex.try_lock()) return false;

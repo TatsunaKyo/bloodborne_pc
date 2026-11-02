@@ -63,10 +63,10 @@ def exercise_main(module, folder, expect_error=False):
                         return
                     assert window.title() == 'Bloodborne: The Crowned Workshop — TatsunaKyo'
                     assert app.current_page == 'play'
-                    assert app.brand_version.cget('text') == 'v' + module.VERSION
-                    assert app.quick_dlss_row.winfo_exists()
-                    assert app.nav['frames'].winfo_exists()
-                    assert app.brand_author.cget('text') == 'by TatsunaKyo'
+                    assert f'R{module.VERSION.rsplit(".", 1)[1]}' in app.byline.cget('text')
+                    assert app.brand.winfo_exists()
+                    assert app.nav['graphics'].winfo_exists()
+                    assert 'by TatsunaKyo' in app.byline.cget('text')
                     assert app.process is None and not app.downloading
                     assert module.LANG == language
                     # Close through the normal handler, including settings persistence.

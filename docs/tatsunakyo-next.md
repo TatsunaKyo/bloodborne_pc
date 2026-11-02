@@ -1,6 +1,10 @@
 # Current work and roadmap
 
-R55 integrates Supermedo Windows 1.9.2 and the reviewed renderer changes since published R40. [Exact integration decisions](investigations/2026-10-20-upstream-integration.md) · [Current reports](known-issues.md) · [Source maintenance](maintenance.md)
+Published R55 remains the binary baseline. Unreleased R56 integrates Supermedo Windows 1.9.7 and retains the Workshop features. [Exact integration decisions](investigations/2026-10-20-upstream-integration.md) · [Current reports](known-issues.md) · [Source maintenance](maintenance.md)
+
+## Integration state
+
+The [integration map](integration-map.md) records current owners, retained safety fixes and removed tracker-generation assumptions. [R56 source notes](releases/windows-v1.9.7-tatsunakyo.56.md) distinguish implemented changes from hardware acceptance. No promise of a cemetery-route fix is inferred from the upstream merge.
 
 ## Included already
 
@@ -44,7 +48,7 @@ All additions belong in the existing Cheats pages. I will follow the current sig
 |---|---|---|
 | NVIDIA Dynamic MFG | The shipped Streamline 2.14.1 guide exposes the dynamic path for D3D12. Fixed Vulkan MFG and Auto mode are not that dynamic path. | Recheck vendor Vulkan support before any new backend work; do not rename Auto as Dynamic. |
 | XeSS Frame Generation / XeLL | Intel's current public FG/low-latency integration uses D3D12; XeSS SR already has our Vulkan adapter. Standalone XeLL on non-Intel hardware is restricted by Intel's integration contract. | Keep SR and its independent quality menu; plan FG/XeLL with an actual supported backend. |
-| AMD ML Frame Generation | The shipped path is analytical FSR 3.1.6. An ML upscaler is not an ML FG integration. | Require the relevant public API/hardware/backend path before exposing a mode. |
+| AMD ML Frame Generation | Included in unreleased R56 through upstream’s experimental 4.0.1/4.0.2 bridge; published R55 remains analytical FSR. | Capability checks, pinned runtime closure and explicit fallback are integrated. GPU/game validation remains open. |
 | NVIDIA FG model presets A/B/C | R37 adds a dedicated NVAPI application profile, restoration and process-feedback readout. The model choice needs a restart. | Confirm A/B/C on supported NVIDIA runtimes. C needs the newer beta runtime; a saved setting alone is not active-model evidence. |
 
 I will keep HDR support as a requirement for any future FG path. A D3D12 backend or cross-API presentation bridge would be a separate architectural project with explicit synchronization, memory sharing and compatibility work.

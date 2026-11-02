@@ -6,6 +6,7 @@ a helper thread (and a window closed meanwhile waits for it), and Clear the shad
 and says what it could not delete."""
 from paths import ROOT
 import gc
+import hashlib
 import http.client
 import io
 import os
@@ -207,14 +208,11 @@ class UpdateCheckTests(unittest.TestCase):
             L.Launcher.check_update(app)
         self.assertTrue(app.ui_calls.empty())
 
-    def test_a_beta_still_asks_for_the_next_beta(self):
-        with mock.patch.object(L, 'BETA', 3), mock.patch.object(L, 'latest_release', side_effect=broken_reply), \
-                mock.patch.object(L, 'newer_beta', return_value=('1.9.6 beta 4', 'zip', 'page')):
-            self.assertEqual(L.update_to_offer(), ('1.9.6 beta 4', 'zip', 'page'))
-        with mock.patch.object(L, 'BETA', 3), mock.patch.object(L, 'latest_release', side_effect=broken_reply), \
-                mock.patch.object(L, 'newer_beta', side_effect=OSError('offline')):
-            with self.assertRaises(http.client.BadStatusLine):  # the first error is the one shown
+    def test_a_failed_stable_check_keeps_the_original_error(self):
+        with mock.patch.object(L, 'latest_release', side_effect=broken_reply) as latest:
+            with self.assertRaises(http.client.BadStatusLine):
                 L.update_to_offer()
+        latest.assert_called_once_with()
 
 
 class DownloadTests(unittest.TestCase):
@@ -292,8 +290,10 @@ class InstallVersionTests(unittest.TestCase):
         class Reply(io.BytesIO):
             headers = {'Content-Length': '9'}
         # Its progress (100 %), "Checking the download…", then the answer.
-        self.assertEqual(self.install(3, return_value=Reply(b'not a zip')),
-                         'Update failed: the download is damaged (File is not a zip file). Try again.')
+        sidecar = hashlib.sha256(b'not a zip').hexdigest() + '  ' + L.update_package_name('99.0.0-tatsunakyo.99')
+        with mock.patch.object(L.workshop, 'fetch_checksum', return_value=sidecar):
+            self.assertEqual(self.install(3, return_value=Reply(b'not a zip')),
+                             'Update failed: File is not a zip file')
         self.progress.assert_called()
 
 

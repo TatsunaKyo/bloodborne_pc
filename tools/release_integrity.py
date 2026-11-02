@@ -27,14 +27,15 @@ RUNTIMES = ('bin/bbport_dlss.dll', 'bin/nvngx_dlss.dll', 'bin/xess/libxess.dll',
 # from the release commit; retaining a previous ZIP's copy can change game logic.
 RUNTIME_SOURCE_DIRS = ('launcher', 'scripts', 'tools', 'patches')
 WINDOWS_ROOT_SOURCES = ('README-Windows.txt', 'bbport.menu.ini', 'Capture-NVIDIA-FG.cmd',
-                        'Compare-NVIDIA-Generated-Frames.cmd', 'Capture-Traversal.cmd')
+                        'Compare-NVIDIA-Generated-Frames.cmd', 'Capture-Traversal.cmd', 'BB-Report-Tool.bat')
 
 
 def runtime_source_paths(repo, commit):
     """Package path -> tracked source path for the complete first-party runtime."""
     raw = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', '-z', commit, '--',
                                    *RUNTIME_SOURCE_DIRS, 'run.py', 'VERSION'], cwd=repo)
-    result = {p.decode(): p.decode() for p in raw.split(b'\0') if p}
+    result = {p.decode(): p.decode() for p in raw.split(b'\0')
+              if p and not p.startswith(b'launcher/assets/tests/')}
     tracked = set(subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', '-z', commit,
                                          '--', 'packaging/windows'], cwd=repo).split(b'\0'))
     for name in WINDOWS_ROOT_SOURCES:

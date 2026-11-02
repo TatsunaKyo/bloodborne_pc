@@ -470,6 +470,8 @@ private:
             u32 write_index;
         };
         std::array<Stage, Shader::MaxStageTypes> stages;
+        std::array<Shader::Info::UdSnapshot, Shader::Info::MaxUdSnapshots> snapshots;
+        u32 num_snapshots = 0;
         u32 count = 0;
         u32 completed = 0; ///< stages the helper bound; the rest are bound after the join
         bool barrier = false;

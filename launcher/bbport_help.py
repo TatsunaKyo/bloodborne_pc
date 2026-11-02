@@ -10,6 +10,7 @@ The launcher module binds itself (bind()) for its helpers and texts.
 """
 import ctypes
 import hashlib
+import ntpath
 import os
 import re
 import threading
@@ -498,7 +499,7 @@ def firewall_blocks(program, rules=None):
                 rules = [str(winreg.EnumValue(key, i)[1]) for i in range(winreg.QueryInfoKey(key)[1])]
         except (OSError, ImportError):
             return False
-    wanted = os.path.normcase(os.path.abspath(str(program)))
+    wanted = ntpath.normcase(ntpath.abspath(str(program)))
     for rule in rules:
         fields = {}
         for part in rule.split('|'):
@@ -506,7 +507,7 @@ def firewall_blocks(program, rules=None):
             fields.setdefault(name.lower(), value)
         if fields.get('action', '').lower() == 'block' and fields.get('active', '').upper() == 'TRUE' and \
                 fields.get('dir', '').lower() == 'in' and fields.get('app') and \
-                os.path.normcase(os.path.abspath(os.path.expandvars(fields['app']))) == wanted:
+                ntpath.normcase(ntpath.abspath(ntpath.expandvars(fields['app']))) == wanted:
             return True
     return False
 

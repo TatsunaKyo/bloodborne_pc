@@ -126,7 +126,10 @@ class ReportTests(unittest.TestCase):
 
     def test_the_tool_ships_beside_bloodborne_exe(self):
         package = (ROOT / 'packaging' / 'windows' / 'package.sh').read_text(encoding='utf-8')
-        self.assertIn('cp packaging/windows/BB-Report-Tool.bat "$dest/"', package)
+        self.assertIn('tools/assemble_windows.py', package)
+        from release_integrity import runtime_source_paths
+        self.assertEqual(runtime_source_paths(ROOT, 'HEAD')['BB-Report-Tool.bat'],
+                         'packaging/windows/BB-Report-Tool.bat')
         tool = (ROOT / 'packaging' / 'windows' / 'BB-Report-Tool.bat').read_text(encoding='utf-8')
         for name in ('BBTOOL_PORT', 'BBTOOL_SETTINGS', 'BBTOOL_VERSION', 'BBTOOL_OUT', 'BBTOOL_LOG'):
             self.assertIn(f'$env:{name}', tool)  # what save_report sets, so it asks nothing

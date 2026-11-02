@@ -33,7 +33,16 @@ resource = source(base + 'video_core/amdgpu/resource.h')
 buffer = section(resource, 'struct Buffer {', '    CompMapping DstSelect()') + '};\n'
 info = source(base + 'shader_recompiler/info.h')
 snapshot = section(info, '    struct UdSnapshot {', '    std::span<const u32> FlatUserData()')
+if '    void PushUd(' in snapshot:
+    snapshot = snapshot[:snapshot.index('    void PushUd(')]
+
 read_ud = section(info, '    template <typename T>\n    T ReadUdReg(', '    void AddBindings(')
+if '    void PushUd(' in read_ud:
+    begin=read_ud.index('    void PushUd('); end=read_ud.index('{',begin)+1; depth=1
+    while depth:
+        depth+=(read_ud[end]=='{')-(read_ud[end]=='}');end+=1
+    read_ud=read_ud[:begin]+read_ud[end:]
+
 fetch = section(source(base + 'shader_recompiler/frontend/fetch_shader.h'),
                 'struct VertexAttribute {', 'const u32* GetFetchShaderCode(')
 
@@ -105,6 +114,7 @@ Params GetParams(const GuestProgram& p) { return {789,p.info->user_data}; }
 }
 struct FetchHandle:Shader::Gcn::FetchShaderData {
     FetchHandle(Shader::Gcn::FetchShaderData data):Shader::Gcn::FetchShaderData(std::move(data)){size=1;}
+    bool Empty()const{return attributes.empty();}
     explicit operator bool()const{return !Empty();}
     const Shader::Gcn::FetchShaderData* operator->()const{return this;}
     const Shader::Gcn::FetchShaderData& operator*()const{return *this;}
@@ -121,6 +131,7 @@ struct Regs {
     const GuestProgram* ProgramForStage(u32) const { return &pgm; }
 };
 struct Liverpool { u64 gfx_reg_checksum=456; Regs regs; };
+const GraphicsPipeline* Usable(const GraphicsPipeline* pipeline) {return pipeline;}
 struct PipelineCache {
     Liverpool* liverpool;
     std::map<int,Owner> graphics_pipelines;

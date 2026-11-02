@@ -9,6 +9,7 @@
 #include "bbport_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
+#include "common/scope_exit.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
@@ -1056,32 +1057,72 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }();
         bool gated = !all_motion;
         u64 palette = 0;
-        for (const auto& resource : vs.buffers) {
+        u64 model_batch = 0;
+        u64 pose_binding = 0;
+        bool model_batch_valid = true;
+        bool model_batch_seen = vs.pgm_hash != Motion::ModelBatchShader;
+        for (u32 buffer_index=0; buffer_index<vs.buffers.size(); ++buffer_index) {
+            const auto& resource = vs.buffers[buffer_index];
             if (resource.IsSpecial()) continue;
             const auto buffer = resource.GetSharp(vs);
             const u32 size = buffer.GetSize();
             if (!buffer.Valid() || buffer.GetStride() != 16) continue;
+            const VAddr address = buffer.base_address;
+            const RingBinding* ring = num_ring_stages ? FindRingBinding(vs,buffer_index) : nullptr;
+            if (Motion::HasModelBatch(vs.pgm_hash, size)) {
+                BbHitch::Trace::Scope trace{"motion model identity"};
+                model_batch_seen = true;
+                std::optional<u64> identity;
+                if (ring && ring->size == size) {
+                    identity = Motion::ModelBatchIdentity({
+                        reinterpret_cast<const std::byte*>(constant_ring->Data(ring->offset)), size},
+                        [](auto bytes) { return XXH3_64bits(bytes.data(), bytes.size()); });
+                } else if (!ring && memory->IsValidGpuMapping(address, 0) &&
+                           memory->ClampRangeSize(address, size) == size &&
+                           !buffer_cache.IsRegionGpuModified(address, size)) {
+                    identity = Motion::ModelBatchIdentity({
+                        reinterpret_cast<const std::byte*>(address), size},
+                        [](auto bytes) { return XXH3_64bits(bytes.data(), bytes.size()); });
+                }
+                if (identity) model_batch = XXH3_64bits_withSeed(&*identity, sizeof(*identity), model_batch);
+                else model_batch_valid = false;
+                continue;
+            }
             const auto role = Motion::ClassifyBuffer(size);
+            if (role != Motion::BufferRole::Other) {
+                // Geometry identifies the shared mesh, not the object whose
+                // pose produced its previous positions. Keep the original
+                // guest binding identity even when constants use a host ring.
+                // Pose contents must be allowed to animate under that identity.
+                const std::array<u64, 3> binding{address, size, buffer_index};
+                pose_binding = XXH3_64bits_withSeed(binding.data(), sizeof(binding), pose_binding);
+            }
             if (role == Motion::BufferRole::Skeleton) {
                 gated = false;
-                break;
+                continue;
             }
-            const VAddr address = buffer.base_address;
-            if (role == Motion::BufferRole::SmallSkeleton &&
+            if (role == Motion::BufferRole::SmallSkeleton && ring) {
+                palette = XXH3_64bits_withSeed(constant_ring->Data(ring->offset),ring->size,palette);
+            } else if (role == Motion::BufferRole::SmallSkeleton &&
                 memory->IsValidGpuMapping(address, 0) &&
                 memory->ClampRangeSize(address, size) == size) {
                 palette = XXH3_64bits_withSeed(reinterpret_cast<const void*>(address), size,
                                                palette);
             }
         }
+        // Ordered world transforms already identify every member of these
+        // verified batches. Their wind constants may move between guest heaps.
+        if (model_batch != 0) pose_binding = 0;
         push_data.motion_param = 0;
-        if (!gated || object_motion->Moving({.shader = vs.pgm_hash,
+        if (model_batch_seen && model_batch_valid && (!gated || object_motion->Moving({.shader = vs.pgm_hash,
                                              .geometry = motion_geometry,
                                              .indices = index_address,
+                                             .model_batch = model_batch,
+                                             .pose_binding = pose_binding,
                                              .index_count = regs.num_indices,
                                              .instances = regs.num_instances.NumInstances(),
                                              .first_instance = first_instance},
-                                            palette)) {
+                                            palette))) {
             Motion::VertexRange range{base_vertex, regs.num_indices};
             u64 topology = 0;
             if (is_indexed) {
@@ -1116,6 +1157,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 .geometry = motion_geometry,
                 .indices = index_address,
                 .topology = topology,
+                .model_batch = model_batch,
+                .pose_binding = pose_binding,
                 .index_count = regs.num_indices,
                 .instances = regs.num_instances.NumInstances(),
                 .first_instance = first_instance,
@@ -1127,7 +1170,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
     if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth() &&
-        (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
+        ((gbuffer_draw && pipeline->GetFetchShader() &&
+          !pipeline->GetFetchShader()->attributes.empty() && !regs.IsClipDisabled()) ||
+         regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
         draw_jitter = upscaler->Jitter();
     }
     SetProjectionJitter(push_data, regs, draw_jitter);
@@ -1575,6 +1620,17 @@ bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
 void Rasterizer::RunTextureTask(void* context) {
     auto& self = *static_cast<Rasterizer*>(context);
     auto& task = self.texture_task;
+    // Shader descriptors consult thread-local draw snapshots. The helper must
+    // see the same packet as stage B, even after stage A refreshes shared Info.
+    std::array<Shader::Info::UdSnapshot, Shader::Info::MaxUdSnapshots> saved{};
+    const u32 saved_count = Shader::Info::num_ud_snapshots;
+    std::copy_n(Shader::Info::ud_snapshots, saved_count, saved.begin());
+    std::copy_n(task.snapshots.begin(), task.num_snapshots, Shader::Info::ud_snapshots);
+    Shader::Info::num_ud_snapshots = task.num_snapshots;
+    SCOPE_EXIT {
+        std::copy_n(saved.begin(), saved_count, Shader::Info::ud_snapshots);
+        Shader::Info::num_ud_snapshots = saved_count;
+    };
     for (u32 i = 0; i < task.count; ++i) {
         auto& stage = task.stages[i];
         if (!self.TexturesBindableOnHelper(*stage.info, stage.prepared)) {
@@ -1693,6 +1749,9 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             set_write_index += num_descriptors;
             uses_dma |= stage->uses_dma;
         }
+        task.num_snapshots = Shader::Info::num_ud_snapshots;
+        ASSERT(task.num_snapshots <= task.snapshots.size());
+        std::copy_n(Shader::Info::ud_snapshots, task.num_snapshots, task.snapshots.begin());
         bind_helper.Fork(&RunTextureTask, this);
         for (u32 i = 0; i < task.count; ++i) {
             auto& stage = buffer_stages[i];
@@ -3116,6 +3175,9 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     if (!is_gds) {
         texture_cache.ClearMeta(address);
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
+            // Complete all delayed source reads before mutating guest memory.
+            scheduler.WaitHostCopies();
+            scheduler.WaitDeferredSignals();
             u32* buffer = std::bit_cast<u32*>(address);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
             return;
@@ -3136,6 +3198,8 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {
             // Both buffers were not transferred to GPU yet. Can safely copy in host memory.
+            scheduler.WaitHostCopies();
+            scheduler.WaitDeferredSignals();
             std::memcpy(std::bit_cast<void*>(dst), std::bit_cast<void*>(src), num_bytes);
             return;
         }
@@ -3171,13 +3235,30 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
 }
 
 bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
-    DrainDrawPipe();
-    if (!IsMapped(addr, size)) {
-        // Not GPU mapped memory, can skip invalidation logic entirely.
-        return false;
+    BbHitch::Scope hitch{"memory invalidation"};
+    if (size == 0 || addr > std::numeric_limits<VAddr>::max() - size) return false;
+    // A file read can span GPU-tracked allocations AND ordinary staging pages.
+    // Requiring the entire span to be GPU mapped rejected the bulk preparation
+    // and left each protected island to fault separately during the page touch.
+    // Snapshot intersections under the map lock; cache operations may take other
+    // locks or request GPU work, so never run them while holding that lock.
+    boost::container::small_vector<std::pair<VAddr, u64>, 4> ranges;
+    {
+        Common::RecursiveSharedLock lock{mapped_ranges_mutex};
+        const auto query = decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
+        const auto [first, last] = mapped_ranges.equal_range(query);
+        for (auto it = first; it != last; ++it) {
+            const VAddr begin = std::max<VAddr>(addr, boost::icl::lower(*it));
+            const VAddr end = std::min<VAddr>(addr + size, boost::icl::upper(*it));
+            if (begin < end) ranges.emplace_back(begin, end - begin);
+        }
     }
-    buffer_cache.InvalidateMemory(addr, size, assume_locks);
-    texture_cache.InvalidateMemory(addr, size);
+    if (ranges.empty()) return false;
+    DrainDrawPipe();
+    for (const auto& [begin, bytes] : ranges) {
+        buffer_cache.InvalidateMemory(begin, bytes, assume_locks);
+        texture_cache.InvalidateMemory(begin, bytes);
+    }
     return true;
 }
 

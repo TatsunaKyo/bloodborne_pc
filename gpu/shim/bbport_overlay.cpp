@@ -1755,6 +1755,8 @@ void SystemCounter() {
                      ImGuiWindowFlags_NoFocusOnAppearing);
     const auto& s = BbSettings::Get();
     const ImVec4 pace = PaceColor(frame_ms_avg);
+    const float model_gap = 8.0f * base_scale;
+    const double rate = frame_ms_avg > 0.0f ? 1000.0 / frame_ms_avg : 0.0;
     constexpr double gb = 1024.0 * 1024.0 * 1024.0;
     // One value column for the whole panel, as wide as the longest label it can show plus a gap.
     // Measured and constant, so values line up and never move when a switch is flipped.

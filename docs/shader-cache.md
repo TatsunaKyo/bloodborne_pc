@@ -1,5 +1,7 @@
 # Shader-cache recovery
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 R55 improves persistent cache admission, demanded-pipeline priority and background compilation. A compiled cache does not remove every possible streaming, invalidation, host-copy, queue or allocation wait. The repeatable cemetery hitch remains open after cache resets; do not present a cache clear as its established fix. [Renderer integration](investigations/2026-10-20-upstream-integration.md)
 
 I want the cache to save work between sessions without becoming another reason for the game to fail. Revision 24 is the first small change in the frame-delivery and image-quality work: it improves loading and persistence of shader/pipeline records. The existing Hunter's Dream foliage-history fix, scene-depth copy and FG input fences stay in place.

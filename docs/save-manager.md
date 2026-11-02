@@ -1,5 +1,7 @@
 # Save Manager
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 R55 keeps Save Manager separate from game input and online account controls. Restore/snapshot tools operate on the selected saves folder while the game is closed. Preserve existing saves, settings and mods across release updates; input/camera/FG changes are not a reason to discard them.
 
 I added Save Manager because I want progress protected before a new session or an experimental change. It copies the original save tree without editing the game's save contents, and verifies each snapshot before offering it for restoration.

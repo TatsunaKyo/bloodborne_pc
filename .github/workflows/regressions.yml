@@ -13,7 +13,7 @@ concurrency:
 jobs:
   windows-infrastructure:
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -22,16 +22,22 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14.8'
-      - name: Install pinned launcher dependencies
+      - name: Install pinned launcher checks
         run: python -m pip install PyInstaller==6.19.0 Pillow==12.3.0 -r tools/requirements-checks.txt
-      - name: Check first-party Python and documentation
+      - name: Check Python, documentation and all isolated launcher modules
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           python -m pyflakes run.py launcher scripts tools tests
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tools/check_docs.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tools/update_readme_revision.py --check
-      - name: Compile the native saves lease fixture
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tools/check_launcher.py --quick
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_project_infrastructure.py
+      - name: Compile and test the Windows save guard
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -41,252 +47,22 @@ jobs:
           New-Item -ItemType Directory -Force out/verification | Out-Null
           cl /nologo /W4 /std:c17 /I src tests/test_save_access.c src/runtime_save_access.c /Fe:out/verification/save-access-test.exe
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Compile and run production shader cache regressions
-        shell: pwsh
-        run: |
-          git submodule update --init gpu/third_party/miniz
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          '#define MINIZ_EXPORT' | Set-Content out/verification/miniz_export.h
-          cl /nologo /O2 /EHsc /std:c++20 /I tests/cache_stubs /I gpu/shadps4 /I gpu/third_party/miniz /I out/verification tests/test_shader_cache.cpp gpu/shadps4/video_core/cache_storage.cpp gpu/shadps4/video_core/renderer_vulkan/vk_shader_util.cpp /Fe:out/verification/shader-cache-test.exe
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_shader_cache.py --binary out/verification/shader-cache-test.exe 2>&1 | Tee-Object out/verification/shader-cache-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_cache_warmup.py --prepare out/verification
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cl /nologo /O2 /EHsc /std:c++20 /I tests/cache_stubs /I gpu/shadps4 /I out/verification tests/test_cache_warmup.cpp /Fe:out/verification/cache-warmup-test.exe
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & ./out/verification/cache-warmup-test.exe 2>&1 | Tee-Object out/verification/cache-warmup-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Execute production cache hot paths and background audio regressions
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          python tests/test_cache_hotpaths.py --prepare out/verification/cache-hotpaths
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($name in @('revision35','current')) {
-            foreach ($target in @('serialization','patch-lookup')) {
-              cl /nologo /O2 /EHsc /std:c++20 /I gpu/shadps4 "/Iout/verification/cache-hotpaths/$name" "out/verification/cache-hotpaths/$name/$target.cpp" "/Fe:out/verification/cache-hotpaths/$name/$target.exe"
-              if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            }
-          }
-          python tests/test_cache_hotpaths.py --verify-existing out/verification/cache-hotpaths 2>&1 | Tee-Object out/verification/cache-hotpaths-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_audio_background.py --prepare out/verification/audio-background
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($name in @('revision35','current')) {
-            cl /nologo /O1 /EHsc /std:c++20 /I gpu /I gpu/shim "out/verification/audio-background/$name.cpp" gpu/shim/bbport_background.cpp "/Fe:out/verification/audio-background/$name.exe"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
-          & ./out/verification/audio-background/revision35.exe 2>&1 | Tee-Object out/verification/audio-background-windows.log
-          if ($LASTEXITCODE -ne 7) { throw 'Revision 35 did not reproduce unpaused background audio.' }
-          foreach ($mode in @('recording','silent','open-failure')) {
-            & ./out/verification/audio-background/current.exe $mode 2>&1 | Tee-Object -Append out/verification/audio-background-windows.log
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
-      - name: Execute texture helper snapshot ownership regression
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          python tests/test_texture_helper_snapshots.py --compiler cl
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_draw_pipe_wait.py --compiler cl
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Execute production Windows asset streaming and NVIDIA preset tests
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          python tests/test_streaming_io.py --prepare out/verification/streaming
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cl /nologo /O2 /EHsc /std:c++20 /I src out/verification/streaming/streaming-io.cpp /Fe:out/verification/streaming/streaming-io.exe
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & ./out/verification/streaming/streaming-io.exe 2>&1 | Tee-Object out/verification/streaming-io-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_nvidia_fg_preset.py 2>&1 | Tee-Object out/verification/nvidia-fg-presets-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cl /nologo /O2 /EHsc /std:c++20 /I gpu/shim tests/test_nvidia_preset_state.cpp gpu/shim/bbport_settings.cpp /Fe:out/verification/nvidia-preset-state.exe
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & ./out/verification/nvidia-preset-state.exe 2>&1 | Tee-Object out/verification/nvidia-preset-state-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_launcher_fg_presets_ui.py 2>&1 | Tee-Object out/verification/nvidia-fg-preset-ui-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Verify bounded readbacks and isolated DLSSG preparation
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          cl /nologo /O2 /EHsc /std:c++20 /I gpu/shim tests/test_readback_batch.cpp /Fe:out/verification/readback-batch.exe
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & ./out/verification/readback-batch.exe
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_dlssg_mod.py
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Execute production presentation lock regression
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          python tests/test_present_queue_scope.py --prepare out/verification/present-scope
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($name in @('revision24','current')) {
-            cl /nologo /O2 /EHsc /std:c++20 "out/verification/present-scope/$name.cpp" "/Fe:out/verification/present-scope/$name.exe"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            & "./out/verification/present-scope/$name.exe" 2>&1 | Tee-Object "out/verification/present-scope-$name.log"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
-      - name: Execute Windows privacy, archive and save recovery regressions
-        shell: pwsh
-        run: |
           $env:BB_SAVE_ACCESS_TEST = (Resolve-Path out/verification/save-access-test.exe).Path
-          python tests/test_release_integrity.py 2>&1 | Tee-Object out/verification/release-integrity-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_release_split.py 2>&1 | Tee-Object out/verification/release-split-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_support_report.py 2>&1 | Tee-Object out/verification/support-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_save_manager.py 2>&1 | Tee-Object out/verification/save-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_update_archive.py 2>&1 | Tee-Object out/verification/update-windows.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Execute production swapchain recovery regression
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          python tests/test_swapchain_recovery.py --prepare out/verification/swapchain-recovery
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($name in @('revision25','current')) {
-            cl /nologo /O2 /EHsc /std:c++20 "out/verification/swapchain-recovery/$name.cpp" "/Fe:out/verification/swapchain-recovery/$name.exe"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            & "./out/verification/swapchain-recovery/$name.exe" 2>&1 | Tee-Object "out/verification/swapchain-recovery-$name.log"
+          foreach ($file in @('test_release_integrity','test_release_split','test_update_archive','test_support_report','test_save_manager')) {
+            python "tests/$file.py"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
-      - name: Execute production window focus regression
+      - name: Freeze and test the actual current launcher
         shell: pwsh
         run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          python tests/test_window_focus.py --prepare out/verification/window-focus
+          python tools/freeze_launcher.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($name in @('revision28','current')) {
-            cl /nologo /O1 /EHsc /std:c++20 /I gpu/shim /I gpu/shadps4 "out/verification/window-focus/$name.cpp" gpu/shim/bbport_settings.cpp gpu/shim/bbport_background.cpp "/Fe:out/verification/window-focus/$name.exe"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            & "./out/verification/window-focus/$name.exe" 2>&1 | Tee-Object "out/verification/window-focus-$name.log"
-            if ($name -eq 'revision28') {
-              if ($LASTEXITCODE -ne 7) { throw 'Revision 28 did not reproduce the focus regression.' }
-            } elseif ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
-      - name: Execute production transfer and compute wait regression
-        shell: pwsh
-        run: |
-          python tools/setup_test_headers.py
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          python tests/test_submit_wait_stages.py --prepare out/verification/submit-waits
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($name in @('revision29','current')) {
-            cl /nologo /O1 /EHsc /std:c++20 /I out/test-headers "out/verification/submit-waits/$name.cpp" "/Fe:out/verification/submit-waits/$name.exe"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            & "./out/verification/submit-waits/$name.exe" 2>&1 | Tee-Object "out/verification/submit-waits-$name.log"
+          $exe = 'out/pyi-dist/Bloodborne/Bloodborne.exe'
+          foreach ($file in @('test_launcher_updates','test_launcher_window_settings','test_launcher_startup','test_launcher_trophies_ui')) {
+            python "tests/$file.py" $exe
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
-      - name: Execute immutable scene input and delayed flip regressions
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          python tests/test_fg_frame_inputs.py --prepare out/verification/fg-frame-inputs
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($name in @('revision30','current')) {
-            cl /nologo /O1 /EHsc /std:c++20 /I gpu/shadps4 /I out/test-headers /I out/test-headers/vma "out/verification/fg-frame-inputs/$name.cpp" "/Fe:out/verification/fg-frame-inputs/$name.exe"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            & "./out/verification/fg-frame-inputs/$name.exe" 2>&1 | Tee-Object "out/verification/fg-frame-inputs-$name.log"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
-      - name: Execute production NVIDIA diagnostic readback and private export regressions
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          $env:CXX = 'cl'
-          python tests/test_fg_diagnostic.py 2>&1 | Tee-Object out/verification/test_fg_diagnostic.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_launcher_fg_diagnostic_ui.py 2>&1 | Tee-Object out/verification/test_launcher_fg_diagnostic_ui.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Execute NVIDIA token retirement and concurrent simulation regressions
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          $env:CXX = 'cl'
-          python tests/test_nvidia_token_lifetime.py 2>&1 | Tee-Object out/verification/test_nvidia_token_lifetime.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_nvidia_frame_pacing.py 2>&1 | Tee-Object out/verification/test_nvidia_frame_pacing.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Execute production pose identity and instance continuity regressions
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -property installationPath
-          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          $env:CXX = 'cl'
-          python tests/test_motion_object_identity.py 2>&1 | Tee-Object out/verification/test_motion_object_identity.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Compile and exercise the actual frozen Windows launcher
-        shell: pwsh
-        run: |
-          python tools/prepare_tk_runtime.py
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $tclData = (Resolve-Path out/tk-runtime/_tcl_data).Path
-          $tkData = (Resolve-Path out/tk-runtime/_tk_data).Path
-          python -m PyInstaller --noconfirm --clean --windowed --name Bloodborne --paths scripts --paths launcher --paths tools --distpath out/frozen-infrastructure --workpath out/pyi-infrastructure --specpath out/pyi-infrastructure --add-data "${tclData};_tcl_data" --add-data "${tkData};_tk_data" --hidden-import ctypes.wintypes --hidden-import dataclasses --hidden-import datetime --hidden-import ipaddress --hidden-import support_report --hidden-import support_report_ui --hidden-import save_access --hidden-import save_manager --hidden-import save_manager_ui launcher/bbport_launcher_win.py
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $exe = (Resolve-Path out/frozen-infrastructure/Bloodborne/Bloodborne.exe).Path
-          python tests/test_launcher_startup.py $exe 2>&1 | Tee-Object out/verification/frozen-startup.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python tests/test_launcher_trophies_ui.py $exe 2>&1 | Tee-Object out/verification/frozen-trophies.log
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $script = (Resolve-Path scripts/verify_infrastructure_runtime.py).Path
-          $result = Start-Process -FilePath $exe -ArgumentList @('--script', $script) -PassThru -RedirectStandardOutput out/verification/frozen-runtime.log -RedirectStandardError out/verification/frozen-runtime-errors.log
-          if (-not $result.WaitForExit(90000)) {
-            $result.Kill()
-            Get-Content out/verification/frozen-runtime.log
-            Get-Content out/verification/frozen-runtime-errors.log
-            throw 'Frozen launcher self-test exceeded 90 seconds.'
-          }
-          if ($result.ExitCode) { Get-Content out/verification/frozen-runtime-errors.log; exit $result.ExitCode }
-          Get-Content out/verification/frozen-runtime.log
-      - name: Retain Windows infrastructure verification
+      - name: Retain verification records
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

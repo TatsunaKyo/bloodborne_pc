@@ -69,10 +69,10 @@ class TextTests(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in (out / 'dvdroot_ps4' / 'msg').iterdir()), sorted(sources))
             for name, source in sources.items():
                 written = (out / 'dvdroot_ps4' / 'msg' / name / 'menu.msgbnd.dcx').read_bytes()
-                self.assertEqual(written, rebirth.menu_texts(source.read_bytes(), rebirth.TEXTS['engus']), name)
+                self.assertEqual(written, rebirth.menu_texts(source.read_bytes(), rebirth.doll_texts(name)), name)
                 fmgs = fmgs_of(written)
                 self.assertEqual(fmgs[200][401307], f'{name} {"layer" if name != "engus" else "game"}')
-                self.assertEqual(fmgs[rebirth.TALK_FMG][rebirth.OPTION_TEXT], 'Rebirth')
+                self.assertEqual(fmgs[rebirth.TALK_FMG][rebirth.OPTION_TEXT], rebirth.doll_texts(name)[0])
                 self.assertEqual(fmgs[rebirth.TALK_FMG][rebirth.LEVEL_UP_TEXT], fmgs_of(source.read_bytes())[
                     rebirth.TALK_FMG][rebirth.LEVEL_UP_TEXT])
 

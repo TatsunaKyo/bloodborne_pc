@@ -1,5 +1,7 @@
 # FSR 4.1 on Windows
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 The integration offers one **FSR 4.1 (experimental)** entry in **Upscaler**.
 **FSR 4.1 Settings** lists four independently checked methods:
 

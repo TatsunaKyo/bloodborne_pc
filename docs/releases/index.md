@@ -6,6 +6,7 @@
 
 | Revision | Record |
 |---|---|
+| R56 (source) | [Revision notes](windows-v1.9.7-tatsunakyo.56.md) — unreleased; Supermedo 1.9.7 |
 | R55 | [Revision notes](windows-v1.6-tatsunakyo.55.md) — latest published |
 | R54 | [Revision notes](windows-v1.6-tatsunakyo.54.md) — development checkpoint |
 | R53 | [Revision notes](windows-v1.6-tatsunakyo.53.md) — development checkpoint |

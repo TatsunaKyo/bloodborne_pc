@@ -433,6 +433,7 @@ void PipelineCache::WarmUp() {
     std::vector<u8> profile_data{};
     Storage::DataBase::Instance().Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
     if (profile_data.empty()) {
+        Storage::DataBase::Instance().Clear();
         std::printf("Pipeline cache: new, for shader build %s\n", BB_SHADER_BUILD);
         start_cache();
         return;
@@ -493,6 +494,9 @@ void PipelineCache::WarmUp() {
                 u32 is_compute{};
                 pldata.Read(is_compute);
 
+                sel.infos.fill(nullptr);
+                sel.modules.fill(nullptr);
+                sel.fetch_shader.reset();
                 bool result{};
                 if (is_compute) {
                     result = LoadComputePipeline(ar);
@@ -505,6 +509,8 @@ void PipelineCache::WarmUp() {
                 }
             } catch (const Serialization::ReadError& error) {
                 LOG_WARNING(Render_Vulkan, "Skipping malformed pipeline metadata: {}", error.what());
+            } catch (const CacheLoadError& error) {
+                LOG_WARNING(Render_Vulkan, "Skipping rejected cached shader: {}", error.what());
             }
         });
 

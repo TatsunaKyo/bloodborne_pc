@@ -1,5 +1,7 @@
 # Temporal stability and renderer performance
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 ## R55 renderer integration
 
 R55 integrates Supermedo Windows 1.9.2 plus reviewed demanded-pipeline priority, sparse backing reserve, coherent texture-hash reuse, staging retention/copy sizing and per-size motion targets. The production-method control records 3,000 allocations/2,999 drains in 1,000 alternating three-size R54 frames; R55 records three allocations and no drains for that controlled alternation. This is a resource test, not a cemetery-route benchmark. Draw retention, strict compiler failure fallback, unreadable GPU-owned data and existing graphics/provider controls remain checked compatibility boundaries. [Pinned integration decisions](investigations/2026-10-20-upstream-integration.md)

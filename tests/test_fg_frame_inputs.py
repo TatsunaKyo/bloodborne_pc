@@ -182,7 +182,7 @@ int main() {
 
 
 def read(path, revision=None):
-    return subprocess.check_output(['git','show',revision+':'+path],cwd=ROOT,text=True) if revision else (ROOT/path).read_text()
+    return subprocess.check_output(['git','show',revision+':'+path],cwd=ROOT,text=True) if revision else (ROOT/(path.replace('vk_frame_generation.cpp','vk_workshop_frame_generation.cpp') if path == COPY_PATH else path)).read_text()
 
 
 def section(source,start,end):

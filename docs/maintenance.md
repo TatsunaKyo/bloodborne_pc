@@ -11,3 +11,7 @@ The published R55 download is from `6f8564dc973dd35d70438c43f0140fb0531949a3`. C
 - Refresh current guides, repair historical links and label dated evidence. Add Python, documentation/anchor and revision-badge gates to CI.
 
 These corrections do not establish a fix for the cemetery route, physical display cadence or reconstruction artifacts. [Current reports](known-issues.md) · [Testing](testing.md) · [Published notes](releases/index.md)
+
+## Supermedo 1.9.7 / unreleased R56
+
+The current integration covers 443 upstream commits from `de2e38af055f09f819946951075c6bb119e62ae6` through `b48052617a919fc4d6b10ae3395e209c9e94e17a`. The tracker/cache/rasterizer rollback is adopted coherently, while Workshop shader integrity, motion relocation, nonblocking speculative preparation and sleeping draw drains are retained. Provider classes, shared settings, latency ownership, native PC Settings and packaging are reconciled. [Decisions and evidence](investigations/2026-11-02-supermedo-197.md) · [Integration map](integration-map.md)

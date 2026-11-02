@@ -1,5 +1,7 @@
 # Reflex and AMD Anti-Lag 2
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 R55's native Supermedo SDR FG choices coexist with the Workshop HDR-capable paths. Reflex remains independent from DLSS SR and is automatic for supported NVIDIA FG. AMD Anti-Lag 2 uses its own supported Vulkan interface. `PC latency`, real-frame graph intervals and generated-output FPS measure different things; none alone establishes physical display cadence. [Provider choices](frame-generation.md#r55-provider-choices)
 
 I added independent latency controls because choosing an upscaler or turning Frame Generation off should not remove the option to reduce the render queue. Both interfaces keep them in **Frames**, beside FG and frame limiting.
@@ -8,6 +10,10 @@ I added independent latency controls because choosing an upscaler or turning Fra
 |---|---|---|
 | NVIDIA Reflex | Off, On, On + Boost | A supported NVIDIA GPU and driver reporting Reflex availability. |
 | AMD Anti-Lag 2 | Off, On | A supported Radeon GPU and driver exposing `VK_AMD_anti_lag`. |
+
+## Session ownership
+
+Unreleased R56 selects one latency owner before device creation: Streamline for a Workshop NVIDIA startup, otherwise the upstream Vulkan Reflex/AMD path. It does not send both sets of driver markers. Native Off/On/Boost/Anti-Lag changes are saved for restart. Switching backend families also needs restart. Streamline Reflex can remain active when FG is turned off within a Streamline session. The PC-latency report and native render-latency estimate remain separately labelled.
 
 ## NVIDIA Reflex
 

@@ -13,15 +13,15 @@ import bbport_lang_motion_cache as translations
 
 
 class CacheEnvironmentTest(unittest.TestCase):
-    def test_existing_profile_defaults_to_original_path(self):
+    def test_existing_profile_retains_workshop_cache_default(self):
         settings = dict(launcher.APP_DEFAULTS)
-        self.assertEqual(launcher.INI_DEFAULTS['object_motion_cache'], '0')
+        self.assertEqual(launcher.INI_DEFAULTS['object_motion_cache'], '1')
         with patch.dict('os.environ', {'BB_OBJECT_MOTION_CACHE': '1'}, clear=True):
             env = launcher.game_environment(settings, launcher.INI_DEFAULTS)
-        self.assertEqual(env['BB_OBJECT_MOTION_CACHE'], '0')
+        self.assertEqual(env['BB_OBJECT_MOTION_CACHE'], '1')
 
     def test_checkbox_controls_each_fsr_mode_and_overrides_extra_variables(self):
-        for upscaler in ('fsr3', 'fsr4', 'fsr411'):
+        for upscaler in ('fsr3', 'fsr4', 'fsr411', 'fsr412'):
             for enabled in (False, True):
                 settings = {**launcher.APP_DEFAULTS,
                             'extra_env': f'BB_OBJECT_MOTION_CACHE={int(not enabled)}',
@@ -37,11 +37,11 @@ class CacheEnvironmentTest(unittest.TestCase):
 
     def test_other_upscalers_and_disabled_motion_use_original_path(self):
         settings = dict(launcher.APP_DEFAULTS)
-        for upscaler in ('dlss', 'taa', 'off', 'fsr3', 'fsr4', 'fsr411'):
+        for upscaler in ('dlss', 'xess', 'taa', 'off', 'fsr3', 'fsr4', 'fsr411', 'fsr412'):
             for motion in ('0', '1'):
                 graphics = {'upscaler': upscaler, 'object_motion': motion, 'object_motion_cache': '1'}
                 env = launcher.game_environment(settings, graphics)
-                expected = upscaler in ('fsr3', 'fsr4', 'fsr411') and motion == '1'
+                expected = upscaler in ('fsr3', 'fsr4', 'fsr411', 'fsr412') and motion == '1'
                 self.assertEqual(env['BB_OBJECT_MOTION_CACHE'], str(int(expected)))
                 self.assertEqual(graphics['object_motion_cache'], '1')
 
@@ -93,21 +93,21 @@ class CacheWidgetTest(unittest.TestCase):
 
     def test_widget_default_and_availability_retain_choice(self):
         selected = self.ui.var('object_motion_cache', 'ini')
-        self.assertFalse(selected.get())
-        self.button.invoke()
         self.assertTrue(selected.get())
-        for upscaler in ('fsr3', 'fsr4', 'fsr411', 'taa', 'dlss', 'off', 'fsr411'):
+        self.button.invoke()
+        self.assertFalse(selected.get())
+        for upscaler in ('fsr3', 'fsr4', 'fsr411', 'fsr412', 'taa', 'dlss', 'off', 'fsr411'):
             self.ui.vars['upscaler'].set(upscaler)
             self.assertEqual(self.button.instate(['disabled']), upscaler in ('taa', 'dlss', 'off'))
-            self.assertTrue(selected.get())
+            self.assertFalse(selected.get())
         self.ui.vars['object_motion'].set(False)
         self.assertTrue(self.button.instate(['disabled']))
         self.button.invoke()
-        self.assertTrue(selected.get())
+        self.assertFalse(selected.get())
         self.ui.vars['object_motion'].set(True)
         self.assertFalse(self.button.instate(['disabled']))
         self.button.invoke()
-        self.assertFalse(selected.get())
+        self.assertTrue(selected.get())
 
     def test_collect_saves_boolean_and_preserves_other_settings(self):
         with tempfile.TemporaryDirectory() as temporary:

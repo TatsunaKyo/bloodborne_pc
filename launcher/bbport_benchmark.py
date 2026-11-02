@@ -228,6 +228,8 @@ class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
 
 def game_pids(name='bb-probe.exe'):
     """The process ids of the game (by its executable's name)."""
+    if sys.platform != 'win32':
+        return []
     kernel32 = ctypes.windll.kernel32
     kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
     snapshot = kernel32.CreateToolhelp32Snapshot(0x2, 0)

@@ -660,6 +660,35 @@ def checksum_url(url):
     return found
 
 
+def read_game_output(process, settings, diagnostic, observe=None, before=()):
+    """Drain a headless game even when the log file or output consumer fails."""
+    directory = Path(settings.get('user_dir') or m.DATA_DIR / 'user')
+    log = m.RunLog(directory / 'last_run.log', lambda text: None)
+    for note in before:
+        log.write(note + '\n')
+    log.write(f'Bloodborne launcher {m.VERSION}\n')
+    log.write('Launch settings: ' + json.dumps({key: settings.get(key) for key in
+              ('fps', 'frame_cap', 'fullscreen', 'upscaler')}) + '\n')
+    log.write('Requested graphics: ' + json.dumps({key: settings.get(key) for key in
+              ('frame_generation', 'nvidia_generated_frames', 'generated_fps_limit')}) + '\n')
+    try:
+        for raw in iter(process.stdout.readline, b''):
+            text = raw.decode('utf-8', errors='replace')
+            diagnostic.record(text)
+            log.write(text)
+            if observe:
+                try:
+                    observe(text)
+                except (OSError, ValueError):
+                    pass
+        code = process.wait()
+        log.write(f'Process exited with code {code}\n')
+    finally:
+        log.close()
+    diagnostic.finish(code)
+    return code
+
+
 def fetch_checksum(url):
     with m.bbport_tls.urlopen(checksum_url(url), timeout=30) as response:
         return response.read(4097).decode('utf-8')

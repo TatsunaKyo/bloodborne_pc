@@ -1,5 +1,7 @@
 # Launcher and in-game settings
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 R55 includes Supermedo 1.9.2 input/camera changes. **Controls** supports three binding slots, combinations and direct mouse look; prompts can follow the device or stay on a selected layout. **Effects → Field of view** defaults to 43° and needs restart. **Window → Mute in background** is separate from Pause. **Image → HUD position** adjusts ultrawide placement. **Other versions** remains available in the launcher.
 
 ## Installation
@@ -14,13 +16,15 @@ I redesigned it around my workshop, lantern and crowned TK emblem, with slate pa
 
 Play keeps the quick controls together. DLSS's model selector appears when DLSS is selected; XeSS has its own quality selector, and NVIDIA FG has a separate multiplier row. The sidebar separates Settings from launcher-only tools. Each complete control has one settings page, with bordered sections separating related choices. Play uses the same preferences as shortcuts. **Customize overlay…** opens **Overlay** at its controls.
 
+R55 appearance reference (the R56 launcher adopts the newer upstream layout):
+
 ![The Crowned Workshop launcher](assets/crowned-workshop-launcher.png)
 
-My earlier setup screenshot:
+Historical R55 setup screenshot:
 
 <img width="1949" height="1335" alt="The Crowned Workshop launcher setup" src="https://github.com/user-attachments/assets/865171f3-30a2-41a2-b0d1-0d1e473fe416" />
 
-Both interfaces use the same seven categories. Full launcher controls have one home each; Play retains quick access to their shared values. Game & files, Online co-op, Mods & patches and Log handle launcher tasks.
+The in-game Workshop menu retains seven tabs. R56’s launcher adopts the upstream simple/expert navigation; the Graphics page includes the shared Workshop provider/model, XeSS quality, cap and overlay controls. Full launcher controls have one home each; Play retains quick access to their shared values. Game & files, Online co-op, Mods & patches and Log handle launcher tasks.
 
 ### Image, Frames and Overlay
 
@@ -31,6 +35,10 @@ The full settings use separate bordered sections. Image groups reconstruction, r
 ![Frames settings](assets/crowned-workshop-frames.png)
 
 ![Overlay settings](assets/crowned-workshop-overlay.png)
+
+## Native PC Settings
+
+R56 also integrates Supermedo’s controller-driven System → PC Settings page. Upscaler values include XeSS and FSR 4.1.2; XeSS keeps its seven independent quality modes. Its FG values map to the same Workshop/native routes rather than creating a second selection. The ImGui menu remains available.
 
 ## In-game settings
 
@@ -46,7 +54,7 @@ Press **Insert** or **L3+R3** to open the menu. I added English and retained Rus
 | Effects | Model detail, game effects, camera and gameplay patches. |
 | Advanced | Menu language, renderer switches and diagnostics; launcher-only management also lives here. |
 
-The same category names apply to the launcher. Some startup/management controls are launcher-only, and some live reconstruction diagnostics are menu-only; shared options keep their category in both. The seven tabs keep the close/restart controls in place. Wide windows use two columns for effects, and the workshop palette carries into the game.
+The current launcher groups these controls in its upstream navigation. Some startup/management controls are launcher-only, and some live reconstruction diagnostics are menu-only; shared options keep their category in both. The seven tabs keep the close/restart controls in place. Wide windows use two columns for effects, and the workshop palette carries into the game.
 
 ![The Crowned Workshop in-game menu](assets/crowned-workshop-menu.png)
 

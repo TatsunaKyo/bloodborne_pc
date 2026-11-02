@@ -161,7 +161,7 @@ static int queue_low_bytes(const Port *p) {
     return frames*bpf;
 }
 static void put_silence(SDL_AudioStream *stream, int bytes) {
-    static const unsigned char silence[4096];
+    static const unsigned char silence[4096] = {0};
     while (bytes>0) {
         int n=bytes>(int)sizeof silence ? (int)sizeof silence : bytes;
         if (!SDL_PutAudioStreamData(stream,silence,n)) break;

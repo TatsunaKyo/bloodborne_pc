@@ -11,14 +11,14 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT.parent
-source = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan/vk_frame_generation.cpp').read_text()
+source = (ROOT / 'gpu/shadps4/video_core/renderer_vulkan/vk_workshop_frame_generation.cpp').read_text()
 methods = source[source.index('FrameGeneration::Image::~Image()'):source.index('FrameGeneration::FrameGeneration(')]
 headers = ROOT / 'out/test-headers'
 if not (headers/'vma/vk_mem_alloc.h').is_file():
     headers = WORK / 'windows-build/sysroot/clang64/include'
 
 HARNESS = r'''
-#include "video_core/renderer_vulkan/vk_frame_generation.h"
+#include "video_core/renderer_vulkan/vk_workshop_frame_generation.h"
 #include <vk_mem_alloc.h>
 #include <cassert>
 #include <cstdio>

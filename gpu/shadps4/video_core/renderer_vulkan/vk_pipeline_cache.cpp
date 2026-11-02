@@ -1063,15 +1063,25 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     if (sel.worker) {
         // bbport: draw-preparation worker: look up only, with the worker's own Info copy.
         auto& worker = *sel.worker;
-        std::shared_lock lk{programs_mutex};
-        const auto found_program = program_cache.find(params.hash);
-        if (found_program == program_cache.end() || !found_program->second->info_template) {
-            worker.failed = true;
-            return {};
+        const Program* program;
+        const Shader::Info* info_template;
+        {
+            // Speculation must never keep the GPU thread behind a background
+            // worker's guest page fault, resource walk or fetch-shader parse.
+            std::shared_lock lk{programs_mutex,std::try_to_lock};
+            if (!lk.owns_lock()) { worker.failed=true;return {}; }
+            const auto found_program = program_cache.find(params.hash);
+            if (found_program == program_cache.end() || !found_program->second->info_template) {
+                worker.failed = true;
+                return {};
+            }
+            program = found_program->second.get();
+            info_template = program->info_template.get();
         }
-        const Program* program = found_program->second.get();
-        auto [it_info, new_info] = worker.infos.try_emplace(program, *program->info_template);
-        auto& info = it_info->second;
+        // Deep copies allocate and may be preempted at background priority.
+        // Never retain the publication lock through that work. Published
+        // templates are immutable; programs live until all workers have joined.
+        auto& info = worker.infos.try_emplace(program,*info_template).first->second;
         info.pgm_base = params.Base();
         info.user_data = params.user_data;
         // The walk of resource tables and the fetch shader parse read guest memory through
@@ -1080,6 +1090,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         // thread. A jump out of the specialization leaks its partial allocations (rare).
         sigjmp_buf recover;
         if (sigsetjmp(recover, 0)) {
+            runtime_fault_recover = nullptr;
             worker.failed = true;
             return {};
         }
@@ -1087,7 +1098,14 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         info.RefreshFlatBuf();
         auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
         runtime_fault_recover = nullptr;
-        const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
+        // A permutation may have been added while reading guest memory. Read
+        // the current module list under a short lock; never retain an iterator
+        // across the unlocked walk or block on an in-progress publication.
+        std::shared_lock lk{programs_mutex,std::try_to_lock};
+        if (!lk.owns_lock()) { worker.failed=true;return {}; }
+        const auto it = std::ranges::find_if(program->modules, [&](const auto& candidate) {
+            return candidate.module && candidate.spec == spec;
+        });
         if (it == program->modules.end()) {
             worker.failed = true;
             return {};
@@ -1218,7 +1236,9 @@ void PipelineCache::DumpShader(std::span<const u32> code, u64 hash, Shader::HwSt
 std::optional<std::vector<u32>> PipelineCache::GetShaderPatch(u64 hash, Shader::HwStage stage,
                                                               size_t perm_idx,
                                                               std::string_view ext) {
-
+    if (!EmulatorSettings.IsPatchShaders() && !EmulatorSettings.IsShaderCollect()) {
+        return {};
+    }
     using namespace Common::FS;
     const auto patch_dir = GetUserPath(PathType::ShaderDir) / "patch";
     if (!std::filesystem::exists(patch_dir)) {

@@ -197,6 +197,8 @@ GAME_MUTEX = 'Local\\bbport-game'
 def game_underway(mutex=GAME_MUTEX):
     """Whether a game is being prepared or runs: from this launcher, Play Bloodborne.exe (Steam, a shortcut) or
     the in-game restart. A second one would share its saves and prepared files."""
+    if sys.platform != 'win32':
+        return bool(bench.game_pids())
     kernel = ctypes.windll.kernel32
     kernel.OpenMutexW.restype = ctypes.c_void_p
     handle = kernel.OpenMutexW(0x00100000, False, mutex)  # SYNCHRONIZE
@@ -470,7 +472,13 @@ MIRRORED_KEYS = ('fps_mode', 'frame_cap')
 
 def mirrored(app, ini):
     """`app` with the mirrored settings bbport.ini holds (the game may have changed them)."""
-    return {**app, **{key: ini[key] for key in MIRRORED_KEYS if key in ini}}
+    result = {**app, **{key: ini[key] for key in MIRRORED_KEYS if key in ini}}
+    # R55 allowed 75 as a timing choice; current upstream uses unlocked + cap.
+    if str(result.get('fps_mode')) == '75':
+        result['fps_mode'] = 'uncap'
+        if not str(result.get('frame_cap') or '').strip():
+            result['frame_cap'] = '75'
+    return result
 
 
 def fsr411_backend(settings):
@@ -1522,7 +1530,7 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         self.tracker = trophies.Tracker(self.trophy_dir())
         self.init_hardware()
         self.trophies_loaded, self.toasts = False, []
-        root.title('Bloodborne — Crowned Workshop')
+        root.title('Bloodborne: The Crowned Workshop — TatsunaKyo')
         root.configure(bg=BG)
         self.dpi = root.winfo_fpixels('1i') / 96.0
         # Never taller or wider than the screen (a 1080p laptop at 150 % has about 1280 × 670 points).
@@ -2065,7 +2073,7 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         words.pack(side='left', fill='x')
         tk.Label(words, text='BLOODBORNE', bg=BG, fg=theme.TEXT_STRONG, font=(theme.HEAD_BOLD, 14)).pack(anchor='w')
         tk.Label(words, text='PC PORT', bg=BG, fg=GOLD, font=(theme.HEAD, 8)).pack(anchor='w')
-        self.byline = tk.Label(side, text=f'Crowned Workshop · R{VERSION.rsplit(".", 1)[1]}\nSupermedo 1.9.7 base' +
+        self.byline = tk.Label(side, text=f'by TatsunaKyo · R{VERSION.rsplit(".", 1)[1]}\nSupermedo 1.9.7 base' +
                                ('\n' + _('co-op test build') if COOP_TEST else ''),
                                bg=BG, fg=MUTED, justify='left', font=(theme.BODY, 9))
         self.byline_pads = ((px(2), px(8)), (0, px(4)))  # its gaps under the full head and the narrower ones
@@ -6435,23 +6443,17 @@ def play_without_window(settings):
     log_dir.mkdir(parents=True, exist_ok=True)
     tracker = trophies.Tracker(log_dir)
     diagnostic = workshop.DiagnosticSession(settings)
-    with open(log_dir / 'last_run.log', 'w', encoding='utf-8', buffering=1) as log:
-        log.writelines(note + '\n' for note in notes)
-        process = subprocess.Popen(run_command(), cwd=PORT_DIR, env=diagnostic.environment(game_environment(settings, graphics)),
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
-        for raw in iter(process.stdout.readline, b''):
-            text = raw.decode('utf-8', errors='replace')
-            diagnostic.record(text)
-            log.write(text)
-            if 'Runtime: trophy ' in text:
-                tracker.observe(text)
-            try:
-                sys.stdout.write(text)
-            except (OSError, ValueError):
-                pass
-        code = process.wait()
-    diagnostic.finish(code)
+    def observe(text):
+        if 'Runtime: trophy ' in text:
+            tracker.observe(text)
+        try:
+            sys.stdout.write(text)
+        except (OSError, ValueError):
+            pass
+    code = workshop.read_game_output(process=subprocess.Popen(
+        run_command(), cwd=PORT_DIR, env=diagnostic.environment(game_environment(settings, graphics)),
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        creationflags=NO_WINDOW), settings=settings, diagnostic=diagnostic, observe=observe, before=notes)
     if settings.get('thd_token') and sign_in_refused(settings):
         try:
             forget_sign_in()
@@ -6636,6 +6638,7 @@ menu_values = workshop.menu_values
 save_menu = workshop.save_menu
 launcher_window_mode = workshop.launcher_window_mode
 DiagnosticSession = workshop.DiagnosticSession
+read_game_output = workshop.read_game_output
 geometry_diagnostic_settings = workshop.geometry_diagnostic_settings
 nvidia_diagnostic_settings = workshop.nvidia_diagnostic_settings
 traversal_diagnostic_settings = workshop.traversal_diagnostic_settings

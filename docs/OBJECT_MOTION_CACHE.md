@@ -1,5 +1,7 @@
 # Experimental motion-vector cache
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 In the Windows launcher's **Graphics** page, **Motion-vector cache
 (experimental)** enables reuse of object-motion render targets. It is **off by
 default**, including for existing profiles. With it off, the renderer uses the

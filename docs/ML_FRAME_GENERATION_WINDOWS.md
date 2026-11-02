@@ -1,5 +1,7 @@
 # AMD ML frame generation on Windows
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 The FSR 4.1 integration also retains **ML-FG 4.0.2** as an independent choice.
 Both ML versions require their exact provider and use the existing 2× SDR path.
 See [FSR 4.1 on Windows](FSR41_WINDOWS.md) for the current combined launcher,

@@ -19,10 +19,12 @@ def expected(root=ROOT):
     notes = f'docs/releases/windows-v{version}.md'
     if not (root / notes).is_file():
         raise ValueError('Current revision release notes are missing')
-    label = f'Revision {match[2]}'
-    badge = ('<svg xmlns="http://www.w3.org/2000/svg" width="164" height="28" viewBox="0 0 164 28" '
-             f'role="img" aria-label="{label}"><title>{label}</title><rect width="164" height="28" '
-             f'rx="14" fill="#003b1b"/><text x="82" y="19" text-anchor="middle" '
+    unreleased = re.search(r'^Status: unreleased\s*$', (root / notes).read_text(), re.M | re.I) is not None
+    label = f'Source R{match[2]} (unreleased)' if unreleased else f'Revision {match[2]}'
+    width = 230 if unreleased else 164
+    badge = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="28" viewBox="0 0 {width} 28" '
+             f'role="img" aria-label="{label}"><title>{label}</title><rect width="{width}" height="28" '
+             f'rx="14" fill="#003b1b"/><text x="{width // 2}" y="19" text-anchor="middle" '
              f'font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#20d66b">{label}</text></svg>\n')
     link = f'<a href="{notes}"><img src="docs/assets/readme/revision-stable.svg" alt="{label}" height="28"></a>'
     return badge, link

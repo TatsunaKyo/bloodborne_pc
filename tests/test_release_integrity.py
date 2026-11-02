@@ -114,7 +114,7 @@ class Releases(unittest.TestCase):
         records=repo/'out/verification';records.mkdir(parents=True)
         (records/'native-windows-tests.log').write_text('PASS fixture CPU tests\n')
         native=self.root/'native';native.mkdir()
-        for name in (*assembler.TESTS,'bb-probe','bb-gpu-capabilities','bb-play'):
+        for name in (*assembler.TESTS,'bb-probe','bb-gpu-capabilities','bb-fg401-capabilities','bb-play'):
             (native/(name+'.exe')).write_bytes(pe())
         launcher=self.root/'launcher';(launcher/'_internal').mkdir(parents=True)
         (launcher/'Bloodborne.exe').write_bytes(pe())
@@ -137,6 +137,7 @@ class Releases(unittest.TestCase):
         destination=self.root/'assembled'
         with patch.object(assembler,'ROOT',repo), patch.object(assembler,'PE',ImportedDependency), \
              patch.object(assembler,'install_nvidia_fg'), \
+             patch.object(assembler,'install_amd_graphics',return_value={}), \
              patch.object(assembler,'install_native_fg',return_value=native_lock), \
              patch.object(assembler.subprocess,'run',side_effect=tool_run):
             package=assembler.assemble(baseline,native,launcher,destination,dll_dir=prefix)

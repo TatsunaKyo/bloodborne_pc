@@ -1,5 +1,7 @@
 # Generate Support Report
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 I added this to make bug reports easier to put together without asking you to upload a whole diagnostic folder. It reuses the logs and measurements the port already records. It does not enable another profiler or start a background benchmark.
 
 Open **Advanced → Diagnostics → Generate Support Report**, or use the same button in **Log**. Select a file in the list to inspect exactly what will go into the ZIP. You can leave recent logs out, and the anonymous CPU/RAM profile starts off. **Export ZIP** verifies the archive before saving it. Sharing is your choice: the bug and performance buttons open GitHub's forms, where you attach the file yourself.

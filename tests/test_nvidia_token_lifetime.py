@@ -55,7 +55,7 @@ struct Settings {
     std::atomic<int> nvidia_fg_reported_preset{-1},nvidia_fg_preset_status{0};
     std::atomic<bool> show_fps{true},show_latency{false},window_focused{true};
     std::atomic<bool> nvidia_api_error{false};
-    bool variable_frame_time{true};
+    bool variable_frame_time{true}, startup_workshop_nvidia{true};
     float pc_latency_ms{};
 } settings;
 Settings& Get() { return settings; }

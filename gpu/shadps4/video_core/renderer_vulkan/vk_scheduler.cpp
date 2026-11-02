@@ -466,12 +466,11 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 
-    // 1.8.2's masks (the second wait is the presenter's image), one for every wait the
-    // submission can carry, and the external provider's wait after them.
+    // Frame-generation inputs may be consumed by compute/transfer before colour output.
+    // Every acquired-image, scene-ready and external-provider dependency gates all work.
     std::array<vk::PipelineStageFlags, std::tuple_size_v<decltype(info.wait_semas)>>
         wait_stage_masks;
     wait_stage_masks.fill(vk::PipelineStageFlagBits::eAllCommands);
-    wait_stage_masks[1] = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     if (pending_external_wait) {
         ASSERT(info.num_wait_semas < info.wait_semas.size());
         wait_stage_masks[info.num_wait_semas] = vk::PipelineStageFlagBits::eAllCommands;

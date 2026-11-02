@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds dist/bbport-windows/ (and dist/bbport-windows.zip): Bloodborne.exe (the launcher, frozen
+# Builds the frozen Windows launcher, then the single verified release ZIP and SHA256.
+# Bloodborne.exe (the launcher, frozen
 # with PyInstaller so players need no Python), bb-probe.exe with the MSYS2 CLANG64 DLLs it needs,
 # the preparation scripts and run.py. Run from an MSYS2 CLANG64 shell after `bash build.sh`.
 # Freezing uses a Windows Python 3.10+ (python.org; WINPYTHON overrides) and a private venv in
@@ -7,7 +8,7 @@
 set -euo pipefail
 cd -- "$(dirname -- "$0")/../.."
 source ./msys2-env.sh
-[[ -f out/bb-probe.exe && -f out/bb-gpu-capabilities.exe && -f out/bb-play.exe ]] || { echo 'Build first: bash build.sh' >&2; exit 1; }
+[[ ${1:-} == --launcher-only ]] || [[ -f out/bb-probe.exe && -f out/bb-gpu-capabilities.exe && -f out/bb-fg401-capabilities.exe && -f out/bb-play.exe ]] || { echo 'Build first: bash build.sh' >&2; exit 1; }
 
 # A Windows Python (not MSYS2's) for PyInstaller.
 python=${WINPYTHON:-}
@@ -23,94 +24,15 @@ if [[ ! -x out/pyenv/Scripts/python.exe ]]; then
     "$python" -m venv out/pyenv
 fi
 out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check PyInstaller==6.19.0 Pillow==12.3.0
-out/pyenv/Scripts/python.exe tools/prepare_tk_runtime.py
-# The scripts run inside Bloodborne.exe (--script): the standard modules they import come along.
-hidden=()
-for module in argparse base64 collections hashlib json re shutil struct tempfile xml.etree.ElementTree \
-              urllib.request ctypes.wintypes dataclasses datetime ipaddress contextlib support_report support_report_ui save_access save_manager save_manager_ui; do
-    hidden+=(--hidden-import "$module")
-done
-out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed \
-    --name Bloodborne --icon "$(cygpath -w "$PWD/launcher/bloodborne.ico")" --distpath out/pyi-dist \
-    --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" --paths "$(cygpath -w "$PWD/tools")" "${hidden[@]}" \
-    --add-data "$(cygpath -w "$PWD/out/tk-runtime/_tcl_data");_tcl_data" \
-    --add-data "$(cygpath -w "$PWD/out/tk-runtime/_tk_data");_tk_data" \
-    "$(cygpath -w "$PWD/launcher/bbport_launcher_win.py")"
+out/pyenv/Scripts/python.exe tools/freeze_launcher.py
 
 if [[ ${1:-} == --launcher-only ]]; then
     echo 'Compiled launcher: out/pyi-dist/Bloodborne'
     exit 0
 fi
 
-# The package is assembled in a fresh staging folder and zipped from there; dist/bbport-windows
-# (a playable copy that may hold saves and settings) is only refreshed afterwards.
-dest=out/stage/bbport-windows
-rm -rf -- out/stage
-mkdir -p "$dest/bin" "$dest/launcher"
-cp -r out/pyi-dist/Bloodborne/. "$dest/"
-llvm-strip -o "$dest/Play Bloodborne.exe" out/bb-play.exe
-cp launcher/bloodborne.ico launcher/bloodborne.png "$dest/launcher/"
-# The executables without debug information (out/ keeps the symbols for crash reports).
-for exe in bb-probe.exe bb-gpu-capabilities.exe; do
-    llvm-strip --strip-debug -o "$dest/bin/$exe" "out/$exe"
-done
-# Every DLL the executables load from the CLANG64 tree (SDL3, FFmpeg, Vulkan loader, ...).
-ldd "$dest/bin/bb-probe.exe" "$dest/bin/bb-gpu-capabilities.exe" |
-    awk '/\/clang64\/bin\// {print $3}' | sort -u | while read -r dll; do
-        cp -u "$dll" "$dest/bin/"
-    done
-cp -r scripts patches "$dest/"
-# Legacy CPU (Intel 3rd generation and older): the translation plan scripts/cpu_compat.py applies.
-mkdir -p "$dest/tools" && cp tools/legacy-cpu-plan.json "$dest/tools/"
-cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
-cp packaging/windows/BB-Report-Tool.bat "$dest/"
-cp -r docs "$dest/"
-cp packaging/windows/bbport.menu.ini "$dest/"
-if [[ -d fsr4_shaders ]]; then cp -r fsr4_shaders "$dest/"; fi
-# DLSS (NVIDIA RTX): the MSVC-built bridge and NVIDIA's runtime, next to bb-probe.exe
-# (packaging/windows/build_dlss.sh). Without them the DLSS option stays unavailable.
-if [[ -f out/bbport_dlss.dll && -f out/nvngx_dlss.dll ]]; then
-    cp out/bbport_dlss.dll out/nvngx_dlss.dll "$dest/bin/"
-    if [[ -f out/nvngx_dlssg.dll ]]; then cp out/nvngx_dlssg.dll "$dest/bin/"; fi
-    mkdir -p "$dest/licenses" && cp out/NVIDIA-DLSS-LICENSE.txt "$dest/licenses/"
-    cp gpu/dlss_bridge/LICENSE.txt "$dest/licenses/bbport_dlss-LICENSE.txt"
-else
-    echo "DLSS bridge not built (packaging/windows/build_dlss.sh): no DLSS in this package" >&2
-fi
-# Online co-op: the libraries compiled in (wepoll, cpp-httplib) and the MSYS2 DLLs it loads.
-mkdir -p "$dest/licenses"
-cp gpu/third_party/wepoll/LICENSE "$dest/licenses/wepoll-LICENSE.txt"
-cp gpu/third_party/httplib/LICENSE "$dest/licenses/cpp-httplib-LICENSE.txt"
-cp packaging/windows/licenses/*.txt "$dest/licenses/"
-# Where the online code comes from (shadPS4 0.20, Awaken's port, bbhost's protocol).
-cp gpu/bbnet/SHADNET-PORT.md "$dest/licenses/online-code-NOTICE.md"
-for package in protobuf abseil-cpp openssl miniupnpc zlib; do
-    license=/clang64/share/licenses/$package/LICENSE
-    if [[ -f $license ]]; then cp "$license" "$dest/licenses/$package-LICENSE.txt"; fi
-done
-find "$dest" -name __pycache__ -prune -exec rm -r {} +
-mkdir -p dist
-rm -f dist/bbport-windows.zip
-(cd out/stage && powershell -NoProfile -Command \
-    "Compress-Archive -Path bbport-windows -DestinationPath ../../dist/bbport-windows.zip")
-
-# Refresh dist/bbport-windows, keeping what players create there (saves, settings, mods), and
-# only while nothing runs from it: deleting a running launcher's files breaks it.
-play=dist/bbport-windows
-running=$(powershell -NoProfile -Command \
-    "@(Get-Process | Where-Object { \$_.Path -like '$(cygpath -w "$PWD/$play")\\*' }).Count" | tr -d '\r')
-if [[ ${running:-0} != 0 ]]; then
-    echo "dist/bbport-windows is in use ($running processes): not refreshed; the zip is ready." >&2
-else
-    mkdir -p "$play"
-    find "$play" -mindepth 1 -maxdepth 1 ! -name user ! -name mods ! -name bbport.ini \
-        ! -name bbport.menu.ini ! -name mods.json ! -name patches.json -exec rm -rf {} +
-    if [[ -f "$play/bbport.menu.ini" ]]; then
-        cp "$play/bbport.menu.ini" out/stage/saved-menu.ini
-    fi
-    cp -r "$dest/." "$play/"
-    if [[ -f out/stage/saved-menu.ini ]]; then
-        cp out/stage/saved-menu.ini "$play/bbport.menu.ini"
-    fi
-fi
-du -sh "$dest" dist/bbport-windows.zip
+# Keep one canonical assembler: it verifies native-test evidence, replaces all current
+# runtime sources, resolves DLLs and writes one ZIP plus its checksum.
+out/pyenv/Scripts/python.exe tools/assemble_windows.py \
+    --baseline "$(cygpath -w "$PWD/out/dependencies/runtime-baseline.zip")" \
+    --dll-dir "$(cygpath -w /clang64/bin)" --channel "${RELEASE_CHANNEL:-stable}"

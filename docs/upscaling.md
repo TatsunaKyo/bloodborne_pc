@@ -1,5 +1,7 @@
 # DLSS, FSR and XeSS upscaling
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 R55 retains both DLSS SR NGX search paths with matching DLLs. DLSS Super Resolution availability is checked independently of FG capability or the opt-in RTX 20/30 FG mod. FSR 4.1.1 remains a separate supported asset path. DLSS model letters select hints; they do not validate FG model A/B/C or third-party NR. From R42 the game's original AA is disabled for a temporal-upscaler launch; switching Off/temporal needs restart to apply that startup patch.
 
 ![DLSS, FSR and XeSS: input scene, reconstruction and display output](assets/features/upscaling.png)

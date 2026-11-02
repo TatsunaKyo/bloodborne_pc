@@ -2,6 +2,8 @@
 
 **Latest published release: [Revision 55](https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/windows-v1.6-tatsunakyo.55-preview), 21 October 2026 (CEST).** R55 integrates Supermedo Windows 1.9.2 and the changes since the previously published R40. Download one complete ZIP and its matching SHA256. [Release notes](releases/index.md) · [Source maintenance after R55](maintenance.md)
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 The [README](../README.md) introduces the features. Dated release and investigation pages retain the results from their own revision.
 
 | Guide | Contents |
@@ -11,7 +13,7 @@ The [README](../README.md) introduces the features. Dated release and investigat
 | [Current reports](known-issues.md) | Cemetery hitch, cadence, reconstruction and open checks. |
 | [Compatibility](compatibility.md) | Hardware evidence and unverified configurations. |
 | [Upscaling](upscaling.md) | DLSS model hints, FSR and seven XeSS ratios. |
-| [Frame Generation](frame-generation.md) | Four provider routes, SDR/HDR and model evidence. |
+| [Frame Generation](frame-generation.md) | Workshop and native providers, experimental AMD ML-FG, restart boundaries and model evidence. |
 | [Latency](latency.md) | Reflex and AMD Anti-Lag 2. |
 | [Display and overlay](display-and-overlay.md) | Both FPS caps, windows, background and real-frame graph. |
 | [Input](INPUT.md) | Bindings, combinations, prompts and mouse camera. |
@@ -22,6 +24,7 @@ The [README](../README.md) introduces the features. Dated release and investigat
 | [Shader cache](shader-cache.md) | Persistence, invalidation and recovery. |
 | [Performance capture](performance.md) | Traversal and NVIDIA diagnostics. |
 | [Support Report](support-reports.md) | Inspect and export sanitized diagnostics. |
+| [Integration map](integration-map.md) | Current code owners, preserved features and superseded implementations. |
 | [Roadmap](tatsunakyo-next.md) | Included features and remaining work. |
 
 ## Development and publication

@@ -21,10 +21,10 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 namespace {
 unsigned validation_errors{}, validation_warnings{};
-VKAPI_ATTR VkBool32 VKAPI_CALL Validation(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-    vk::DebugUtilsMessageTypeFlagsEXT, const vk::DebugUtilsMessengerCallbackDataEXT* data, void*) {
-    if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) ++validation_errors;
-    if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning) ++validation_warnings;
+VKAPI_ATTR VkBool32 VKAPI_CALL Validation(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT, const VkDebugUtilsMessengerCallbackDataEXT* data, void*) {
+    if (severity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ++validation_errors;
+    if (severity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ++validation_warnings;
     std::fprintf(stderr,"Frame Generation validation: %s\n",data->pMessage);
     return VK_FALSE;
 }
@@ -104,7 +104,7 @@ struct Device {
             .pNext=&validation,
             .messageSeverity=vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning|vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
             .messageType=vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation|vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-            .pfnUserCallback=Validation};
+            .pfnUserCallback=reinterpret_cast<decltype(vk::DebugUtilsMessengerCreateInfoEXT::pfnUserCallback)>(Validation)};
         const vk::ApplicationInfo app{.pApplicationName="TatsunaKyo Frame Generation test",.apiVersion=VK_API_VERSION_1_3};
         instance=Check(vk::createInstanceUnique({.pNext=&debug,.pApplicationInfo=&app,.enabledLayerCount=1,
             .ppEnabledLayerNames=&layer,.enabledExtensionCount=2,.ppEnabledExtensionNames=extensions}));

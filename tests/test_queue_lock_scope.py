@@ -45,6 +45,7 @@ HARNESS = r'''
 using u64=uint64_t; using u32=uint32_t;
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #define ASSERT_MSG(expr, ...) assert(expr)
+#define ASSERT(expr) assert(expr)
 void Check(vk::Result result) { assert(result==vk::Result::eSuccess); }
 
 std::mutex phase_mutex;
@@ -109,6 +110,8 @@ public:
     Semaphore work_semaphore;
     Instance instance;
     vk::Queue submission_queue{instance.GetGraphicsQueue()};
+    vk::Queue execution_queue{instance.GetGraphicsQueue()};
+    vk::Semaphore pending_external_wait{};u64 pending_external_value{};
     std::function<void(SubmitInfo&)> on_submit;
     vk::CommandBuffer current_cmdbuf{reinterpret_cast<VkCommandBuffer>(1)};
     void EndRendering() {}
@@ -130,6 +133,7 @@ public:
     Semaphore memory_semaphore;
     Instance instance;
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
+    void FlushUnbinds() {}
 };
 BIND_METHOD
 }

@@ -333,7 +333,7 @@ def refresh_shared_graphics(env, config):
     backend = 'dx12' if values.get('fsr411_backend') == 'dx12' else 'vk'
     env['BB_FSR411_BACKEND'] = backend
     env['BB_FSR411_NATIVE'] = '1' if backend == 'dx12' else '0'
-    cache = values.get('object_motion_cache') == '1' and \
+    cache = values.get('object_motion_cache', '1') == '1' and \
         values.get('object_motion', '1') == '1' and \
         values.get('upscaler', 'fsr4') in ('fsr3', 'fsr4', 'fsr411', 'fsr412')
     env['BB_OBJECT_MOTION_CACHE'] = '1' if cache else '0'
@@ -786,6 +786,9 @@ def main():
             for key in ('BB_RENDER_RES', 'BB_OUTPUT_RES', 'BB_AUTO_RENDER_RES'):
                 env.pop(key, None)
         requested_fps = env.get('BB_FPS', 'uncap')
+        if requested_fps == '75':
+            requested_fps = env['BB_FPS'] = 'uncap'
+            env.setdefault('BB_FPS_LIMIT', '75')
         fps = requested_fps if 'fps' in groups else '30'
         scaled_render = scaled_output = None
         if not env.get('BB_RENDER_RES'):

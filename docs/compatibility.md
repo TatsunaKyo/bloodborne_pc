@@ -1,5 +1,7 @@
 # Hardware compatibility
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 **Current published baseline: R55.** Windows-target compilation, CPU recorder tests and Tk/ImGui layout checks do not establish gameplay compatibility on another GPU. Native FG choices are SDR-only; Workshop routes retain HDR10. RTX 20/30 external FG is opt-in and NR is unsupported. Stock RTX 40/50 users keep the original NVIDIA runtime route. [Open reports](known-issues.md) · [Provider matrix](frame-generation.md#r55-provider-choices)
 
 My main gameplay PC runs Windows 11 with a GeForce RTX 5070 Ti. I welcome results from other configurations, especially Radeon and Intel GPUs. I record the revision and type of evidence so the table stays useful.

@@ -1177,7 +1177,10 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
     };
 
     info.AddWait(signal_sema, signal_tick);
-    auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
+    const auto submit_result = [&] {
+        std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+        return instance.GetGraphicsQueue().bindSparse(sparse_info);
+    }();
     if (submit_result == vk::Result::eErrorDeviceLost) {
         instance.ReportDeviceLost("sparse binding");
     }

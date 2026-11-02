@@ -269,6 +269,12 @@ def engine(test, *roots):
 
 @unittest.skipUnless(OPENSSL, 'needs the openssl command (Git for Windows brings one)')
 class PkiTestCase(unittest.TestCase):
+    def setUp(self):
+        # Exercise this machine's test server, regardless of a CI HTTP proxy.
+        patcher = mock.patch('urllib.request.getproxies', return_value={})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @classmethod
     def setUpClass(cls):
         cls.temporary = tempfile.TemporaryDirectory()
@@ -283,6 +289,7 @@ class StoreTests(PkiTestCase):
     """OpenSSL's part: expired copies in the stores no longer stand in for the server's chain."""
 
     def setUp(self):
+        super().setUp()
         windows_trust(self, False)  # Windows' answer: WindowsTrustTests
 
     def test_pythons_default_context_fails_on_the_stale_intermediate(self):
@@ -310,10 +317,12 @@ class StoreTests(PkiTestCase):
 
     def test_store_certificates_outside_their_dates_are_left_out(self):
         names = ('r1', 'x2-expired', 'old-root', 'r1-cross', 'x2-valid')
-        loaded = self.pki.launchers(names).get_ca_certs()
+        baseline = T.tls_context(stores=()).get_ca_certs()
+        loaded = [cert for cert in self.pki.launchers(names).get_ca_certs() if cert not in baseline]
         self.assertEqual(sorted(dict(pair for rdn in cert['subject'] for pair in rdn)['commonName'] for cert in loaded),
                          ['Test Root R1', 'Test Root X2'])
-        self.assertEqual(len(self.pki.pythons_default(names).get_ca_certs()), len(names))
+        self.assertEqual(len([cert for cert in self.pki.pythons_default(names).get_ca_certs()
+                              if cert not in baseline]), len(names))
 
     def test_the_launchers_context_checks_like_pythons(self):
         tls = T.tls_context()
@@ -353,6 +362,7 @@ class ReasonTests(PkiTestCase):
     """What a player reads when a certificate is still refused."""
 
     def setUp(self):
+        super().setUp()
         windows_trust(self, False)
         english = mock.patch.object(T, 'L', None)  # the texts in English, whatever language other tests left
         english.start()
@@ -467,8 +477,9 @@ class LetsEncryptStoreTests(unittest.TestCase):
         old = [pem_certificates(DATA / name)[0] for name in
                ('dst-root-ca-x3.pem', 'isrg-root-x1-by-dst-root-ca-x3.pem', 'isrg-root-x2-by-isrg-root-x1-2020.pem')]
         x1 = pem_certificates(DATA / 'isrg-root-x1.pem')[0]
-        self.assertEqual(T.tls_context(stores=old).get_ca_certs(), [])
-        loaded = T.tls_context(stores=old + [x1]).get_ca_certs()
+        baseline = T.tls_context(stores=()).get_ca_certs()
+        self.assertEqual(T.tls_context(stores=old).get_ca_certs(), baseline)
+        loaded = [cert for cert in T.tls_context(stores=old + [x1]).get_ca_certs() if cert not in baseline]
         self.assertEqual([dict(pair for rdn in cert['subject'] for pair in rdn)['commonName'] for cert in loaded],
                          ['ISRG Root X1'])
 

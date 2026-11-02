@@ -369,6 +369,8 @@ void LineChoices(Line line, const int32_t* now, Choices& c) {
         for (int u = 0; u < BbSettings::UpscalerCount; ++u) {
             const bool supported = u == BbSettings::UpscalerFsr4 ? s.fsr4_supported.load()
                                  : u == BbSettings::UpscalerFsr411 ? s.fsr411_supported.load()
+                                 : u == BbSettings::UpscalerFsr412 ? s.fsr411_supported.load()
+                                 : u == BbSettings::UpscalerXess ? s.xess_supported.load()
                                  : u == BbSettings::UpscalerDlss ? s.dlss_supported.load() : true;
             if (supported || u == now[Upscaler]) c.Add(u, UPSCALER_TEXT + u);
         }
@@ -388,7 +390,8 @@ void LineChoices(Line line, const int32_t* now, Choices& c) {
         c.Add(6, FRAME_GEN_TEXT + 6);
         for (int f = 0; f < BbSettings::FrameGenCount; ++f) {
             const bool supported = f == BbSettings::FrameGenDlss ? s.dlssg_max_multiplier > 1
-                                 : f == BbSettings::FrameGenFsr401 ? s.fg401_supported.load() : true;
+                                 : f == BbSettings::FrameGenFsr401 ? s.fg401_supported.load()
+                                 : f == BbSettings::FrameGenFsr402 ? s.fg402_supported.load() : true;
             if (supported || f == now[FrameGen]) c.Add(f, FRAME_GEN_TEXT + f);
         }
         break;
