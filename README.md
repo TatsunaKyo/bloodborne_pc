@@ -23,6 +23,8 @@
 </table>
 </div>
 
+**Published download: Revision 55.** The Supermedo 1.9.7 integration and its verification are tracked in [PR #5](https://github.com/TatsunaKyo/bloodborne_pc/pull/5). Revision 56 is unreleased.
+
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The aim is to make Bloodborne more comfortable to play on a modern Windows PC, with more graphics choices, better window controls and settings you can change during play. This project would NOT be possible without the original work and the people involved.
 
 The Crowned Workshop is my own place to work on the port. The workshop, lantern and crowned TK emblem are part of that identity; the credit for the game and the original port stays with their creators.
