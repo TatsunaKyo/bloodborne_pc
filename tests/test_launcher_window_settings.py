@@ -33,4 +33,12 @@ with launcher_window(sys.argv[1] if len(sys.argv) > 1 else None) as (module, app
     app.refresh_menu_settings()
     app.collect()
     assert module.load_menu()['nvidia_fg_preset'] == 'c'
-    print(f'PASS: {len(app.pages)} actual launcher pages, seven FG routes, XeSS quality isolation, caps and live-edit persistence.')
+    # R55 saved the toggle under a different name. Both interfaces use the
+    # same preference and pass it to the runtime before any backup can start.
+    for saved, expected in (({'save_auto_backup': False}, False),
+                            ({'save_auto_backup': False, 'auto_backup': True}, True)):
+        settings = module.workshop.migrate_saved_settings(saved)
+        assert 'save_auto_backup' not in settings
+        assert module.workshop.environment({}, settings)['BB_SAVE_AUTO_BACKUP'] == ('1' if expected else '0')
+    assert app.var('auto_backup', 'app') is app.var('save_auto_backup', 'app')
+    print(f'PASS: {len(app.pages)} launcher pages, seven FG routes, XeSS, caps, live edits and backup migration.')

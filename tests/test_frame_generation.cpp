@@ -94,7 +94,8 @@ struct Device {
         VULKAN_HPP_DEFAULT_DISPATCHER.init(proc);
         const auto layers=Check(vk::enumerateInstanceLayerProperties());
         if (std::none_of(layers.begin(),layers.end(),[](const auto& layer) {
-            return std::strcmp(layer.layerName,"VK_LAYER_KHRONOS_validation")==0;
+            return std::strcmp(layer.layerName,"VK_LAYER_KHRONOS_validation")==0 &&
+                   layer.specVersion>=VK_MAKE_API_VERSION(0,1,4,341);
         })) return false;
         const char* layer="VK_LAYER_KHRONOS_validation";
         const char* extensions[]={VK_EXT_DEBUG_UTILS_EXTENSION_NAME,VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME};
@@ -263,6 +264,7 @@ bool Generate(Device& gpu,Vulkan::FrameGeneration& fg,const std::shared_ptr<Vulk
 }
 void TestFrozenSceneInputs(Device& gpu) {
     auto& settings=BbSettings::Get();
+    settings.startup_workshop_nvidia=true;
     settings.frame_generation=BbSettings::FrameGenerationNvidia;
     settings.upscaler=BbSettings::UpscalerDlss;
     settings.window_focused=true;
@@ -305,6 +307,7 @@ void TestFrozenSceneInputs(Device& gpu) {
         assert(Half(mv[0])==4 && Half(mv[1])==-2);
     }
     settings.frame_generation=BbSettings::FrameGenerationOff;
+    settings.startup_workshop_nvidia=false;
     std::puts("PASS: Vulkan delayed NVIDIA input capture preserves frame A depth and both motion channels after frame B, in SDR/HDR.");
 }
 void TestXessColor(Device& gpu) {
@@ -351,6 +354,7 @@ void TestXessColor(Device& gpu) {
 }
 void Test(Device& gpu) {
     auto& settings=BbSettings::Get();
+    settings.startup_workshop_nvidia=false;
     settings.window_focused=true; settings.background_mode=BbSettings::BackgroundRun;
     Vulkan::FrameGeneration fg(gpu.physical,*gpu.device,gpu.allocator,gpu.Submissions());
     Inputs inputs(gpu,64,64,128,128);
@@ -451,6 +455,9 @@ void Test(Device& gpu) {
     inputs.Capture(fg,snapshot);assert(Generate(gpu,fg,snapshot));
     std::puts("PASS: HDR10 500/1000/2000-nit decode, FI/OF highlights above SDR white, PQ re-encoding, HDR-to-SDR history reset.");
     settings.frame_generation=BbSettings::FrameGenerationNvidia;
+    inputs.Capture(fg,snapshot);
+    assert(!snapshot); // A non-Streamline session waits for restart.
+    settings.startup_workshop_nvidia=true; // Exercise capture in the restarted session.
     // The desktop swapchain uses UNORM with an sRGB color space, not SRGB
     // image formats. Revision 7 incorrectly rejected both actual SDR formats.
     for (auto format : {vk::Format::eR8G8B8A8Unorm,vk::Format::eB8G8R8A8Unorm,
@@ -486,7 +493,7 @@ void Test(Device& gpu) {
 } // namespace
 int main() {
     try {
-        { Device gpu; if (!gpu.Create()) { std::puts("SKIP: Vulkan GPU and current Khronos validation layer required."); return 77; }
+        { Device gpu; if (!gpu.Create()) { std::puts("SKIP: Vulkan GPU and Khronos validation layer 1.4.341 or newer required."); return 77; }
           Test(gpu); TestFrozenSceneInputs(gpu); TestXessColor(gpu); }
         assert(validation_errors==0);
         std::printf("Frame Generation integration: GPU color/depth/motion copies, real FI/OF output, history reset, queue lifetime, resize and background modes passed; validation errors=%u, warnings=%u.\n",

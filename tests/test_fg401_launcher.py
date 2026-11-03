@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ML-FG selection follows the selected adapter's verified capabilities."""
-import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import types
 import unittest
-import queue
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -15,6 +13,7 @@ sys.path.insert(0,str(ROOT/'launcher'))
 sys.path.insert(0,str(ROOT/'scripts'))
 import bbport_fg401 as fg
 import bbport_launcher_win as launcher
+from workshop_launcher_fixture import launcher_window
 
 class CapabilityTests(unittest.TestCase):
     def result(self,stdout,code=0):
@@ -97,24 +96,15 @@ class CapabilityTests(unittest.TestCase):
 
 class SelectionTests(unittest.TestCase):
     def setUp(self):
+        import tkinter
         try:
-            import tkinter as tk
-            from tkinter import ttk
-            self.root=tk.Tk()
-        except Exception as error:
+            self.module, self.obj, self.root, self.config = self.enterContext(launcher_window())
+        except tkinter.TclError as error:
+            if 'display' not in str(error).lower():
+                raise
             self.skipTest(f'Tk session unavailable: {error}')
-        self.root.withdraw()
-        self.addCleanup(self.root.destroy)
-        obj=launcher.Launcher.__new__(launcher.Launcher)
-        obj.tk=tk;obj.ttk=ttk;obj.root=self.root;obj.vars={}
-        obj.ini=launcher.INI_DEFAULTS.copy();obj.app=launcher.APP_DEFAULTS.copy()
-        obj.fg401_support=None;obj.fg401_refreshers=[]
-        self.parent=ttk.Frame(self.root)
-        obj.fg401_status=ttk.Label(self.parent)
-        obj.fg401_status.grid(row=1,column=0)
-        self.obj=obj
-        self.box=obj.fg401_choice(self.parent)
-        self.var=obj.var('frame_gen','ini')
+        self.box = self.obj.graphics_fg_choice
+        self.var = self.obj.var('frame_gen', 'ini')
 
     def test_available_only_after_probe(self):
         self.assertFalse(any('4.0.1' in text for text in self.box['values']))
@@ -139,20 +129,14 @@ class SelectionTests(unittest.TestCase):
         self.var.set('fsr401')
         self.obj.fg401_support={'supported':False, 'reason':'check'}
         self.obj.refresh_fg401()
-        self.obj.ini_lines=[]
-        self.obj.mod_order=[];self.obj.patch_vars={}
-        self.obj.remap_edits={};self.obj.mouse_edited=False
-        with tempfile.TemporaryDirectory() as temp:
-            folder=Path(temp)
-            with patch.dict(os.environ, BB_CONFIG=str(folder/'bbport.ini')), \
-                 patch.multiple(launcher, CONFIG_DIR=folder, CONFIG_FILE=folder/'settings.json'):
-                self.obj.collect()
-                self.assertEqual(launcher.load_ini()[0]['frame_gen'], 'fsr401')
-                self.assertEqual(self.var.get(), 'fsr401')
+        self.obj.collect()
+        self.assertEqual(self.config, self.module.ini_path())
+        self.assertEqual(self.module.load_ini()[0]['frame_gen'], 'fsr401')
+        self.assertEqual(self.module.load_menu()['frame_generation'], 'native_fsr401')
+        self.assertEqual(self.var.get(), 'fsr401')
 
     def test_recheck_can_fail_and_recover_without_changing_selection(self):
         self.var.set('fsr401')
-        self.obj.ui_calls=queue.Queue()
         def thread(target, **kwargs):
             return types.SimpleNamespace(start=target)
         for status in [dict(supported=False, reason='check'), dict(supported=True)]:

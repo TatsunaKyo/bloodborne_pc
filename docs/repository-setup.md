@@ -16,7 +16,7 @@ The source files can provide workflows and report forms, but the repository sett
 
 Optional: enable **Security → Private vulnerability reporting** before directing private security reports there. [SECURITY.md](../SECURITY.md) also describes the fallback when that feature is unavailable.
 
-A social-preview image is uploaded under **Settings → General → Social preview**. The planned 1280 × 640 export will use the workshop painting and crowned TK emblem. GitHub Pages remains a later option; no site is enabled by this revision.
+The project banner is in the README. The owner can set a separate image in **Settings → General → Social preview**. The repository uses GitHub’s Markdown rendering for the guides; GitHub Pages is disabled.
 
 Branch rules are a separate choice. Once the checks have successful runs, I can require the Regression checks status on pull requests without blocking recovery work before the first run.
 

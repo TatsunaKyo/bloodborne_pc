@@ -11,11 +11,8 @@
 uint32_t BbDisplayRefreshHz() { return 60; }
 #endif
 extern "C" {
-#ifdef _WIN32
-thread_local jmp_buf* runtime_fault_recover = nullptr;
-#else
-thread_local sigjmp_buf* runtime_fault_recover = nullptr;
-#endif
+// Use the runtime's recovery-buffer ABI, including its custom Win64 type.
+__thread sigjmp_buf* runtime_fault_recover = nullptr;
 uint64_t runtime_disabled_optimizations = 0;
 uint64_t runtime_tsc_frequency() { return 1000000000; }
 int runtime_file_translate(const char*, char*, size_t) { std::abort(); }

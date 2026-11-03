@@ -14,7 +14,7 @@ This is the source changelog. The latest published binary remains [Revision 55](
 
 ## Features and compatibility
 
-- Integrate FSR 4.1.1/4.1.2 and experimental AMD ML Frame Generation 4.0.1/4.0.2, with capability checks and fallback distinct from the saved request.
+- Integrate FSR 4.1.1/4.1.2 and experimental AMD ML Frame Generation 4.0.1/4.0.2, with capability checks, a launcher list limited to confirmed providers, and fallback distinct from the saved request.
 - Keep Workshop HDR FSR/Streamline routes, NVIDIA x2–x6 where supported, DLSS model controls, seven XeSS modes, independent real/output limits, cheats and save/support tools.
 - Select one latency owner at startup. Streamline/native family changes and native latency changes require restart; pending provider changes continue with real frames.
 - Reconcile launcher, ImGui and native PC Settings provider/quality/cap mappings. Keep independent XeSS quality and live overlay edits when saving from the launcher.

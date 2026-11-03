@@ -358,14 +358,40 @@ class WorkshopMixin:
         return box
 
     def frame_generation_choice(self, parent, width=38):
-        choices = [(key, ('NVIDIA DLSS FG / MFG', 'NVIDIA DLSS FG / MFG') if key == 'nvidia' else labels) for key, labels in FRAME_GENERATORS] if width < 30 else FRAME_GENERATORS
-        box = self.choice(parent, 'frame_generation', 'menu', choices, width=width)
+        route = self.var('frame_generation', 'menu')
         upscaler = self.var('upscaler', 'ini')
+        box = self.ttk.Combobox(parent, state='readonly', width=width)
+        labels = {key: m._(*text) for key, text in FRAME_GENERATORS}
+        if width < 30:
+            labels['nvidia'] = 'NVIDIA DLSS FG / MFG'
+        values = []
 
-        def availability(*_args):
-            box.configure(state='readonly' if upscaler.get() != 'off' else 'disabled')
-        upscaler.trace_add('write', availability)
-        availability()
+        def refresh(*_args):
+            values.clear()
+            for key in labels:
+                native = ROUTE_TO_NATIVE.get(key)
+                if native in ('fsr401', 'fsr402'):
+                    status = m.bbport_fg401.status_for(self.fg401_support, native)
+                    if not status or not status.get('supported'):
+                        continue
+                values.append(key)
+            box.configure(values=[labels[key] for key in values],
+                          state='readonly' if upscaler.get() != 'off' else 'disabled')
+            # A probe may rule out a new selection. Keep the user's existing
+            # request visible, while the adjacent status explains the fallback.
+            box.set(labels.get(route.get(), labels['off']))
+
+        def select(_event):
+            index = box.current()
+            if 0 <= index < len(values):
+                route.set(values[index])
+
+        box.bind('<<ComboboxSelected>>', select)
+        route.trace_add('write', refresh)
+        upscaler.trace_add('write', refresh)
+        self.fg401_refreshers.append(refresh)
+        box.setting_key = 'frame_generation'
+        refresh()
         return box
 
     def fps_cap_control(self, parent, key, store, minimum, maximum, enabled_key=None, options=None):

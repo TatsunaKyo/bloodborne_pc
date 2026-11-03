@@ -680,7 +680,7 @@ class OnlinePageTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         app = self.app = bare_launcher(root=root, tk=tkinter, ttk=ttk, dpi=1, app=dict(L.APP_DEFAULTS), vars={},
-                                       pages={}, content=ttk.Frame(root), refresh_status=mock.Mock(),
+                                       pages={}, page_bodies={}, content=ttk.Frame(root), refresh_status=mock.Mock(),
                                        ask_hunters=mock.Mock(), collect=mock.Mock())
         app.build_online()
         self.page = app.pages['online']

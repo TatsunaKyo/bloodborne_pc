@@ -2975,7 +2975,7 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
                    'чуть позже. Каждый шейдер компилируется один раз и сохраняется.'))
         self.readouts_section(f)
         self.section(f, _('Frame generation', 'Генерация кадров'))
-        self.row(f, _('Frame generation', 'Генерация кадров'),
+        self.graphics_fg_choice = self.row(f, _('Frame generation', 'Генерация кадров'),
                  self.fg401_choice(f),
                  _('Frames made between two of the game\'s: 60 FPS on screen becomes 120. Needs a display with '
                    'that refresh rate (120 Hz or more at 60 FPS); it pauses when the display cannot show the extra '
