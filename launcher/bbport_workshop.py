@@ -43,13 +43,15 @@ def menu_path():
 
 def load_menu():
     values = dict(MENU_DEFAULTS)
-    ini, _lines = m.load_ini()
+    ini, ini_lines = m.load_ini()
     values['show_fps'] = ini.get('show_fps', '1')
     try:
         legacy = max(0, min(4, int(ini.get('preset', '0'))))
     except ValueError:
         legacy = 0
-    values['xess_preset'] = ini.get('xess_preset', LEGACY_XESS_PRESETS[legacy])
+    # load_ini fills defaults even when the file predates the separate XeSS control.
+    # Only an explicit key should take precedence over the old quality index.
+    values['xess_preset'] = ini['xess_preset'] if 'xess_preset' in setting_keys(ini_lines) else LEGACY_XESS_PRESETS[legacy]
     if values['xess_preset'] not in dict(XESS_PRESETS):
         values['xess_preset'] = LEGACY_XESS_PRESETS[legacy]
     try:
@@ -471,11 +473,9 @@ class WorkshopMixin:
         from save_manager_ui import open_save_manager
         return open_save_manager(self)
 
-    def workshop_init(self, saved):
+    def workshop_init(self):
         self.menu = load_menu()
         self.menu_baseline = dict(self.menu)
-        if 'auto_backup' not in saved and 'save_auto_backup' in saved:
-            self.app['auto_backup'] = bool(saved['save_auto_backup'])
         # The upstream root INI is authoritative once migrated; legacy menu caps
         # and native provider selections are consumed only for an older file.
         present = {line.split('=', 1)[0].strip() for line in self.ini_lines if '=' in line}
@@ -504,10 +504,6 @@ class WorkshopMixin:
 
     @staticmethod
     def show_workshop_row(widget, visible):
-        row = int(widget.grid_info().get('row', getattr(widget, 'workshop_row', 0)))
-        if not hasattr(widget, 'workshop_widgets'):
-            widget.workshop_row = row
-            widget.workshop_widgets = widget.master.grid_slaves(row=row) + widget.master.grid_slaves(row=row + 1)
         for child in widget.workshop_widgets:
             child.grid() if visible else child.grid_remove()
 
@@ -517,7 +513,7 @@ class WorkshopMixin:
 
     def build_workshop_graphics(self, frame):
         self.section(frame, m._('Crowned Workshop'))
-        self.row(frame, m._('DLSS render preset'), self.dlss_preset_choice(frame),
+        self.graphics_dlss_row = self.row(frame, m._('DLSS render preset'), self.dlss_preset_choice(frame),
                  m._('Model hint; the driver can override it. Separate from render scale and FG.'))
         self.graphics_xess_row = self.row(frame, m._('XeSS quality'), self.choice(frame, 'xess_preset', 'menu', XESS_PRESETS),
                  m._('Seven XeSS ratios, saved separately from DLSS and FSR quality.'))
@@ -546,17 +542,28 @@ class WorkshopMixin:
         native.trace_add('write', sync_native)
         sync_route()
         def show_quality(*_args):
-            is_xess = self.var('upscaler', 'ini').get() == 'xess'
-            self.show_workshop_row(self.graphics_xess_row, is_xess)
-            self.show_workshop_row(self.graphics_preset_row, not is_xess)
+            upscaler = self.var('upscaler', 'ini').get()
+            self.show_workshop_row(self.graphics_xess_row, upscaler == 'xess')
+            self.show_workshop_row(self.graphics_dlss_row, upscaler == 'dlss')
+            self.show_workshop_row(self.graphics_preset_row, upscaler != 'xess')
         self.var('upscaler', 'ini').trace_add('write', show_quality)
         show_quality()
-        self.row(frame, m._('Workshop NVIDIA multiplier'), self.choice(frame, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS))
-        self.row(frame, m._('Workshop NVIDIA FG preset'), self.choice(frame, 'nvidia_fg_preset', 'menu', NVIDIA_FG_PRESETS),
-                 m._('A saved request is shown separately from driver evidence in the overlay.'))
-        self.check(frame, 'nvidia_fg_mod', 'menu', m._('RTX 20/30: enable external DLSSG mod'),
-                   m._('Opt in only. Requires your compatible Encore library; RTX 40/50 retain original NVIDIA files. Restart required.'))
-        self.check(frame, 'limit_generated_fps', 'menu', m._('Limit Workshop generated output'))
+        self.nvidia_multiplier_row = self.row(
+            frame, m._('Workshop NVIDIA multiplier'), self.choice(frame, 'nvidia_generated_frames', 'menu', NVIDIA_MULTIPLIERS))
+        self.nvidia_fg_preset_row = self.row(
+            frame, m._('Workshop NVIDIA FG preset'), self.choice(frame, 'nvidia_fg_preset', 'menu', NVIDIA_FG_PRESETS),
+            m._('A saved request is shown separately from driver evidence in the overlay.'))
+        self.nvidia_fg_mod_row = self.check(
+            frame, 'nvidia_fg_mod', 'menu', m._('RTX 20/30: enable external DLSSG mod'),
+            m._('Opt in only. Requires your compatible Encore library; RTX 40/50 retain original NVIDIA files. Restart required.'))
+
+        def show_nvidia(*_args):
+            for row in (self.nvidia_multiplier_row, self.nvidia_fg_preset_row, self.nvidia_fg_mod_row):
+                self.show_workshop_row(row, route.get() == 'nvidia')
+
+        route.trace_add('write', show_nvidia)
+        show_nvidia()
+        self.check(frame, 'limit_generated_fps', 'menu', m._('Limit generated output'))
         self.row(frame, m._('Generated output FPS'), self.fps_cap_control(frame, 'generated_fps_limit', 'menu', 30, 1000, 'limit_generated_fps'))
         self.row(frame, m._('Background behavior'), self.choice(frame, 'background_mode', 'menu', BACKGROUND_MODES))
         self.row(frame, m._('Window mode'), self.choice(frame, 'window_mode', 'menu', [('launcher', ('Follow launcher',)), *WINDOW_MODES]))
@@ -566,17 +573,31 @@ class WorkshopMixin:
                           ('show_resolution', 'Internal and output resolution'), ('show_frame_generation', 'Real and generated frame rate'),
                           ('show_latency', 'Reflex PC latency'), ('show_frametime_graph', 'Real-frame frametime graph')]:
             self.check(frame, key, 'menu', m._(text))
-        self.section(frame, m._('Runtime cheats'))
+    def build_workshop_cheats(self, frame):
+        self.section(frame, m._('Runtime cheats', 'Читы в игре'))
         for key, label in [('cheat_damage', 'Damage dealt'), ('cheat_incoming', 'Damage received'), ('cheat_echoes', 'Blood Echoes'), ('cheat_movement', 'Movement speed')]:
             self.row(frame, m._(label), self.choice(frame, key, 'menu', MOVEMENT_MULTIPLIERS if key == 'cheat_movement' else CHEAT_MULTIPLIERS))
         for key, label in [('cheat_infinite_stamina', 'Infinite stamina'), ('cheat_no_consume', 'Do not consume items'), ('cheat_no_fall_damage', 'No fall damage')]:
             self.check(frame, key, 'menu', m._(label))
-        self.section(frame, m._('Save and support tools'))
-        tools = self.ttk.Frame(frame)
-        tools.grid(row=self.next_row(frame), column=0, columnspan=2, sticky='w', pady=(8, 0))
-        self.ttk.Button(tools, text=m._('Save Manager…'), command=self.open_save_manager).pack(side='left')
-        self.ttk.Button(tools, text=m._('Generate Support Report…'), command=self.generate_support_report).pack(side='left', padx=8)
+
+    def build_workshop_diagnostics(self, frame):
+        self.section(frame, m._('Workshop diagnostics', 'Диагностика Workshop'))
         self.check(frame, 'developer_profile', 'app', m._('Record an opt-in diagnostic session'))
+        self.workshop_button(frame, m._('Generate Support Report…', 'Создать отчёт…'),
+                             self.generate_support_report, 'button:support_report')
+        for attribute, mode, title in (
+            ('nvidia_capture_button', 'inputs', m._('Capture NVIDIA FG inputs…', 'Записать входные данные NVIDIA FG…')),
+            ('nvidia_compare_button', 'generated-only', m._('Compare generated frames…', 'Сравнить сгенерированные кадры…')),
+            ('traversal_capture_button', 'traversal', m._('Capture a traversal hitch…', 'Записать рывок при перемещении…')),
+        ):
+            setattr(self, attribute, self.workshop_button(
+                frame, title, lambda mode=mode: self.play(mode), 'button:' + mode))
+
+    def workshop_button(self, frame, title, command, key):
+        button = self.ttk.Button(frame, text=title, command=command)
+        button.grid(row=self.next_row(frame), column=0, columnspan=2, sticky='w', pady=(5, 0))
+        self.index_entry(button, title, key=key)
+        return button
 
     def refresh_menu_settings(self):
         if not hasattr(self, 'menu'):
@@ -633,18 +654,29 @@ FRAME_GENERATORS += [('native_fsr401', ('AMD ML-FG 4.0.1 (SDR, RX 9000, experime
 CHECKSUM_URLS = {}
 
 
+def setting_keys(lines):
+    return {line.split('=', 1)[0].strip() for line in lines if '=' in line and not line.lstrip().startswith('#')}
+
+
+def migrate_saved_settings(saved):
+    saved = dict(saved)
+    if 'auto_backup' not in saved and 'save_auto_backup' in saved:
+        saved['auto_backup'] = bool(saved['save_auto_backup'])
+    saved.pop('save_auto_backup', None)
+    return saved
+
+
 def _menu_keys():
     try:
-        return {line.split('=', 1)[0].strip() for line in menu_path().read_text(encoding='utf-8').splitlines() if '=' in line and not line.lstrip().startswith('#')}
+        return setting_keys(menu_path().read_text(encoding='utf-8').splitlines())
     except OSError:
         return set()
 
 
 def environment(env, settings, graphics=None):
     env['BB_LAUNCHER_WINDOW_MODE'] = launcher_window_mode(settings)
-    # Upstream auto_backup owns the single automatic snapshot. The Save Manager
-    # still validates restores and offers manual snapshots in run.py.
-    env['BB_SAVE_AUTO_BACKUP'] = '0'
+    # The runtime takes one validated snapshot after acquiring its save lease.
+    env['BB_SAVE_AUTO_BACKUP'] = '1' if settings.get('auto_backup', True) else '0'
     env['BB_SAVE_BACKUP_RETENTION'] = str(settings.get('save_backup_retention', 10))
     if settings.get('_geometry_diagnostic') in ('serial', 'capture'):
         env.update(BB_DRAW_PIPE='0', BB_PREP_WORKERS='0', BB_VK_RECORD_THREAD='0', BB_COPY_THREADS='0')

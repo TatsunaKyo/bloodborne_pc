@@ -56,7 +56,7 @@ My earlier Hunter's Dream capture showed extreme object vectors while the real s
 
 ## NVIDIA FG presets A / B / C
 
-I added a separate **NVIDIA FG preset** selector under **Frames** in both interfaces. It offers Default, A, B and C (Performance / beta). These are FG models, separate from DLSS Super Resolution's E/F/J/K/M/L presets. Changing the FG model takes effect on the next launch; the in-game menu saves the choice and offers Apply and restart.
+I added a separate **NVIDIA FG preset** selector under **Frames** in the in-game menu. In R56 it is under **Graphics → Crowned Workshop** in the launcher; in R55 it is under **Frames**. It offers Default, A, B and C (Performance / beta). These are FG models, separate from DLSS Super Resolution's E/F/J/K/M/L presets. Changing the FG model takes effect on the next launch; the in-game menu saves the choice and offers Apply and restart.
 
 The launcher uses NVIDIA's public NVAPI to set the two FG override values in a dedicated profile for this installation's `bin/bb-probe.exe`, before the renderer starts. Default restores the settings saved before my override. Other NVIDIA settings and global profiles stay outside this control. If the executable already belongs to another application's profile, or the FG values have changed outside the launcher, it keeps them and explains the conflict in the session log.
 

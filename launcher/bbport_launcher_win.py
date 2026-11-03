@@ -436,7 +436,7 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 # window ('output', 'last' or 'custom'), the player's own size and the last one it had.
                 'game_monitor': '', 'window_size': 'output', 'window_custom': '1600x900', 'window_last': '',
                 'output_display': False,  # output resolution: the game monitor's own, set at every start
-                'auto_backup': True,  # the saves backed up before every start (bbport_saves.auto_backup)
+                'auto_backup': True,  # a Save Manager snapshot before starting the game
                 'exit_backup': False,  # and after the game exits (run.py, bbport_exit_backup)
                 'seen_version': '',  # the version (VERSION_TEXT) whose What's new was shown (bbport_news)
                 # Game tests (System & performance): the kind, the scenario, its options.
@@ -1463,7 +1463,14 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
     def __init__(self, root, tk, ttk, filedialog, messagebox):
         self.tk, self.ttk, self.filedialog, self.messagebox = tk, ttk, filedialog, messagebox
         self.root = root
-        saved = load_settings()
+        self.ui_closed = False
+
+        def root_destroyed(event):
+            if event.widget is root:
+                self.ui_closed = True
+
+        root.bind('<Destroy>', root_destroyed, add='+')
+        saved = workshop.migrate_saved_settings(load_settings())
         self.app = {**APP_DEFAULTS, **saved}
         self.app = geometry_diagnostic_settings(self.app, sys.argv)
         self.app = nvidia_diagnostic_settings(self.app, sys.argv)
@@ -1484,7 +1491,7 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         self.ini_new = not ini_path().exists()
         self.ini, self.ini_lines = load_ini(self.app)
         self.app = mirrored(self.app, self.ini)  # the game's PC Settings page may have changed them
-        self.workshop_init(saved)
+        self.workshop_init()
         self.remap_ini_path = input_ini_path(ini_path())
         self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
             self.mouse_settings = load_input_ini(self.remap_ini_path)
@@ -1642,12 +1649,18 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         s.configure('Fsr411.TMenubutton', background=CARD, arrowcolor=GOLD, padding=4)
         s.map('Fsr411.TMenubutton', foreground=[('disabled', MUTED)], background=[('active', CARD)])
         s.configure('Unavailable.Fsr411.TMenubutton', foreground=MUTED)
+        s.configure('Workshop.Treeview', background=CARD, fieldbackground=CARD, foreground=TEXT,
+                    rowheight=self.px(26))
+        s.configure('Workshop.Treeview.Heading', background=PANEL, foreground=TEXT)
+        s.map('Workshop.Treeview', background=[('selected', GOLD)], foreground=[('selected', BG)])
 
     # ---- widget helpers ----------------------------------------------------------------------
     def var(self, key, store):
         """The Tk variable of a setting (one per setting, shared by every widget that shows it)."""
         if store == 'menu':
             return self.workshop_var(key)
+        if store == 'app' and key == 'save_auto_backup':
+            key = 'auto_backup'
         tk = self.tk
         if key not in self.vars:
             if store == 'ini':
@@ -1913,9 +1926,13 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         label = ttk.Label(parent, text=title)
         label.grid(row=r, column=0, sticky='w', padx=(0, 18), pady=(6, 0))
         widget.grid(row=r, column=1, sticky='w', pady=(6, 0))
+        widget.row_label = label
+        widget.workshop_widgets = [label, widget]
         if hint:
-            self.wrap_within(ttk.Label(parent, text=hint, style='Muted.TLabel', justify='left', anchor='w'), 560).grid(
-                row=r + 1, column=1, sticky='we', pady=(2, 2))
+            widget.row_hint = self.wrap_within(
+                ttk.Label(parent, text=hint, style='Muted.TLabel', justify='left', anchor='w'), 560)
+            widget.row_hint.grid(row=r + 1, column=1, sticky='we', pady=(2, 2))
+            widget.workshop_widgets.append(widget.row_hint)
         self.index_entry(widget, title, hint, key or self.setting_key_of(widget), mark=label)
         return widget
 
@@ -1925,9 +1942,12 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         box = ttk.Checkbutton(parent, text=title, variable=self.var(key, store))
         box.grid(row=r, column=0, columnspan=2, sticky='w', pady=(4, 0))
         self.index_entry(box, title, hint, key)
+        box.workshop_widgets = [box]
         if hint:
-            self.wrap_within(ttk.Label(parent, text=hint, style='Muted.TLabel', justify='left', anchor='w'), 640).grid(
-                row=r + 1, column=0, columnspan=2, sticky='we', padx=(26, 0))
+            box.row_hint = self.wrap_within(
+                ttk.Label(parent, text=hint, style='Muted.TLabel', justify='left', anchor='w'), 640)
+            box.row_hint.grid(row=r + 1, column=0, columnspan=2, sticky='we', padx=(26, 0))
+            box.workshop_widgets.append(box.row_hint)
         return box
 
     def wrap_within(self, label, wrap):
@@ -2042,6 +2062,7 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         canvas.configure(yscrollcommand=bar.set, yscrollincrement=1)  # scrolled in pixels (wheel())
         bar.pack(side='right', fill='y', padx=(0, self.px(4)), pady=(0, self.px(8)))
         canvas.pack(side='left', fill='both', expand=True)
+        outer.viewport = canvas
         outer.scroll = lambda pixels: canvas.yview_scroll(pixels, 'units') if inner.winfo_height() > canvas.winfo_height() else None
         # A canvas maps the page in it only when it draws, and it draws when it is seen: asked to now,
         # the page is built under the cover (Launcher.cover), not after it goes.
@@ -3157,6 +3178,7 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         camera.trace_add('write', lambda *_a: camera.get() and control.set(False))
         for key, _title, _on in CHEATS:
             self.var(key, 'ini').trace_add('write', lambda *_a: self.refresh_status())
+        self.build_workshop_cheats(f)
         self.section(f, _('Respec', 'Перераспределение'))
         holder = self.ttk.Frame(f)
         self.ttk.Button(holder, text=_('Respec a character…', 'Перераспределить характеристики…'),
@@ -4572,6 +4594,7 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
             side='left', fill='x', expand=True, padx=10)
         self.index_entry(holder, _('Benchmark for bug reports…'),
                          _('A fixed route in Cathedral Ward for testers: one zip to send.'), 'button:benchmark')
+        self.build_workshop_diagnostics(f)
 
     def open_bug_benchmark(self):
         """The game tests (System) with the Cathedral Ward scenario chosen; with the game tests off,
@@ -4655,6 +4678,8 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
         body.pack(fill='both', expand=True)
         top = ttk.Frame(body)
         top.pack(fill='x', pady=(0, px(10)))
+        ttk.Button(top, text=_('Generate Support Report…', 'Создать отчёт…'),
+                   command=self.generate_support_report).pack(side='left')
         ttk.Button(top, text=_('Copy', 'Копировать'), command=self.copy_log).pack(side='right')
         ttk.Button(top, text=_('Clear', 'Очистить'), command=lambda: self.set_log('')).pack(side='right', padx=6)
         self.log = tk.Text(body, wrap='none', bg=theme.DEEP, fg=theme.TEXT_SOFT, insertbackground=TEXT, relief='flat',
@@ -5329,7 +5354,7 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
                 {'enabled': sorted(enabled), 'disabled': sorted(disabled)}, indent=2))
 
     # ---- game process ------------------------------------------------------------------------
-    def play(self):
+    def play(self, diagnostic_mode=None):
         if self.process or self.fsr411_downloading or self.update_installing():
             return
         if game_underway():
@@ -5412,11 +5437,16 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
             self.messagebox.showinfo('Bloodborne', _("These are a PS4's own encrypted backups (sdimg_…); they cannot "
                                                      'be used. Export the save with Apollo Save Tool on the PS4 '
                                                      'instead.') + '\n\n' + encrypted)
-        self.auto_backup()
         self.remember_game_start()
+        launch_settings = dict(self.app)
+        if diagnostic_mode in ('inputs', 'generated-only'):
+            launch_settings.update(developer_profile=True, _nvidia_diagnostic=diagnostic_mode)
+        elif diagnostic_mode == 'traversal':
+            launch_settings.update(developer_profile=True, _traversal_diagnostic=True)
         try:
-            self.diagnostic = workshop.DiagnosticSession(self.app)
-            self.process = subprocess.Popen(run_command(), cwd=PORT_DIR, env=self.diagnostic.environment(game_environment(self.app, self.ini)),
+            self.diagnostic = workshop.DiagnosticSession(launch_settings)
+            self.process = subprocess.Popen(run_command(), cwd=PORT_DIR,
+                                            env=self.diagnostic.environment(game_environment(launch_settings, self.ini)),
                                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
         except OSError as error:
@@ -5437,22 +5467,6 @@ class Launcher(workshop.WorkshopMixin, bbport_setup.SetupMixin, bbport_help.Help
             self.root.after(5000, lambda: self.process and self.close())
         elif self.setting('on_play') == 'minimize':
             self.root.after(5000, lambda: self.process and self.root.state() == 'normal' and self.minimize())
-
-    def auto_backup(self):
-        """Before a start: the saves backed up when they changed since the last backup (never in the way)."""
-        if not self.app.get('auto_backup', True):
-            return
-        notes = []
-        try:
-            made = saves.auto_backup(self.save_user_dir(), self.app['game_dir'], notes=notes)
-        except OSError as error:
-            self.append(_('The automatic backup of the saves failed: {}').format(error) + '\n')
-            return
-        for line in notes:
-            self.append(line + '\n')
-        if made:
-            self.append(_('Saves backed up: {}').format(made.name) + '\n')
-            self.refresh_saves()
 
     def window_left(self, size):
         """The game's last size in a window, for 'As I left it' next time."""
@@ -6422,11 +6436,6 @@ def play_without_window(settings):
         settings = {**settings, 'online': False}
         notes.append(f"Online: not signed in to {offline}, so this start plays offline; sign in on the launcher's "
                      'Online play page to play online')
-    if settings.get('auto_backup', True):
-        try:
-            saves.auto_backup(Path(settings.get('user_dir') or DATA_DIR / 'user'), settings['game_dir'], notes=notes)
-        except OSError:
-            pass  # never in the way of a start
     placer = display.Placer(settings, display.parse_size(values.get('output_res')) or (1920, 1080)).start()
     if graphics.get('upscaler') in ('fsr411', 'fsr412'):
         env = bbport_fsr411.environment(PORT_DIR, settings)
@@ -6655,7 +6664,7 @@ def game_environment(settings, graphics=None):
 
 INI_DEFAULTS['xess_preset'] = '2'
 INI_DEFAULTS['object_motion_cache'] = '1'
-APP_DEFAULTS.update(developer_profile=False, save_auto_backup=True, save_backup_retention=10)
+APP_DEFAULTS.update(developer_profile=False, save_backup_retention=10)
 UPSCALERS.insert(1, ('xess', ('XeSS (Intel / compatible GPUs)',)))
 
 bbport_setup.bind(_ThisModule())
@@ -6710,7 +6719,7 @@ def main():
     if args[:1] == ['--after'] and len(args) >= 2:
         wait_for_exit(args[1])
         args = args[2:]
-    saved = load_settings()
+    saved = workshop.migrate_saved_settings(load_settings())
     settings = {**APP_DEFAULTS, **saved}
     settings = geometry_diagnostic_settings(settings, sys.argv)
     settings = nvidia_diagnostic_settings(settings, sys.argv)

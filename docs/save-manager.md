@@ -6,7 +6,7 @@ R55 keeps Save Manager separate from game input and online account controls. Res
 
 I added Save Manager because I want progress protected before a new session or an experimental change. It copies the original save tree without editing the game's save contents, and verifies each snapshot before offering it for restoration.
 
-Open **Game & files → Open Save Manager**. The dialog shows the selected saves folder and has separate **Snapshots** and **Backup options** tabs. It uses the same custom saves location as the launcher; reopening the manager after changing that location selects the new folder.
+Open **Saves → Workshop snapshots → Open Save Manager** in R56, or **Game & files → Open Save Manager** in R55. The dialog shows the selected saves folder and has separate **Snapshots** and **Backup options** tabs. R56 takes the automatic pre-launch snapshot after acquiring the runtime save lease. Imported and older launcher backups remain available in their own section. Save Manager uses the same custom saves location as the launcher; reopening the manager after changing that location selects the new folder.
 
 ## Backups and named snapshots
 

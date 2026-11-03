@@ -36,4 +36,4 @@ Temporal upscalers use their own anti-aliasing. From R42 the game's original AA 
 
 ## R56 session boundaries
 
-Workshop NVIDIA ↔ native FG requires restart. Native DLSS requires startup selection. Native Reflex/Anti-Lag changes require restart. Shared selections are saved immediately; a pending provider uses real frames until restart. Model A/B/C and the RTX Encore opt-in remain startup settings. Real/output caps, overlay controls and supported within-family multiplier changes remain separate. The launcher, ImGui menu and native PC Settings page use the same provider/cap mapping.
+Switching between Workshop NVIDIA and a native FG provider requires restart. Workshop FSR works in either session. Native DLSS requires startup selection. Native Reflex/Anti-Lag changes require restart. Shared selections are saved immediately; a pending provider uses real frames until restart. Model A/B/C and the RTX Encore opt-in remain startup settings. Real/output caps, overlay controls and supported within-family multiplier changes remain separate. The launcher, ImGui menu and native PC Settings page use the same provider/cap mapping.

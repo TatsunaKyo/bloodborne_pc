@@ -1,6 +1,6 @@
 # Current integration map
 
-**Source R56 is unreleased. Published R55 is unchanged.** Supermedo Windows is integrated through `b48052617a919fc4d6b10ae3395e209c9e94e17a` (1.9.7). The previous common upstream baseline was `de2e38af055f09f819946951075c6bb119e62ae6`.
+**Source R56 is unreleased and under review in [PR #5](https://github.com/TatsunaKyo/bloodborne_pc/pull/5). Published R55 is unchanged.** Supermedo Windows is integrated through `b48052617a919fc4d6b10ae3395e209c9e94e17a` (1.9.7). The previous common upstream baseline was `de2e38af055f09f819946951075c6bb119e62ae6`.
 
 | Area | Current owner and contract | Compatibility decision |
 |---|---|---|
@@ -15,7 +15,8 @@
 | Caps | `BbSettings::EffectiveFrameLimit`, absolute flip deadlines | Real cap is canonical; output cap uses the active multiplier. Fixed guest timing cannot be overridden by a live cap. |
 | Shared controls | `bbport_settings`, `bbport_workshop`, native PC menu | One provider mapping and real cap across all three interfaces; XeSS quality stays independent. |
 | Overlay | Workshop compact readout plus upstream system metrics | Real intervals, app-present graph, render latency and Reflex report have separate labels and validity. |
-| Launcher | Upstream 1.9.7 foundation plus `bbport_workshop.py` | Preserve Save Manager, Support Report, cheats, model controls and gated Encore. Actual page construction is tested. |
+| Launcher | Upstream 1.9.7 foundation plus `bbport_workshop.py` | Graphics owns the provider/model controls; Saves owns Save Manager; Advanced and Log expose Support Report. Actual Tk construction and selection are tested. |
+| Automatic save snapshots | Runtime Save Manager in `run.py` | Both launcher and headless starts use the same setting. One pre-launch snapshot under the runtime save lease. Legacy/import/optional exit backups retain their original format. |
 | Distribution | `tools/assemble_windows.py` | One verified ZIP and checksum. Fresh executables/assets/current startup sources, pinned NVIDIA/AMD dependencies and required licenses/source. |
 
 ## Provider and latency boundary
@@ -27,11 +28,11 @@ flowchart TD
     B -->|No| D["Native Vulkan latency owner"]
     C --> E["Workshop NVIDIA / FSR / real frames"]
     D --> F["Native FG or Workshop FSR"]
-    E --> G["Cross-family request: save and restart"]
-    F --> G
+    E --> G["Request a native provider: save and restart"]
+    F --> H["Request Workshop NVIDIA: save and restart"]
 ```
 
-Stock RTX 40/50 files remain the default. RTX 20/30 Encore is opt-in, requires the user's compatible external library and does not bundle NR. An initialized mod FG provider does not prove that its NR path works.
+Workshop FSR can run with either startup owner. Stock RTX 40/50 files remain the default. RTX 20/30 Encore is opt-in, requires the user's compatible external library and does not bundle NR. An initialized mod FG provider does not prove that its NR path works.
 
 ## Accepted, superseded and pending
 
@@ -40,6 +41,7 @@ Stock RTX 40/50 files remain the default. RTX 20/30 Encore is opt-in, requires t
 | Integrated in source | Upstream 1.9.7 renderer/launcher/input/save/online changes; FSR 4.1.1/4.1.2; experimental ML-FG; PC Settings and memory/latency readouts. |
 | Preserved and reconciled | Workshop HDR, Streamline x2–x6, DLSS model requests/evidence, XeSS modes, independent caps, cheats, save/support tools and gated Encore. |
 | Superseded | Duplicate native FG adapter; old tracker/sparse arena generation; split-package writer for new releases; parallel independent cap/provider selections. |
+| Replaced test coverage | Removed fixture adapters for the old tracker, sparse arena, speculative pipeline queue and vertex layouts. Production tracker, warmup, descriptor ordering and renderer builds now cover the corresponding boundaries. |
 | Hardware acceptance open | Cemetery traversal hitch, physical 120-Hz cadence, stair halos and transient foreground assets; AMD/RTX 20/30/provider/HDR matrix. |
 | Future work | HUDless colour/UI recomposition; Dynamic MFG on a supported Vulkan API; XeSS FG/XeLL; named save profiles. |
 

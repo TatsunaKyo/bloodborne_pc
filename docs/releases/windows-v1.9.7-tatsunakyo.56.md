@@ -22,7 +22,8 @@ This is the source changelog. The latest published binary remains [Revision 55](
 
 ## Launcher, packaging and documentation
 
-- Adopt the upstream simple/expert launcher foundation with Workshop branding and tools.
+- Adopt the upstream simple/expert launcher with Workshop branding. Keep XeSS quality independent, restore the three capture/compare actions, and expose Support Report from Advanced and Log.
+- Keep one automatic pre-launch snapshot under the Save Manager lease, migrate the existing backup preference, and preserve imported/legacy backups.
 - Keep the updater on exact TatsunaKyo stable assets and require checksum/release identity validation before transactional installation.
 - Use one release assembler, include the new capability helper, launcher assets and pinned AMD runtime/source/license closure, and omit local API/debug staging records.
 - Refresh the README, current guides, integration map and roadmap. Keep source status separate from the published release and retain dated investigation records.

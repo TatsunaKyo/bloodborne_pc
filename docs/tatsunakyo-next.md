@@ -1,6 +1,6 @@
 # Current work and roadmap
 
-Published R55 remains the binary baseline. Unreleased R56 integrates Supermedo Windows 1.9.7 and retains the Workshop features. [Exact integration decisions](investigations/2026-10-20-upstream-integration.md) · [Current reports](known-issues.md) · [Source maintenance](maintenance.md)
+Published R55 remains the binary baseline. Unreleased R56 integrates Supermedo Windows 1.9.7 and retains the Workshop features. [R56 integration decisions and evidence](investigations/2026-11-02-supermedo-197.md) · [Current reports](known-issues.md) · [Source maintenance](maintenance.md)
 
 ## Integration state
 
@@ -11,6 +11,8 @@ The [integration map](integration-map.md) records current owners, retained safet
 Save Manager and Support Report are shipped. Input supports three binding slots, combinations, direct mouse camera, reloadable bindings and selectable prompts. FOV defaults to 43°; ultrawide HUD placement and background mute are available. Native Supermedo SDR FG choices coexist with the Workshop HDR-capable routes. These are included features, with further compatibility and usability work still possible.
 
 ## Rendering priorities
+
+Finish the Windows package/startup check and replay the same route on the same driver with R55 and the R56 candidate before changing the report status. Keep compiler, software Vulkan, and hardware results separate.
 
 The repeatable cemetery hitch, 119–121 output/camera unevenness and remaining character/foreground artifacts remain open. Test the affected route with FG both off and on, separate host streaming/retirement from shader compilation and physical display cadence, and retain the exact source/runtime comparison. Controlled resource improvements are not proof of a scene fix.
 

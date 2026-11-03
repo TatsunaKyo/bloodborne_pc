@@ -23,6 +23,8 @@
 </table>
 </div>
 
+**Published download: Revision 55.** The Supermedo 1.9.7 integration and its verification are tracked in [PR #5](https://github.com/TatsunaKyo/bloodborne_pc/pull/5). Revision 56 is unreleased.
+
 My revision of [Supermedo's Windows port](https://github.com/Supermedo/bloodborne_pc), built on bbport and the shadPS4 renderer. The aim is to make Bloodborne more comfortable to play on a modern Windows PC, with more graphics choices, better window controls and settings you can change during play. This project would NOT be possible without the original work and the people involved.
 
 The Crowned Workshop is my own place to work on the port. The workshop, lantern and crowned TK emblem are part of that identity; the credit for the game and the original port stays with their creators.
@@ -32,7 +34,7 @@ The Crowned Workshop is my own place to work on the port. The workshop, lantern 
 
 ## Release and source status
 
-**Published download: Revision 55. Current source: Revision 56, based on Supermedo Windows 1.9.7, unreleased.** The source update integrates the upstream renderer, low-VRAM handling, parallel pipeline preload, FSR 4.1.1/4.1.2, experimental AMD ML Frame Generation, native PC Settings, launcher, input, save and online fixes while retaining Workshop features.
+The R56 source update integrates the upstream renderer, low-VRAM handling, parallel pipeline preload, FSR 4.1.1/4.1.2, experimental AMD ML Frame Generation, native PC Settings, launcher, input, save and online fixes while retaining Workshop features.
 
 [Integration and compatibility map](docs/integration-map.md) · [Source changelog](docs/releases/windows-v1.9.7-tatsunakyo.56.md) · [Verification](docs/investigations/2026-11-02-supermedo-197.md)
 
@@ -92,7 +94,7 @@ The two Workshop routes keep SDR/HDR10 support and live generation controls. Cur
 | DLSS FG — Supermedo | SDR | Startup selection / restart |
 | AMD ML FG 4.0.1 / 4.0.2 (unreleased source) | SDR | Experimental native route; capability and runtime checks |
 
-The normal cap counts real game frames; the optional output cap includes generated frames. Switching between Workshop NVIDIA and a native backend requires a restart because the NVIDIA interposer is selected before Vulkan device creation. Native latency changes also require restart. **NVIDIA FG model: Default / A / B / C** is separate from DLSS SR's model letter and applies at the next launch. Its OSD field distinguishes an evaluated driver report from a saved request/error. [Provider setup, model evidence and limits](docs/frame-generation.md)
+The normal cap counts real game frames; the optional output cap includes generated frames. Switching between Workshop NVIDIA and a native backend requires a restart because the NVIDIA interposer is selected before Vulkan device creation. Workshop FSR works in either session. Native latency changes also require restart. **NVIDIA FG model: Default / A / B / C** is separate from DLSS SR's model letter and applies at the next launch. Its OSD field distinguishes an evaluated driver report from a saved request/error. [Provider setup, model evidence and limits](docs/frame-generation.md)
 
 > [!IMPORTANT]
 > [Revision 40](https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/windows-v1.6-tatsunakyo.40-EXPERIMENTAL) introduced EXPERIMENTAL **DLSSG mod for RTX 20/30** through [RTX Encore](https://github.com/SilyNoMeta/rtx-encore). Be mindful of potential bugs and instability, DLSSG is NOT officially supported on any RTX card below 40 series, Vulkan is only experimentally supported by RTX Encore at the moment and I have no RTX 20/30 series card to test this with. I did and will do my best to look through the code, but as you can guess, some issues are bound to arise ONLY when actually playing the game. All my thanks go to the original creators and developers.
@@ -137,7 +139,7 @@ I also added a choice for when you Alt-Tab or leave the game in the background. 
 | **30 FPS** | Limits real background frames to 30, or your lower foreground cap. |
 | **60 FPS** | Limits real background frames to 60, or your lower foreground cap. |
 
-FG is suspended during the background pause or limit, and your foreground settings return when you come back. Frame limits are in **Frames** and background behavior is in **Window**, with the same categories in both interfaces. **The caps and background policy can change live.**
+FG is suspended during the background pause or limit, and your foreground settings return when you come back. In the game menu, frame limits are in **Frames** and background behavior is in **Window**. The R56 launcher groups these choices under **Graphics**. **The caps and background policy can change live.**
 
 [Frame-limit behavior and timing details](docs/display-and-overlay.md#fps-limits) · [Focus, pause and presentation](docs/display-and-overlay.md#window-and-background)
 
@@ -202,7 +204,7 @@ They start off and share the **Cheats** category in both interfaces. The [curren
 
 ![Save Manager: automatic backups or named snapshots, verified save files and metadata, and closed-game restoration with rollback](docs/assets/features/save-manager.png)
 
-I added **Save Manager** to protect progress before a new session or an experimental change. Open it from **Game & files** to create named snapshots or restore a verified backup with a rollback copy of your current saves. It preserves the original save files, metadata and save memory, including custom saves locations.
+I added **Save Manager** to protect progress before a new session or an experimental change. Open it from **Saves → Workshop snapshots** in the R56 launcher to create named snapshots or restore a verified backup with a rollback copy of your current saves. It preserves the original save files, metadata and save memory, including custom saves locations.
 
 Automatic backups run before launching and start on, with ten snapshots kept by default. You can adjust that limit from one to one hundred; manual and rollback copies are kept. Save operations require a closed game, and an interrupted restore is recovered before the next launch.
 
@@ -212,19 +214,19 @@ Automatic backups run before launching and start on, with ten snapshots kept by 
 
 ![Play quick choices lead to seven organized settings pages with shared preferences](docs/assets/features/launcher.png)
 
-I redesigned the launcher around my workshop, lantern and crowned TK emblem, and organized the settings so that the visual identity also makes it easier to use and reflects all the changes made with the project. The sidebar separates the seven shared **Settings** pages from the launcher tools, and bordered sections separate related controls within a page.
+I redesigned the launcher around my workshop, lantern and crowned TK emblem, and organized the settings so that the visual identity also makes it easier to use and reflects all the changes made with the project. R56 brings the Workshop controls into Supermedo’s newer launcher. Choose **Expert** to browse the full sidebar; **Play** keeps the launch controls close.
 
-**Play** keeps the quick choices together, grouped into image, frames and window/overlay. The DLSS model selector appears only when DLSS is selected, XeSS has its own quality selector, and NVIDIA FG shows its multiplier on a separate row. Each complete setting has one home in the detailed pages; Play is a shortcut to those same preferences. **Game & files**, mods, online setup and logs remain launcher tools.
+Open **Graphics** for DLSS models, XeSS quality, Frame Generation, both frame caps and overlay settings. The DLSS model control appears with DLSS selected; the Workshop NVIDIA multiplier, model and Encore opt-in appear with that FG route selected. **Saves**, **Cheats**, **Advanced** and **Log** house the corresponding Workshop tools. The images on this page show the published R55 layout.
 
 [Launcher tour, category table and screenshots](docs/launcher-and-menu.md#the-launcher)
 
 ### A compact and cohesive in-game menu
 
-![Seven matching settings categories, available in English or Russian with Insert or L3+R3](docs/assets/features/in-game.png)
+![Seven in-game settings tabs, available in English or Russian with Insert or L3+R3](docs/assets/features/in-game.png)
 
 I translated the port's settings menu into **English**, retained Russian, and replaced the long page with **seven tabs**: Image, Frames, Window, Overlay, Cheats, Effects and Advanced. Press **Insert** or **L3+R3** to open it. Close and restart controls stay within reach, with a layout that adapts to the available space.
 
-Those seven categories now match the launcher. If you find Reflex under Frames before launching, you find it under Frames during play too. Sharpening stays in Image, background behavior in Window, and model detail/game effects in Effects. Both interfaces use the same saved preferences, and settings that need a restart tell you so.
+The game menu keeps these seven tabs in R56. The launcher and the controller-driven **System → PC Settings** page share its provider and cap choices. The [live settings guide](docs/live-settings.md) explains which changes can take effect during play.
 
 #### LIVE editing during play
 
@@ -240,7 +242,7 @@ For live upscaler quality/output changes, enable **Image → Live resolution cha
 
 I added an opt-in profiler so a crash or performance report can include more than a description of what happened. It keeps a separate session folder with logs, settings, timings and Windows crash details when available. Enable **Advanced → Diagnostics** before reproducing a problem; it starts off for normal play because profiling can add overhead.
 
-I also added **Generate Support Report**, available in Diagnostics and Log. It brings the useful information together, removes personal paths and credentials, and lets you inspect every included file before exporting a ZIP. The anonymous CPU/RAM profile is optional, and you choose whether to attach the report to GitHub yourself.
+I also added **Generate Support Report**, available in Advanced → Workshop diagnostics and Log in R56. It brings the useful information together, removes personal paths and credentials, and lets you inspect every included file before exporting a ZIP. The anonymous CPU/RAM profile is optional, and you choose whether to attach the report to GitHub yourself.
 
 [Support Report contents, privacy and hardware submissions](docs/support-reports.md)
 

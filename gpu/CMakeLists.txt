@@ -103,6 +103,26 @@ add_subdirectory(third_party/sirit EXCLUDE_FROM_ALL)
 set(FFX_VK_PORTABLE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FFX_VK_PORTABLE_BUILD_PROBE OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/fsr-vulkan EXCLUDE_FROM_ALL)
+# The vendor configure step can unpack the FidelityFX SDK. Apply the checked-in
+# fixes after extraction so direct CMake builds and both build.sh paths agree.
+find_package(Git REQUIRED)
+file(GLOB fsr_vk_patches CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/patches/fsr-vulkan/*.patch")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${fsr_vk_patches})
+set(fsr_vk_apply "${GIT_EXECUTABLE}" apply --directory=gpu/third_party/fsr-vulkan)
+foreach(patch IN LISTS fsr_vk_patches)
+    execute_process(COMMAND ${fsr_vk_apply} --reverse --check "${patch}"
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+                    RESULT_VARIABLE already_applied ERROR_QUIET)
+    if (NOT already_applied STREQUAL "0")
+        execute_process(COMMAND ${fsr_vk_apply} "${patch}"
+                        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+                        RESULT_VARIABLE patch_result ERROR_VARIABLE patch_error)
+        if (NOT patch_result STREQUAL "0")
+            message(FATAL_ERROR "Cannot apply ${patch}: ${patch_error}")
+        endif()
+    endif()
+endforeach()
+
 
 # Host shaders -> headers (same scheme as shadPS4's host_shaders/CMakeLists.txt).
 set(SHADER_SRC ${CMAKE_CURRENT_SOURCE_DIR}/shadps4/video_core/host_shaders)

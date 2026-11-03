@@ -4,7 +4,7 @@
 
 I added this to make bug reports easier to put together without asking you to upload a whole diagnostic folder. It reuses the logs and measurements the port already records. It does not enable another profiler or start a background benchmark.
 
-Open **Advanced → Diagnostics → Generate Support Report**, or use the same button in **Log**. Select a file in the list to inspect exactly what will go into the ZIP. You can leave recent logs out, and the anonymous CPU/RAM profile starts off. **Export ZIP** verifies the archive before saving it. Sharing is your choice: the bug and performance buttons open GitHub's forms, where you attach the file yourself.
+Open **Advanced → Workshop diagnostics → Generate Support Report** in R56 (**Advanced → Diagnostics** in R55), or use the same button in **Log**. Select a file in the list to inspect exactly what will go into the ZIP. You can leave recent logs out, and the anonymous CPU/RAM profile starts off. **Export ZIP** verifies the archive before saving it. Sharing is your choice: the bug and performance buttons open GitHub’s report links. If Issues is disabled, follow the repository’s support instructions. The launcher never uploads the ZIP.
 
 ## Included information
 

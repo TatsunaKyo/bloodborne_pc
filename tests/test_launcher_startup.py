@@ -65,13 +65,13 @@ def exercise_main(module, folder, expect_error=False):
                     assert app.current_page == 'play'
                     assert f'R{module.VERSION.rsplit(".", 1)[1]}' in app.byline.cget('text')
                     assert app.brand.winfo_exists()
-                    assert app.nav['graphics'].winfo_exists()
+                    assert app.nav['graphics'][0].winfo_exists()
                     assert 'by TatsunaKyo' in app.byline.cget('text')
                     assert app.process is None and not app.downloading
                     assert module.LANG == language
                     # Close through the normal handler, including settings persistence.
                     for timer in window.tk.call('after', 'info'):
-                        window.after_cancel(timer)
+                        window.tk.call('after', 'cancel', timer)
                     app.close()
                     results.append({'language': language, 'arguments': arguments,
                                     'frozen_main': True, 'first_event_cycle': True,
@@ -92,6 +92,9 @@ def exercise_main(module, folder, expect_error=False):
              patch.object(module, 'DATA_DIR', data), patch.object(module, 'CONFIG_DIR', profile), \
              patch.object(module, 'CONFIG_FILE', config), \
              patch.object(module.Launcher, 'detect_gpu', lambda self: None), \
+             patch.object(module.updater, 'underway', return_value=False), \
+             patch.object(module, 'one_launcher', return_value=True, create=True), \
+             patch.object(module, 'bring_to_front_on_request', create=True), \
              patch.object(module.Launcher, 'check_update', lambda self: None), \
              patch.object(module.Launcher, '__init__', construct), \
              patch.object(module, 'play_without_window', side_effect=AssertionError('Test attempted to launch a game')), \
@@ -110,7 +113,7 @@ def exercise_main(module, folder, expect_error=False):
                 for window in windows:
                     try:
                         for timer in window.tk.call('after', 'info'):
-                            window.after_cancel(timer)
+                            window.tk.call('after', 'cancel', timer)
                         window.destroy()
                     except tk.TclError:
                         pass

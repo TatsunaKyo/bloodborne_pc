@@ -1309,7 +1309,7 @@ class SetupMixin:
 
     def backups_card(self, parent):
         """The backups, newest first: what each is, when, who is in it; Restore, Rename, Copy to,
-        Show in folder, Delete. Back up now, Add a backup file, the automatic backup switch."""
+        Show in folder, Delete. Back up now, Add a backup file and the optional exit backup."""
         tk, ttk, px = self.tk, self.ttk, self.px
         card = ttk.Frame(parent, style='Card.TFrame', padding=(px(22), px(16)))
         body = tk.Frame(card, bg=theme.CARD)
@@ -1321,12 +1321,6 @@ class SetupMixin:
                 return
             for child in body.winfo_children():
                 child.destroy()
-            ttk.Checkbutton(body, text=_('Back up automatically before every start'),
-                            variable=self.var('auto_backup', 'app'), style='Card.TCheckbutton').pack(anchor='w')
-            self.wrap_within(tk.Label(body, text=_('Only when you played since the last backup. The last {} automatic '
-                                                   'backups are kept; the ones you make yourself always.').format(
-                saves.AUTO_KEEP), bg=theme.CARD, fg=theme.MUTED, font=(theme.BODY, 9), justify='left', anchor='w'),
-                640).pack(fill='x', padx=(px(26), 0))
             ttk.Checkbutton(body, text=_('Back up after every game exit'),
                             variable=self.var('exit_backup', 'app'), style='Card.TCheckbutton').pack(anchor='w', pady=(px(8), 0))
             self.wrap_within(tk.Label(body, text=_('Copies the final save after a normal exit or crash. No periodic '
@@ -1853,11 +1847,15 @@ class SetupMixin:
         self.characters_view = self.characters_card(f)
         self.characters_view.grid(row=self.next_row(f), column=0, columnspan=2, sticky='we', pady=(px(4), 0))
         self.index_entry(self.characters_view, _('Your characters'), _('Saves'), 'characters')
-        self.section(f, _('Backups'))
+        self.section(f, _('Workshop snapshots'))
+        self.check(f, 'auto_backup', 'app', _('Back up automatically before every start'),
+                   _('Automatic snapshots are kept in Save Manager. Use Backup options there to set retention.'))
+        self.workshop_button(f, _('Open Save Manager…', 'Открыть менеджер сохранений…'),
+                             self.open_save_manager, 'button:save_manager')
+        self.section(f, _('Legacy backups and import'))
         self.backups_view = self.backups_card(f)
         self.backups_view.grid(row=self.next_row(f), column=0, columnspan=2, sticky='we', pady=(px(4), 0))
         # the card is drawn anew on every change: the search points at the card
-        self.index_entry(self.backups_view, _('Back up automatically before every start'), _('Backups'), 'auto_backup')
         self.index_entry(self.backups_view, _('Back up after every game exit'), _('Backups'), 'exit_backup')
         self.index_entry(self.backups_view, _('Back up now'), _('Backups'), 'button:backup')
         self.index_entry(self.backups_view, _('Restore a backup'), _('Backups'), 'button:restore')
