@@ -30,9 +30,12 @@ def load(path,name):
 
 def fixture(xml):
     compiler=load(ROOT/'scripts/patches.py','fixture_compiler')
-    names=[*compiler.FINGERPRINT_PATCHES,'Disable AA']
+    names={*compiler.FINGERPRINT_PATCHES, *compiler.FIXES, 'Disable AA'}
+    names.update(name for group in compiler.PATCH_GROUPS.values() for name in group)
     ranges=compiler.patch_sites(xml,'01.09',names)
-    header=bytearray(64+56*len(ranges));header[:6]=b'\x7fELF\x02\x01'
+    header=bytearray(64+56*len(ranges))
+    header[:7]=b'\x7fELF\x02\x01\x01'
+    struct.pack_into('<H',header,0x12,62)  # EM_X86_64
     struct.pack_into('<Q',header,0x20,64);struct.pack_into('<HH',header,0x36,56,len(ranges))
     body=bytearray()
     for index,(start,end) in enumerate(ranges):
@@ -42,10 +45,24 @@ def fixture(xml):
     elf=bytes(header+body)
     expected={mode:[[offset,data.hex()] for offset,data in compiler.compile_patches(
         xml,names,'01.09',compiler.eboot_segments(elf))] for mode,names in compiler.FPS_PRESETS.items()}
-    first=compiler.patch_sites(xml,'01.09')[0][0]
-    index=next(i for i,(start,end) in enumerate(ranges) if start<=first<end)
-    file_offset=struct.unpack_from('<Q',elf,64+56*index+8)[0]+first-ranges[index][0]
-    return elf,{'fingerprint':compiler.patch_fingerprint(elf,xml),'fps_writes':expected,'corrupt_offset':file_offset}
+    def byte_for(group):
+        first=compiler.patch_sites(xml,'01.09',group)[0][0]
+        index=next(i for i,(start,end) in enumerate(ranges) if start<=first<end)
+        return struct.unpack_from('<Q',elf,64+index*56+8)[0]+first-ranges[index][0]
+
+    return elf,{
+        'fingerprint':compiler.patch_fingerprint(elf,xml),
+        'fingerprints':{key:compiler.patch_fingerprint(elf,xml,names=group)
+                        for key,group in compiler.PATCH_GROUPS.items()},
+        'fps_writes':expected,
+        'corrupt_offsets':sorted({byte_for(group) for group in compiler.PATCH_GROUPS.values()}),
+    }
+
+
+def fixture_sfo():
+    key, value = b'APP_VER\0', b'01.09\0'
+    return struct.pack('<4sIIII',b'\0PSF',0x101,36,36+len(key),1) + \
+        struct.pack('<HHIII',0,0x204,len(value),len(value),0) + key + value
 
 
 def child(stage,specification,control=False,compiled=False):
@@ -54,11 +71,17 @@ def child(stage,specification,control=False,compiled=False):
     compiler=load(stage/'scripts/patches.py','patches');sys.modules['patches']=compiler
     # A synthetic fixture cannot have the retail digest. Pin its expected digest
     # from the current source schema, independently of the XML actually shipped.
-    compiler.PATCH_FINGERPRINTS['01.09']=spec['fingerprint']
+    compiler.PATCH_FINGERPRINTS['01.09'] = (spec['fingerprints']
+        if isinstance(compiler.PATCH_FINGERPRINTS['01.09'], dict) else spec['fingerprint'])
     run=load(stage/'run.py','packaged_run')
-    run.no_console=lambda:0 # host adaptation of the Win32 console query, no process creation
+    # These cases simulate separate launches inside one recording process.
+    run.hold_game_mutex=lambda:True
+    run.no_console=lambda:0
     game=stage/'fixture-game';game.mkdir()
-    (game/'eboot.bin').write_bytes(b'synthetic fixture, no game code')
+    (game/'sce_module').mkdir()
+    (game/'sce_sys').mkdir()
+    (game/'sce_sys/param.sfo').write_bytes(fixture_sfo())
+    (game/'eboot.bin').write_bytes((stage/'fixture.elf').read_bytes())
     data=stage/'fixture-data';data.mkdir();out=data/'out';out.mkdir()
     probe=stage/'recording-probe.exe';probe.touch()
     env=dict(os.environ)
@@ -67,7 +90,7 @@ def child(stage,specification,control=False,compiled=False):
     os.environ.update(BB_GAME_DIR=str(game),BB_DATA_DIR=str(data),BB_CONFIG=str(data/'bbport.ini'),
         BB_PROBE=str(probe),BB_SKIP_GAME_CHECK='1',BB_SAVE_AUTO_BACKUP='0')
     current={};records=[]
-    def script(name,*args,capture=False,optional=False):
+    def script(name,*args,capture=False,optional=False,timeout=None):
         args=list(map(str,args))
         if name=='mods.py':return str(game)
         if name=='prepare.py':(out/'eboot.elf').write_bytes((stage/'fixture.elf').read_bytes());return
@@ -112,8 +135,12 @@ def child(stage,specification,control=False,compiled=False):
     if not control and not reject:cases += [('60','off'),('90','native_fsr'),('uncap','off')]
     old_argv=sys.argv;sys.argv=[str(stage/'run.py')]
     for requested,provider in cases:
-        current.update(requested=requested,provider=provider);os.environ['BB_FPS']=requested
-        (data/'bbport.ini').write_text('upscaler=dlss\npreset=3\noutput_res=1920x1080\nquit_to_desktop=0\n')
+        current.update(requested=requested,provider=provider)
+        os.environ['BB_FPS']=requested
+        os.environ['BB_SHARED_GRAPHICS_CONFIG']='1'
+        (data/'bbport.ini').write_text('upscaler=dlss\npreset=3\noutput_res=1920x1080\n'
+                                     'quit_to_desktop=0\npc_menu=0\nrebirth=0\n'
+                                     f'fps_mode={requested}\nframe_cap=60\n')
         (data/'bbport.menu.ini').write_text(f'frame_generation={provider}\nreal_fps_limit=60\n')
         with contextlib.redirect_stdout(io.StringIO()):assert run.main()==0
     sys.argv=old_argv
@@ -132,12 +159,15 @@ def child(stage,specification,control=False,compiled=False):
             finally:sys.executable=original_executable;del sys.frozen
         else:module=load(stage/'launcher/bbport_launcher_win.py','startup_launcher')
         settings=dict(module.APP_DEFAULTS,frame_cap='30',fps_mode='75')
-        for selected,expected in (('-1',None),('0','0'),('60','60'),('120','120')):
-            settings['real_fps_limit']=selected;os.environ['BB_FPS_LIMIT']='30'
+        ini=data/'bbport.ini'
+        for selected,expected in (('',None),('0','0'),('60','60'),('120','120')):
+            ini.write_text(f'upscaler=dlss\nfps_mode=uncap\nframe_cap={selected}\n')
+            os.environ['BB_FPS_LIMIT']='30'
             actual=module.game_environment(settings)
+            run.refresh_shared_graphics(actual,ini)
             assert actual.get('BB_FPS_LIMIT')==expected,(selected,actual.get('BB_FPS_LIMIT'))
-        settings.update(real_fps_limit='-1',extra_env='BB_FPS_LIMIT=90')
-        assert module.game_environment(settings)['BB_FPS_LIMIT']=='90' # explicit advanced override
+        settings.update(extra_env='BB_FPS_LIMIT=90')
+        assert module.game_environment(settings)['BB_FPS_LIMIT']=='90' # explicit launcher environment
     os.environ.clear();os.environ.update(env)
     print(json.dumps({'control':control,'compiled_launcher':compiled,'cases':records}))
 
@@ -151,7 +181,10 @@ def main():
     if args.child:return child(args.child,args.specification,args.control,args.compiled)
     elf,spec=fixture(ROOT/'patches/Bloodborne.xml')
     if args.reject:
-        corrupt=bytearray(elf);corrupt[spec['corrupt_offset']]^=0xff;elf=bytes(corrupt);spec['reject']=True
+        corrupt=bytearray(elf)
+        for offset in spec['corrupt_offsets']:
+            corrupt[offset]^=0xff
+        elf=bytes(corrupt);spec['reject']=True
     with tempfile.TemporaryDirectory(prefix='packaged-startup-') as temporary:
         stage=Path(temporary)
         if args.package:

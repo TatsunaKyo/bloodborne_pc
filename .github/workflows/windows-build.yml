@@ -11,6 +11,8 @@ on:
         default: stable
 permissions:
   contents: read
+env:
+  PYTHONUTF8: '1'
 concurrency:
   group: windows-candidate-${{ github.ref }}
   cancel-in-progress: true
@@ -41,6 +43,12 @@ jobs:
       - name: Install the pinned CLANG64 package set
         shell: msys2 {0}
         run: pacman -U --noconfirm out/dependencies/*.pkg.tar.zst
+      - name: Check launch timing and the incompatible executable fallback
+        shell: pwsh
+        run: |
+          python tests/test_packaged_startup.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/test_packaged_startup.py --reject
       - name: Compile native programs and CPU regression executables
         shell: msys2 {0}
         run: |
@@ -74,6 +82,8 @@ jobs:
           "$WINPYTHON" tools/assemble_windows.py --baseline out/dependencies/runtime-baseline.zip --dll-dir "$(cygpath -w /clang64/bin)" --channel "$RELEASE_CHANNEL"
           for package in dist/*.zip; do
             "$WINPYTHON" tests/test_packaged_startup.py --package "$package" --compiled
+            "$WINPYTHON" tests/test_packaged_startup.py --package "$package" --compiled --reject
+            cat "$package.sha256"
           done
       - name: Upload the single package and checksum
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

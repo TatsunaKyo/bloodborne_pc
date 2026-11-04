@@ -30,10 +30,10 @@ def git(*args):
 
 
 def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=None):
-    lock=json.loads((ROOT/'packaging/windows/runtime-baseline.lock.json').read_text())
+    lock=json.loads((ROOT/'packaging/windows/runtime-baseline.lock.json').read_text(encoding='utf-8'))
     baseline=Path(baseline); native=Path(native); launcher=Path(launcher); destination=Path(destination)
     require(checksum(baseline)==lock['sha256'],'Baseline runtime bundle checksum mismatch')
-    source=ast.parse((ROOT/'launcher/bbport_launcher_win.py').read_text())
+    source=ast.parse((ROOT/'launcher/bbport_launcher_win.py').read_text(encoding='utf-8'))
     version=next(n.value.value for n in source.body if isinstance(n,ast.Assign)
                  and any(isinstance(t,ast.Name) and t.id=='VERSION' for t in n.targets))
     revision=version.rsplit('.',1)[1]; commit=git('rev-parse','HEAD').decode().strip()
@@ -100,7 +100,7 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         command='@echo off\r\ncd /d "%~dp0"\r\npowershell -NoProfile -Command "$p=Join-Path (Get-Location) \'Bloodborne.exe\'; if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne \''+programs['Bloodborne.exe']+'\') {Write-Error \'Incorrect launcher for TatsunaKyo revision '+revision+'.\'; exit 1}; Start-Process -FilePath $p -WorkingDirectory (Get-Location)"\r\n'
         (stage/'Start-Verified-Launcher.cmd').write_bytes(command.encode('ascii'))
         source_dir=stage/'source';source_dir.mkdir(exist_ok=True)
-        base=json.loads((temp/'baseline'/old/'BUILD-IDENTITY.json').read_text())['upstream_base']
+        base=json.loads((temp/'baseline'/old/'BUILD-IDENTITY.json').read_text(encoding='utf-8'))['upstream_base']
         (source_dir/'tatsunakyo-revision.patch').write_bytes(git('diff','--binary',base,commit))
         provenance={'project':'Bloodborne: The Crowned Workshop','version':version,'revision':int(revision),
                     'channel':channel,'release_tag':canonical_tag(version,channel),'source_commit':commit,
@@ -124,8 +124,8 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
             subprocess.run(['pacman','-Q'],check=True,stdout=record)
         with (records/'compiler.txt').open('wb') as record:
             subprocess.run(['clang++','--version'],check=True,stdout=record)
-        notes=(ROOT/f'docs/releases/windows-v{version}.md').read_text()
-        (stage/'README-EN.txt').write_text(notes)
+        notes=(ROOT/f'docs/releases/windows-v{version}.md').read_text(encoding='utf-8')
+        (stage/'README-EN.txt').write_text(notes, encoding='utf-8')
         # The portable current player guide is kept instead of a previous revision summary.
         (stage/'README-IT.txt').write_text('Bloodborne: The Crowned Workshop\nVersione '+version+'\nApri README-Windows.txt per installazione, impostazioni live e documentazione aggiornata.\n')
         for p in stage.rglob('__pycache__'):shutil.rmtree(p,ignore_errors=True)

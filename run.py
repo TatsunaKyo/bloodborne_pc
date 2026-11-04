@@ -906,7 +906,9 @@ def main():
                 def backup_after_exit(process):
                     return wait_and_backup(process, saves_dir, original_game, enabled=True)
                 after_exit = backup_after_exit
-            return run_game(command, config=config, env=env.copy(), after_exit=after_exit,
+            # The renderer must use the applied timing, including the safety
+            # fallback when the guest executable does not match the FPS patches.
+            return run_game(command, config=config, env={**env, 'BB_FPS': fps}, after_exit=after_exit,
                             stdin=subprocess.DEVNULL, creationflags=no_console())
         finally:
             if game_over: game_over.set()
