@@ -1,5 +1,7 @@
 # Cheats
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 I added player damage, incoming enemy damage reduction, Blood Echoes and movement multipliers, infinite stamina, consumables kept after use and No Fall Damage. I put them alongside the original cheats so you can choose them before starting or change them while playing from Insert / L3+R3. All seven start off. The shared menu preferences preserve your choices when the launcher rewrites its graphics settings.
 
 The [current reports](known-issues.md) include the remaining Blood Echoes multiplier check. Earlier shooting and sprint-stamina investigations are kept in the [test history](history/testing-through-21.md).

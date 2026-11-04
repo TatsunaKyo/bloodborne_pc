@@ -1,5 +1,4 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
-// SPDX-FileCopyrightText: Copyright 2026 TatsunaKyo
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
@@ -8,8 +7,6 @@
 #include "video_core/renderer_vulkan/vk_compute_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
-
-#include "video_core/renderer_vulkan/vk_shader_util.h"
 
 namespace Vulkan {
 
@@ -87,9 +84,6 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
     const auto device = instance.GetDevice();
     auto [descriptor_set_result, descriptor_set] =
         device.createDescriptorSetLayoutUnique(desc_layout_ci);
-    if (preloading && descriptor_set_result != vk::Result::eSuccess) {
-        throw CacheLoadError("Driver rejected cached pipeline layout or pipeline");
-    }
     ASSERT_MSG(descriptor_set_result == vk::Result::eSuccess,
                "Failed to create compute descriptor set layout: {}",
                vk::to_string(descriptor_set_result));
@@ -103,9 +97,6 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
         .pPushConstantRanges = &push_constants,
     };
     auto [layout_result, layout] = instance.GetDevice().createPipelineLayoutUnique(layout_info);
-    if (preloading && layout_result != vk::Result::eSuccess) {
-        throw CacheLoadError("Driver rejected cached pipeline layout or pipeline");
-    }
     ASSERT_MSG(layout_result == vk::Result::eSuccess,
                "Failed to create compute pipeline layout: {}", vk::to_string(layout_result));
     pipeline_layout = std::move(layout);
@@ -115,14 +106,14 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
         .stage = shader_ci,
         .layout = *pipeline_layout,
     };
-    std::shared_lock driver_lock{DriverCacheMutex()};
     auto [pipeline_result, pipe] =
         instance.GetDevice().createComputePipelineUnique(pipeline_cache, compute_pipeline_ci);
-    if (preloading && pipeline_result != vk::Result::eSuccess) {
-        throw CacheLoadError("Driver rejected cached pipeline layout or pipeline");
+    // bbport: as for graphics pipelines, a driver failure skips its dispatches.
+    if (pipeline_result != vk::Result::eSuccess) {
+        LOG_ERROR(Render_Vulkan, "Failed to create compute pipeline {}: {}; its dispatches are skipped",
+                  debug_str, vk::to_string(pipeline_result));
+        return;
     }
-    ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create compute pipeline: {}",
-               vk::to_string(pipeline_result));
     pipeline = std::move(pipe);
     SetObjectName(device, *pipeline, "Compute Pipeline {}", debug_str);
 }

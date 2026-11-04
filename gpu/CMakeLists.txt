@@ -2,6 +2,10 @@
 # drivers, adapted to the native_probe runtime through shims in shim/.
 cmake_minimum_required(VERSION 3.24)
 project(bbgpu LANGUAGES C CXX)
+if (WIN32)
+    # Runtime VM placeholders and Streamline signing APIs require Windows 10 1809+.
+    add_compile_definitions(_WIN32_WINNT=0x0A00 WINVER=0x0A00 NTDDI_VERSION=0x0A000006)
+endif()
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -83,6 +87,13 @@ if (NOT miniz_FOUND)
     add_library(miniz::miniz ALIAS miniz)
 endif()
 find_package(Zydis REQUIRED)
+# Some MSYS2 Zydis packages export a bare -lZycore instead of its imported target.
+# Resolve that dependency through its package so cross compilers use this sysroot.
+if (TARGET Zycore::Zycore)
+    get_target_property(_zydis_dependencies Zydis::Zydis INTERFACE_LINK_LIBRARIES)
+    list(TRANSFORM _zydis_dependencies REPLACE "^Zycore$" "Zycore::Zycore")
+    set_property(TARGET Zydis::Zydis PROPERTY INTERFACE_LINK_LIBRARIES "${_zydis_dependencies}")
+endif()
 find_program(GLSLANG_COMPILER NAMES glslang glslangValidator REQUIRED)
 
 set(SIRIT_USE_SYSTEM_SPIRV_HEADERS OFF CACHE BOOL "" FORCE)
@@ -92,6 +103,26 @@ add_subdirectory(third_party/sirit EXCLUDE_FROM_ALL)
 set(FFX_VK_PORTABLE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FFX_VK_PORTABLE_BUILD_PROBE OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/fsr-vulkan EXCLUDE_FROM_ALL)
+# The vendor configure step can unpack the FidelityFX SDK. Apply the checked-in
+# fixes after extraction so direct CMake builds and both build.sh paths agree.
+find_package(Git REQUIRED)
+file(GLOB fsr_vk_patches CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/patches/fsr-vulkan/*.patch")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${fsr_vk_patches})
+set(fsr_vk_apply "${GIT_EXECUTABLE}" apply --directory=gpu/third_party/fsr-vulkan)
+foreach(patch IN LISTS fsr_vk_patches)
+    execute_process(COMMAND ${fsr_vk_apply} --reverse --check "${patch}"
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+                    RESULT_VARIABLE already_applied ERROR_QUIET)
+    if (NOT already_applied STREQUAL "0")
+        execute_process(COMMAND ${fsr_vk_apply} "${patch}"
+                        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+                        RESULT_VARIABLE patch_result ERROR_VARIABLE patch_error)
+        if (NOT patch_result STREQUAL "0")
+            message(FATAL_ERROR "Cannot apply ${patch}: ${patch_error}")
+        endif()
+    endif()
+endforeach()
+
 
 # Host shaders -> headers (same scheme as shadPS4's host_shaders/CMakeLists.txt).
 set(SHADER_SRC ${CMAKE_CURRENT_SOURCE_DIR}/shadps4/video_core/host_shaders)
@@ -123,9 +154,12 @@ add_host_shader(frame_generation_copy.comp frame_generation_copy_comp)
 add_host_shader(xess_color.comp xess_color_comp)
 add_host_shader(upscale_merge.comp upscale_merge_comp)
 add_host_shader(upscale_reactive.comp upscale_reactive_comp)
+add_host_shader(fsr4vk_prepare.comp fsr4vk_prepare_comp)
+add_host_shader(test_fsr411_consume.comp test_fsr411_consume_comp)
 add_host_shader(taa.comp taa_comp)
 add_host_shader(taa_sharpen.comp taa_sharpen_comp)
 add_host_shader(taa_sharpen.comp taa_sharpen_ldr_comp LDR_OUTPUT=1)
+add_host_shader(taa_sharpen.comp taa_sharpen_direct_comp DIRECT_HALF_INPUT=1)
 add_host_shader(buffer_multi_copy.comp buffer_multi_copy_comp)
 add_host_shader(depth_resample.frag depth_resample_frag)
 add_host_shader(depth_resample.frag depth_stencil_resample_frag HAS_STENCIL=1)
@@ -134,6 +168,7 @@ add_host_shader(camera_motion.comp camera_motion_debug_comp DEBUG_OVERLAY=1)
 # Frame generation (vk_frame_generation.cpp): its depth input and the UI over generated frames.
 add_host_shader(frame_gen_inputs.comp frame_gen_inputs_comp)
 add_host_shader(frame_gen_ui.comp frame_gen_ui_comp)
+add_host_shader(frame_gen_fused_ui.comp frame_gen_fused_ui_comp)
 foreach(BPP IN ITEMS 8 16 32 64 96 128)
     add_host_shader(tiling.comp tiling_micro_${BPP}_comp BITS_PER_PIXEL=${BPP} IS_MACRO_TILED=0)
     add_host_shader(tiling.comp tiling_macro_${BPP}_comp BITS_PER_PIXEL=${BPP} IS_MACRO_TILED=1)
@@ -143,10 +178,40 @@ add_custom_target(host_shaders DEPENDS ${SHADER_HEADERS})
 file(GLOB_RECURSE VIDEO_CORE CONFIGURE_DEPENDS shadps4/video_core/*.cpp)
 file(GLOB_RECURSE RECOMPILER CONFIGURE_DEPENDS shadps4/shader_recompiler/*.cpp)
 list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")
+
+# bbport: the shader build, a fingerprint of the sources that decide what the pipeline cache
+# holds (the recompiler, the registers it reads, the pipeline keys and their serialization).
+# The cache keeps it and is rebuilt when another build wrote it (vk_pipeline_serialization.cpp).
+# Line ends do not count, so a checkout with CRLF gives the same build as one with LF.
+file(GLOB_RECURSE BB_SHADER_BUILD_SOURCES CONFIGURE_DEPENDS
+    shadps4/shader_recompiler/*
+    shadps4/video_core/amdgpu/regs*.h shadps4/video_core/amdgpu/pixel_format.h
+    shadps4/video_core/amdgpu/resource.h
+    shadps4/video_core/renderer_vulkan/vk_pipeline_*.cpp shadps4/video_core/renderer_vulkan/vk_pipeline_*.h
+    shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.*
+    shadps4/video_core/renderer_vulkan/vk_compute_pipeline.*
+    shadps4/video_core/renderer_vulkan/vk_shader_util.*
+    shadps4/common/serdes.h)
+list(SORT BB_SHADER_BUILD_SOURCES)
+set(BB_SHADER_BUILD_HASHES "")
+foreach(source IN LISTS BB_SHADER_BUILD_SOURCES)
+    file(READ "${source}" content)
+    string(REPLACE "\r" "" content "${content}")
+    file(RELATIVE_PATH name "${CMAKE_CURRENT_SOURCE_DIR}" "${source}")
+    string(SHA256 hash "${name}\n${content}")
+    string(APPEND BB_SHADER_BUILD_HASHES "${hash}\n")
+endforeach()
+string(SHA256 BB_SHADER_BUILD "${BB_SHADER_BUILD_HASHES}")
+string(SUBSTRING "${BB_SHADER_BUILD}" 0 16 BB_SHADER_BUILD)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${BB_SHADER_BUILD_SOURCES})
+file(CONFIGURE OUTPUT "${SHADER_INCLUDE}/video_core/shader_build.h"
+    CONTENT "#pragma once\n#define BB_SHADER_BUILD \"@BB_SHADER_BUILD@\"\n" @ONLY)
+list(LENGTH BB_SHADER_BUILD_SOURCES count)
+message(STATUS "Shader build ${BB_SHADER_BUILD} (from ${count} sources)")
 set(COMMON
     shadps4/common/decoder.cpp shadps4/common/error.cpp
     shadps4/common/io_file.cpp shadps4/common/native_clock.cpp shadps4/common/number_utils.cpp
-    shadps4/common/path_util.cpp shadps4/common/rdtsc.cpp shadps4/common/slot_vector.cpp shadps4/common/spin_lock.cpp shadps4/common/recursive_lock.cpp
+    shadps4/common/path_util.cpp shadps4/common/rdtsc.cpp shadps4/common/spin_lock.cpp shadps4/common/recursive_lock.cpp
     shadps4/common/string_util.cpp shadps4/common/thread.cpp shadps4/common/signal_context.cpp
     shim/common/logging/log.cpp)
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
@@ -176,7 +241,15 @@ endif()
 # 529ceb3, with bbnet/vendor-changes.diff) and The Hunter's Dream backend (bbnet/thd, from
 # droogie's bbhost), as Awaken (Awakenchan/BloodBorneButPc) put them together.
 # See bbnet/SHADNET-PORT.md.
-find_package(Protobuf CONFIG REQUIRED)
+find_package(Protobuf CONFIG QUIET)
+if (NOT Protobuf_FOUND)
+    find_package(Protobuf REQUIRED)
+endif()
+# Cross builds use a host protoc matching the pinned target protobuf runtime.
+if (CMAKE_CROSSCOMPILING AND BB_HOST_PROTOC)
+    set_property(TARGET protobuf::protoc PROPERTY IMPORTED_LOCATION "${BB_HOST_PROTOC}")
+    set_property(TARGET protobuf::protoc PROPERTY IMPORTED_LOCATION_RELEASE "${BB_HOST_PROTOC}")
+endif()
 set(BBNET_VENDOR "${CMAKE_CURRENT_SOURCE_DIR}/bbnet/vendor/shadps4")
 set(SHADNET_PROTO_OUT "${CMAKE_CURRENT_BINARY_DIR}/shadnet_proto_gen")
 file(MAKE_DIRECTORY "${SHADNET_PROTO_OUT}")
@@ -209,15 +282,25 @@ target_compile_definitions(bbnet PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT CPPHTTPLIB_Z
 # verification failed" (error 10) for The Hunter's Dream on some PCs.
 target_compile_definitions(bbnet PRIVATE CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
 target_link_libraries(bbnet PRIVATE OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
+# The ISRG roots the port carries and Windows' check of the server's whole chain (windows_trust.h)
+add_executable(windows-trust-test EXCLUDE_FROM_ALL ../tests/test_windows_trust.cpp)
+target_include_directories(windows-trust-test PRIVATE bbnet/include third_party/httplib)
+target_compile_definitions(windows-trust-test PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT
+    CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+target_compile_options(windows-trust-test PRIVATE -UNDEBUG)
+target_link_libraries(windows-trust-test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+if (WIN32)
+    target_link_libraries(windows-trust-test PRIVATE crypt32 ws2_32)
+endif()
 if (WIN32)
     target_sources(bbnet PRIVATE third_party/wepoll/wepoll.c)
     target_include_directories(bbnet PRIVATE third_party/wepoll)
-    find_path(MINIUPNPC_INCLUDE miniupnpc.h PATH_SUFFIXES miniupnpc REQUIRED)
-    find_library(MINIUPNPC_LIBRARY NAMES libminiupnpc.a miniupnpc REQUIRED)
-    target_include_directories(bbnet PRIVATE "${MINIUPNPC_INCLUDE}")
     target_compile_definitions(bbnet PRIVATE MINIUPNP_STATICLIB)
-    target_link_libraries(bbnet PRIVATE "${MINIUPNPC_LIBRARY}")
 endif()
+find_path(MINIUPNPC_INCLUDE miniupnpc.h PATH_SUFFIXES miniupnpc REQUIRED)
+find_library(MINIUPNPC_LIBRARY NAMES miniupnpc REQUIRED)
+target_include_directories(bbnet PRIVATE "${MINIUPNPC_INCLUDE}")
+target_link_libraries(bbnet PRIVATE "${MINIUPNPC_LIBRARY}")
 target_compile_definitions(bbnet PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(bbnet PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
 target_link_libraries(bbnet PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
@@ -234,7 +317,7 @@ target_link_libraries(bbgpu PUBLIC bbnet)
 target_sources(bbgpu PRIVATE third_party/imgui/imgui.cpp third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_tables.cpp third_party/imgui/imgui_widgets.cpp
     third_party/imgui/backends/imgui_impl_vulkan.cpp)
-target_include_directories(bbgpu PRIVATE third_party/imgui third_party/imgui/backends)
+target_include_directories(bbgpu PRIVATE third_party/xbyak third_party/imgui third_party/imgui/backends)
 target_compile_definitions(bbgpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
     BB_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
 set_source_files_properties(shim/bbport_overlay.cpp PROPERTIES
@@ -253,10 +336,15 @@ target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic
 if (WIN32)
     # Guest code is entered with the System V ABI; NOMINMAX/WIN32_LEAN_AND_MEAN keep
     # <windows.h> out of the way of std::min/max and the Vulkan/SDL headers.
-    target_compile_definitions(bbgpu PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_definitions(bbgpu PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN VK_USE_PLATFORM_WIN32_KHR)
+    target_sources(bbgpu PRIVATE fsr411_dx12/native_fsr411.cpp fsr411_dx12/fsr411_support.cpp)
+    # AMD's runtime loader checks MSBuild's _WINDOWS macro, not MinGW's _WIN32.
+    set_source_files_properties(fsr411_dx12/native_fsr411.cpp PROPERTIES COMPILE_DEFINITIONS _WINDOWS)
+    set_source_files_properties(fsr411_dx12/fsr411_support.cpp PROPERTIES COMPILE_DEFINITIONS _WINDOWS)
+    target_include_directories(bbgpu PRIVATE fsr411_dx12 fsr411_dx12/sdk/api/include fsr411_dx12/sdk/upscalers/include)
     target_compile_options(bbgpu PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/shim/bb_win_compat.h)
     target_include_directories(bbgpu PRIVATE third_party/xbyak)
-    target_link_libraries(bbgpu PUBLIC Vulkan::Vulkan ws2_32 bcrypt ntdll synchronization winmm)
+    target_link_libraries(bbgpu PUBLIC Vulkan::Vulkan ws2_32 bcrypt ntdll synchronization winmm d3d12 dxgi dxguid)
 else()
     target_link_libraries(bbgpu PUBLIC PkgConfig::X11)
 endif()
@@ -272,6 +360,9 @@ if (WIN32)
     set_target_properties(atrac9 PROPERTIES C_STANDARD 99 INTERPROCEDURAL_OPTIMIZATION OFF)
     add_executable(bb-probe ../src/probe.c ${BB_RUNTIME} ../src/compat_win.c ../src/vulkan_smoke.c
         ../packaging/windows/bb-probe.rc)
+    # The overlay's GPU usage comes from Windows' GPU Engine counters (pdh), the CPU name from the
+    # registry (advapi32).
+    target_link_libraries(bbgpu INTERFACE pdh advapi32)
     set_target_properties(bb-probe PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
     target_compile_options(bb-probe PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
     # Clang 23 added -Wunused-but-set-global (on with -Wall): the runtime keeps a few
@@ -282,8 +373,19 @@ if (WIN32)
         target_compile_options(bb-probe PRIVATE
             $<$<COMPILE_LANGUAGE:C>:-Wno-error=unused-but-set-global>)
     endif()
-    target_include_directories(bb-probe PRIVATE .. ../src)
+    # Keep the repository root off the include path: Windows would resolve
+    # the standard library <version> header to the project VERSION file.
+    target_include_directories(bb-probe PRIVATE ../src)
     target_link_libraries(bb-probe PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
+    add_executable(fsr411-compare EXCLUDE_FROM_ALL ../tests/test_fsr411_compare.cpp ${BB_RUNTIME} ../src/compat_win.c)
+    target_include_directories(fsr411-compare PRIVATE ../src shim shadps4 third_party/gcn/include)
+    target_link_libraries(fsr411-compare PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
+    target_include_directories(fsr411-compare PRIVATE ${SHADER_INCLUDE})
+    add_dependencies(fsr411-compare host_shaders)
+    add_executable(object-motion-cache-test EXCLUDE_FROM_ALL ../tests/test_object_motion_cache.cpp
+        ${BB_RUNTIME} ../src/compat_win.c)
+    target_include_directories(object-motion-cache-test PRIVATE ../src shim shadps4 third_party/gcn/include)
+    target_link_libraries(object-motion-cache-test PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
     # The PS4 range (64 GiB - 1 TiB) must stay free: no high-entropy ASLR for heaps and stacks.
     # The guest main thread runs on the process stack: 16 MiB, committed (no stack probes).
     target_link_options(bb-probe PRIVATE -Wl,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
@@ -292,8 +394,12 @@ if (WIN32)
     set_target_properties(save-access-test PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
     target_compile_options(save-access-test PRIVATE -Wall -Wextra -Werror)
     target_link_options(save-access-test PRIVATE -municode)
-    add_executable(bb-gpu-capabilities ../tools/gpu_capabilities.c ../packaging/windows/bb-gpu-capabilities.rc)
-    target_link_libraries(bb-gpu-capabilities PRIVATE Vulkan::Vulkan)
+    add_executable(bb-gpu-capabilities ../tools/gpu_capabilities.c ../tools/fsr411_capabilities.cpp
+        fsr411_dx12/fsr411_support.cpp ../packaging/windows/bb-gpu-capabilities.rc)
+    target_include_directories(bb-gpu-capabilities PRIVATE shim fsr411_dx12
+        fsr411_dx12/sdk/api/include fsr411_dx12/sdk/upscalers/include)
+    target_compile_definitions(bb-gpu-capabilities PRIVATE NOMINMAX)
+    target_link_libraries(bb-gpu-capabilities PRIVATE Vulkan::Vulkan d3d12 dxgi)
     # "Play Bloodborne.exe": the game with the launcher's saved settings, no launcher window.
     add_executable(bb-play WIN32 ../packaging/windows/play.c ../packaging/windows/play.rc)
     target_compile_options(bb-play PRIVATE -municode)
@@ -306,31 +412,53 @@ add_executable(shader-cache-test EXCLUDE_FROM_ALL ../tests/test_shader_cache.cpp
 target_include_directories(shader-cache-test BEFORE PRIVATE ../tests/cache_stubs shadps4)
 target_compile_options(shader-cache-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_link_libraries(shader-cache-test PRIVATE miniz::miniz)
+add_executable(fsr411-requirements-test EXCLUDE_FROM_ALL ../tests/test_fsr411_requirements.cpp)
+target_include_directories(fsr411-requirements-test BEFORE PRIVATE shim ${Vulkan_INCLUDE_DIRS})
+target_link_libraries(fsr411-requirements-test PRIVATE Vulkan::Headers)
+target_compile_options(fsr411-requirements-test PRIVATE -UNDEBUG -Wall -Wextra -Werror -Wno-missing-field-initializers)
+
 add_executable(command-buffer-test EXCLUDE_FROM_ALL ../tests/test_command_buffers.cpp)
 target_compile_options(command-buffer-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_include_directories(command-buffer-test PRIVATE ..)
+
+add_executable(fsr4vk-post-test EXCLUDE_FROM_ALL ../tests/test_fsr4vk_post.cpp
+    shadps4/video_core/renderer_vulkan/fsr4vk_post.cpp)
+target_include_directories(fsr4vk-post-test PRIVATE shadps4)
+target_compile_options(fsr4vk-post-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_link_libraries(fsr4vk-post-test PRIVATE PkgConfig::XXHASH)
 
 add_executable(motion-history-test EXCLUDE_FROM_ALL ../tests/test_motion_history.cpp)
-add_executable(pipeline-priority-test EXCLUDE_FROM_ALL ../tests/test_pipeline_priority.cpp)
-target_include_directories(pipeline-priority-test PRIVATE shadps4)
-target_compile_options(pipeline-priority-test PRIVATE -UNDEBUG)
 add_executable(temporal-history-test EXCLUDE_FROM_ALL ../tests/test_temporal_history.cpp)
-target_include_directories(temporal-history-test PRIVATE ..)
 target_compile_options(temporal-history-test PRIVATE -UNDEBUG)
 target_compile_options(motion-history-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_include_directories(motion-history-test PRIVATE ..)
+if (NOT WIN32)
+    add_executable(object-motion-cache-test EXCLUDE_FROM_ALL ../tests/test_object_motion_cache.cpp
+        ../tests/test_gpu_runtime_stubs.cpp)
+    target_include_directories(object-motion-cache-test PRIVATE shim shadps4 third_party/gcn/include)
+    target_link_libraries(object-motion-cache-test PRIVATE bbgpu)
+endif()
 add_executable(motion-shader-test EXCLUDE_FROM_ALL ../tests/test_motion_shaders.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_include_directories(motion-shader-test PRIVATE shim shadps4 third_party/gcn/include)
 target_link_libraries(motion-shader-test PRIVATE bbgpu)
 add_executable(ui-composition-test EXCLUDE_FROM_ALL ../tests/test_ui_composition.cpp)
 target_compile_options(ui-composition-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_include_directories(ui-composition-test PRIVATE ..)
+add_executable(ui-composition-sharp-test EXCLUDE_FROM_ALL ../tests/test_ui_composition_sharp.cpp)
+target_compile_options(ui-composition-sharp-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 
-add_executable(scene-resolution-test EXCLUDE_FROM_ALL ../tests/test_scene_resolution.cpp ../tests/test_gpu_runtime_stubs.cpp)
+if (WIN32)
+    add_executable(scene-resolution-test EXCLUDE_FROM_ALL ../tests/test_scene_resolution.cpp
+        ${BB_RUNTIME} ../src/compat_win.c)
+    target_include_directories(scene-resolution-test PRIVATE ../src)
+    target_link_libraries(scene-resolution-test PRIVATE atrac9 onecore bcrypt ws2_32 -pthread)
+else()
+    add_executable(scene-resolution-test EXCLUDE_FROM_ALL ../tests/test_scene_resolution.cpp
+        ../tests/test_gpu_runtime_stubs.cpp)
+endif()
 target_include_directories(scene-resolution-test PRIVATE shim shadps4 third_party/gcn/include)
 # The test's Vulkan-Hpp inline methods have a different set of platform extensions
 # from vk_platform.cpp. Keep them local and use an explicit dispatcher in the test.
-target_compile_options(scene-resolution-test PRIVATE -UNDEBUG -fPIC)
+# Match bbgpu's Vulkan-Hpp dispatcher layout; the test re-enables its own
+# assertions after including the renderer headers.
+target_compile_options(scene-resolution-test PRIVATE -fPIC)
 set_source_files_properties(../tests/test_scene_resolution.cpp PROPERTIES
     COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
 target_link_libraries(scene-resolution-test PRIVATE bbgpu)
@@ -353,6 +481,30 @@ foreach(test_target camera-motion-test motion-shader-test scene-resolution-test 
     endif()
 endforeach()
 add_dependencies(camera-motion-test host_shaders)
+
+# bbport: the generated SRT walker with tables that change between draws (null and bad pointers):
+# ninja -C out/gpu srt-walker-test, then run it. No GPU.
+add_executable(srt-walker-test EXCLUDE_FROM_ALL ../tests/test_srt_walker.cpp ../tests/test_gpu_runtime_stubs.cpp)
+target_include_directories(srt-walker-test PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include)
+target_compile_options(srt-walker-test PRIVATE -UNDEBUG -fPIC)
+set_source_files_properties(../tests/test_srt_walker.cpp PROPERTIES
+    COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
+target_link_libraries(srt-walker-test PRIVATE bbgpu)
+if (WIN32)
+    target_link_libraries(srt-walker-test PRIVATE onecore)
+endif()
+
+# bbport: which mouse input is the controller's (a mapping program's): ninja -C out/gpu pad-use-test,
+# then run it. No SDL, no GPU.
+add_executable(pad-use-test EXCLUDE_FROM_ALL ../tests/test_pad_use.cpp)
+target_include_directories(pad-use-test PRIVATE shim)
+target_compile_options(pad-use-test PRIVATE -UNDEBUG)
+
+# bbport: when the video memory banner comes up: ninja -C out/gpu vram-warning-test, then run it.
+# No GPU.
+add_executable(vram-warning-test EXCLUDE_FROM_ALL ../tests/test_vram_warning.cpp)
+target_include_directories(vram-warning-test PRIVATE shim)
+target_compile_options(vram-warning-test PRIVATE -UNDEBUG)
 
 # bbport: keyboard and mouse button prompt icons: ninja -C out/gpu prompt-icons-test, then run it
 # (with a folder argument it writes each icon drawn and encoded, for viewing).
@@ -395,7 +547,7 @@ target_compile_options(xess-test PRIVATE -UNDEBUG)
 target_link_libraries(xess-test PRIVATE Vulkan::Vulkan)
 
 add_executable(frame-generation-test EXCLUDE_FROM_ALL ../tests/test_frame_generation.cpp
-    shadps4/video_core/renderer_vulkan/vk_frame_generation.cpp
+    shadps4/video_core/renderer_vulkan/vk_workshop_frame_generation.cpp
     shim/bbport_settings.cpp shim/bbport_background.cpp)
 target_include_directories(frame-generation-test PRIVATE shim shadps4 ${SHADER_INCLUDE})
 target_compile_options(frame-generation-test PRIVATE -UNDEBUG)
@@ -405,6 +557,30 @@ endif()
 target_link_libraries(frame-generation-test PRIVATE GPUOpen::VulkanMemoryAllocator
     ffx-vulkan::fsr3-vk-framegeneration-3.1.6 ${CMAKE_DL_LIBS})
 add_dependencies(frame-generation-test host_shaders)
+add_executable(shared-graphics-test EXCLUDE_FROM_ALL ../tests/test_shared_graphics.cpp
+    shim/bbport_settings.cpp)
+target_include_directories(shared-graphics-test PRIVATE shim)
+target_compile_options(shared-graphics-test PRIVATE -UNDEBUG)
+
+if (WIN32)
+    add_library(fsr-driver-fixture SHARED EXCLUDE_FROM_ALL ../tests/test_fsr_driver_fixture.cpp)
+    target_include_directories(fsr-driver-fixture PRIVATE fsr411_dx12 fsr411_dx12/sdk/api/include)
+    add_library(fsr-driver-invalid-fixture SHARED EXCLUDE_FROM_ALL ../tests/test_fsr_driver_invalid.c)
+    target_link_options(fsr-driver-invalid-fixture PRIVATE -nostdlib -Wl,--entry,DllMain)
+    add_executable(fsr-driver-test EXCLUDE_FROM_ALL ../tests/test_fsr_driver.cpp)
+    target_include_directories(fsr-driver-test PRIVATE shim fsr411_dx12 fsr411_dx12/sdk/api/include)
+    target_compile_options(fsr-driver-test PRIVATE -UNDEBUG)
+    target_link_libraries(fsr-driver-test PRIVATE bcrypt)
+    add_dependencies(fsr-driver-test fsr-driver-fixture fsr-driver-invalid-fixture)
+    add_executable(shared-graphics-overlay-test EXCLUDE_FROM_ALL ../tests/test_shared_graphics_overlay.cpp
+        ${BB_RUNTIME} ../src/compat_win.c)
+    target_include_directories(shared-graphics-overlay-test PRIVATE ../src shim shadps4
+        third_party/gcn/include third_party/imgui third_party/imgui/backends)
+    target_compile_definitions(shared-graphics-overlay-test PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+        BB_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
+    target_compile_options(shared-graphics-overlay-test PRIVATE -UNDEBUG)
+    target_link_libraries(shared-graphics-overlay-test PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
+endif()
 
 add_executable(fsr4-bench EXCLUDE_FROM_ALL tools/fsr4_bench.cpp
     shadps4/video_core/renderer_vulkan/fsr411/fsr411.cpp)
@@ -422,3 +598,32 @@ if (WIN32)
     target_sources(frame-pacing-test PRIVATE ../src/compat_win.c)
     target_link_libraries(frame-pacing-test PRIVATE onecore bcrypt)
 endif()
+if (WIN32)
+    include(fg401_dx12/CMakeLists.txt)
+endif()
+
+# Compare the actual host RCAS shaders, including the legacy FP16 -> FP32 blit.
+# Standalone Vulkan context: no game, runtime stubs or window is needed.
+add_executable(fsr411-sharpen-test EXCLUDE_FROM_ALL ../tests/test_fsr411_sharpen.cpp)
+target_include_directories(fsr411-sharpen-test PRIVATE shim shadps4 ${SHADER_INCLUDE})
+target_compile_options(fsr411-sharpen-test PRIVATE -UNDEBUG -fPIC)
+set_source_files_properties(../tests/test_fsr411_sharpen.cpp PROPERTIES
+    COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
+target_link_libraries(fsr411-sharpen-test PRIVATE Vulkan::Vulkan)
+add_dependencies(fsr411-sharpen-test host_shaders)
+
+# Normalize dependency include paths for the Windows driver integration.
+foreach(dependency PkgConfig::FFMPEG PkgConfig::SDL3 PkgConfig::XXHASH)
+  get_target_property(includes ${dependency} INTERFACE_INCLUDE_DIRECTORIES)
+  if(includes)
+    set(normalized)
+    foreach(directory IN LISTS includes)
+      file(REAL_PATH "${directory}" canonical)
+      list(APPEND normalized "${canonical}")
+    endforeach()
+    set_property(TARGET ${dependency} PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${normalized}")
+  endif()
+endforeach()
+
+# Keep the vendored Xbyak declarations available for every host toolchain.
+target_include_directories(bbgpu PRIVATE third_party/xbyak)

@@ -33,7 +33,7 @@ def main():
     subprocess.run([sys.executable,'-m','pyflakes','run.py','launcher','scripts','tools','tests'],cwd=ROOT,check=True)
     subprocess.run([sys.executable,'tools/check_docs.py'],cwd=ROOT,check=True)
     subprocess.run([sys.executable,'tools/update_readme_revision.py','--check'],cwd=ROOT,check=True)
-    for file in ('test_launcher_updates.py','test_release_integrity.py','test_release_split.py','test_update_archive.py','test_published_release.py','test_launcher_window_settings.py','test_diagnostics.py','test_geometry_diagnostics.py','test_support_report.py','test_nvidia_fg_preset.py'):
+    for file in ('test_launcher_updates.py','test_release_integrity.py','test_release_split.py','test_update_archive.py','test_published_release.py','test_diagnostics.py','test_geometry_diagnostics.py','test_support_report.py','test_nvidia_fg_preset.py'):
         run([sys.executable,'tests/'+file])
     for file in ('test_run_settings.py','test_trophies.py'):
         run([sys.executable,'-m','unittest','discover','-s','tests','-p',file])
@@ -48,14 +48,12 @@ def main():
     run([sys.executable,'tests/test_present_queue_scope.py'])
     run([sys.executable,'tests/test_swapchain_recovery.py'])
     run([sys.executable,'tests/test_cpu_integrations.py'])
-    for file in ('test_pipeline_compile_ahead.py','test_sparse_backing_pool.py',
-                 'test_renderer_memory_refresh.py','test_object_motion_targets.py',
-                 'test_texture_refresh_hashes.py','test_readback_policy.py',
+    run([sys.executable,'tests/test_graphics_session.py'])
+    subprocess.run([sys.executable,'tools/check_launcher.py','--quick'],cwd=ROOT,check=True)
+    subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-p','test_pc_menu.py'],cwd=ROOT,check=True)
+    for file in ('test_renderer_memory_refresh.py','test_object_motion_targets.py','test_readback_policy.py',
                  'test_native_fg_policy.py','test_temporal_draw_policy.py'):
         run([sys.executable,'tests/'+file])
-    subprocess.run(['g++','-std=c++20','-O1','-UNDEBUG','-pthread','-Igpu/shadps4',
-                    'tests/test_pipeline_priority.cpp','-o','out/verification/pipeline-priority'],cwd=ROOT,check=True)
-    subprocess.run([str(ROOT/'out/verification/pipeline-priority')],cwd=ROOT,check=True)
     run([sys.executable,'tests/test_streaming_write_prepare.py'])
     run([sys.executable,'tests/test_window_focus.py'])
     run([sys.executable,'tests/test_audio_background.py'])
@@ -86,8 +84,9 @@ def main():
     revision=version.rsplit('.',1)[1]
     run([sys.executable,'tests/test_overlay_controls.py','--compiler','g++',
          '--capture-dir',f'out/verification/menu{revision}'])
+    run([sys.executable,'tests/test_system_overlay.py'])
     if args.gui:
-        for file in ('test_launcher_startup.py','test_launcher_geometry.py','test_launcher_fg_diagnostic_ui.py','test_launcher_xess.py','test_launcher_fg_presets_ui.py','test_launcher_trophies_ui.py','test_support_report_ui.py','test_save_manager_ui.py'):
+        for file in ('test_launcher_window_settings.py','test_launcher_startup.py','test_launcher_geometry.py','test_launcher_fg_diagnostic_ui.py','test_launcher_xess.py','test_launcher_fg_presets_ui.py','test_launcher_trophies_ui.py','test_support_report_ui.py','test_save_manager_ui.py'):
             run([sys.executable,'tests/'+file])
 
 

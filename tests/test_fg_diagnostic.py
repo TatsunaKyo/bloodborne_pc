@@ -17,7 +17,7 @@ sys.path.insert(0,str(ROOT/'scripts'))
 import fg_diagnostic as capture
 spec=importlib.util.spec_from_file_location('fg_launcher',ROOT/'launcher/bbport_launcher_win.py')
 launcher=importlib.util.module_from_spec(spec);spec.loader.exec_module(launcher)
-source=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_frame_generation.cpp').read_text()
+source=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_workshop_frame_generation.cpp').read_text()
 method=source[source.index('void FrameGeneration::CaptureDiagnostic('):source.index('void FrameGeneration::RetireCompleted()')]
 HEADERS=ROOT/'out/test-headers'
 HARNESS=r'''

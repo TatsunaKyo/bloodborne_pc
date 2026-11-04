@@ -1,5 +1,7 @@
 # Display, FPS and the performance overlay
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 R55 adds independent **Mute in background**, four FG provider choices, and ultrawide camera/HUD startup settings. The optional **NVIDIA FG preset** field reports `C` only with evaluated driver evidence; `C?` means a request without confirmation and `C!` means an override error. Actual render/output dimensions and real-frame intervals remain separate from SDK output-FPS statistics. Current source fixes the ten-resolution dropdown and ultrawide restart warning; [those changes need a later binary](maintenance.md).
 
 These settings are shared between the launcher and the Insert / L3+R3 menu. **Customize overlay…** on Play opens **Overlay** at its controls; the main overlay checkbox stays on Play.

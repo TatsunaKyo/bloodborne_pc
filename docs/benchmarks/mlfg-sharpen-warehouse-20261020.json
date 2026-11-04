@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-20",
+  "windows_version": "1.9.2",
+  "source_base": "292b3a8b8f2671be980996a170f3f8494dae6ce5",
+  "cpu": "Intel Core i7-11700B (11th Gen)",
+  "gpu": "AMD Radeon RX 9070 16 GB",
+  "driver": "AMD 26.9.2 LLPC, Vulkan 1.4.355",
+  "scene": "Warehouse above the sewers near Eileen, Central Yharnam",
+  "settings": {
+    "render": [
+      2560,
+      1440
+    ],
+    "output": [
+      3840,
+      2160
+    ],
+    "preset": "Quality",
+    "hdr": false,
+    "sharpen": true,
+    "sharpness": 0.5,
+    "object_motion": true,
+    "object_motion_cache": true,
+    "ssr": true,
+    "model_lod": -2,
+    "game_aa": false,
+    "chromatic_aberration": false,
+    "fps_cap": 0,
+    "vsync": false,
+    "present_mode": "Immediate",
+    "cheats": false,
+    "external_mods": false,
+    "frame_generation": "AMD ML-FG 4.0.1",
+    "frame_generation_multiplier": 2
+  },
+  "method": {
+    "order": [
+      "original",
+      "direct",
+      "direct",
+      "original"
+    ],
+    "same_process_per_provider": true,
+    "same_candidate_binary_per_provider": true,
+    "warmup_seconds": 10,
+    "capture_seconds": 25,
+    "phases_per_variant": 2,
+    "fps_source": "Mean of complete native five-second game-frame reports",
+    "camera": "Unmodified loaded save, verified view matrix and projection",
+    "interpretation": "Game throughput; frame-time difference includes scheduling and overlap"
+  },
+  "results": [
+    {
+      "provider": "AMD DX12",
+      "frame_generation": "AMD ML-FG 4.0.1",
+      "original_game_fps": 76.28,
+      "direct_game_fps": 79.02,
+      "gain_percent": 3.5920293654955415,
+      "game_frame_time_saved_ms": 0.4545721798906026,
+      "phases": [
+        {
+          "path": "original",
+          "game_fps": 76.56,
+          "five_second_game_fps": [
+            76.7,
+            76.5,
+            76.4,
+            76.5,
+            76.7
+          ],
+          "warmup_seconds": 10.014999999999418,
+          "capture_seconds": 25.031875,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 0.0,
+            "max_position_component_delta": 0.0
+          }
+        },
+        {
+          "path": "direct",
+          "game_fps": 79.1,
+          "five_second_game_fps": [
+            79.1,
+            79.2,
+            79.0,
+            79.0,
+            79.2
+          ],
+          "warmup_seconds": 10.015999999995984,
+          "capture_seconds": 25.029545,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 0.0,
+            "max_position_component_delta": 0.0
+          }
+        },
+        {
+          "path": "direct",
+          "game_fps": 78.94,
+          "five_second_game_fps": [
+            79.0,
+            78.9,
+            78.9,
+            78.9,
+            79.0
+          ],
+          "warmup_seconds": 9.98399999999674,
+          "capture_seconds": 25.037347,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 0.0,
+            "max_position_component_delta": 0.0
+          }
+        },
+        {
+          "path": "original",
+          "game_fps": 76.0,
+          "five_second_game_fps": [
+            76.4,
+            76.4,
+            76.5,
+            76.4,
+            74.3
+          ],
+          "warmup_seconds": 10.031000000002678,
+          "capture_seconds": 25.032356,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 0.0,
+            "max_position_component_delta": 0.0
+          }
+        }
+      ]
+    }
+  ]
+}

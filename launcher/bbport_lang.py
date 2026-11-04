@@ -48,10 +48,12 @@ KEYS = [
     'Unlocked (frame-time patch)', '30 FPS (as on PS4)',
     'Auto: display refresh, max 120 (recommended)', 'No limit',
     'Mailbox (low latency, no tearing)', 'Immediate (tearing)', '1 (default)', 'Unbounded',
-    'Your game is version {}: these options are patches for 1.09 and are not applied; the game runs at 30 FPS. Update the dump to 1.09 to use them.',
+    'Your game is version {}: these options are patches for 1.09 and are not applied; the game runs at 30 '
+    'FPS. Update the game to 1.09 to use them.',
     # Game
-    'Your game dump, saves and the game patches.', 'Game', 'Game folder', 'Choose the folder with eboot.bin',
-    'Your own dump of CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); version 1.09 for the community patches.',
+    'Your game files, saves and the game patches.', 'Game', 'Game folder', 'Choose the folder with eboot.bin',
+    'Your own game files of CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); version 1.09 for the '
+    'community patches.',
     'Saves folder', 'Choose the saves folder', 'Empty: {} (shader caches are kept there too).',
     'Game language', 'Player name', 'Where the game shows the PSN name; empty: the default.',
     'Effects', 'Chromatic aberration', 'Depth of field', 'Motion blur', 'Ambient occlusion (SSAO)',
@@ -155,9 +157,11 @@ TRANSLATIONS = {
         'بدون حد (رقعة زمن الإطار)', '30 إطارًا (كما في PS4)',
         'تلقائي: تردد الشاشة، بحد أقصى 120 (موصى به)', 'بدون حد',
         'Mailbox (تأخير منخفض، بلا تمزق)', 'Immediate (مع تمزق)', '1 (افتراضي)', 'بلا حد',
-        'لعبتك إصدار {}: هذه الخيارات رقع للإصدار 1.09 ولن تُطبّق؛ تعمل اللعبة بـ 30 إطارًا. حدّث نسختك إلى 1.09 لاستخدامها.',
-        'نسخة اللعبة والحفظ ورقع اللعبة.', 'اللعبة', 'مجلد اللعبة', 'اختر المجلد الذي يحتوي eboot.bin',
-        'نسختك الخاصة من CUSA03173 (eboot.bin و sce_module و sce_sys و dvdroot_ps4)؛ الإصدار 1.09 لرقع المجتمع.',
+        'لعبتك بالإصدار {}: هذه الخيارات رقع للإصدار 1.09 ولا تُطبّق؛ تعمل اللعبة بـ 30 إطارًا في الثانية. '
+        'حدّث اللعبة إلى 1.09 لاستخدامها.',
+        'ملفات لعبتك والحفظ ورقع اللعبة.', 'اللعبة', 'مجلد اللعبة', 'اختر المجلد الذي يحتوي eboot.bin',
+        'ملفات لعبتك الخاصة لـ CUSA03173 (eboot.bin وsce_module وsce_sys وdvdroot_ps4)؛ الإصدار 1.09 لرقع '
+        'المجتمع.',
         'مجلد الحفظ', 'اختر مجلد الحفظ', 'فارغ: {} (يُحفظ فيه أيضًا كاش الشيدر).',
         'لغة اللعبة', 'اسم اللاعب', 'حيث تعرض اللعبة اسم PSN؛ فارغ: الافتراضي.',
         'المؤثرات', 'الانحراف اللوني', 'عمق المجال', 'ضبابية الحركة', 'الإظلال المحيطي (SSAO)',
@@ -254,9 +258,11 @@ TRANSLATIONS = {
         'Sin límite (parche de tiempo de fotograma)', '30 FPS (como en PS4)',
         'Automático: frecuencia de la pantalla, máx. 120 (recomendado)', 'Sin límite',
         'Mailbox (baja latencia, sin cortes)', 'Immediate (con cortes)', '1 (predeterminado)', 'Sin límite',
-        'Tu juego es la versión {}: estas opciones son parches para la 1.09 y no se aplican; el juego va a 30 FPS. Actualiza el volcado a la 1.09 para usarlas.',
-        'Tu volcado del juego, partidas y parches.', 'Juego', 'Carpeta del juego', 'Elige la carpeta con eboot.bin',
-        'Tu propio volcado de CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); versión 1.09 para los parches de la comunidad.',
+        'Tu juego es la versión {}: estas opciones son parches para la 1.09 y no se aplican; el juego va a '
+        '30 FPS. Actualiza el juego a la 1.09 para usarlas.',
+        'Los archivos del juego, las partidas guardadas y los parches del juego.', 'Juego', 'Carpeta del juego', 'Elige la carpeta con eboot.bin',
+        'Tus propios archivos de CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); la versión 1.09 '
+        'para los parches de la comunidad.',
         'Carpeta de partidas', 'Elige la carpeta de partidas', 'Vacío: {} (también guarda la caché de shaders).',
         'Idioma del juego', 'Nombre del jugador', 'Donde el juego muestra el nombre de PSN; vacío: el predeterminado.',
         'Efectos', 'Aberración cromática', 'Profundidad de campo', 'Desenfoque de movimiento', 'Oclusión ambiental (SSAO)',
@@ -353,9 +359,11 @@ TRANSLATIONS = {
         'Sem limite (patch de tempo de quadro)', '30 FPS (como no PS4)',
         'Automático: taxa da tela, máx. 120 (recomendado)', 'Sem limite',
         'Mailbox (baixa latência, sem tearing)', 'Immediate (com tearing)', '1 (padrão)', 'Ilimitado',
-        'Seu jogo é a versão {}: estas opções são patches para a 1.09 e não são aplicadas; o jogo roda a 30 FPS. Atualize o dump para a 1.09 para usá-las.',
-        'Seu dump do jogo, saves e patches.', 'Jogo', 'Pasta do jogo', 'Escolha a pasta com eboot.bin',
-        'Seu próprio dump de CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); versão 1.09 para os patches da comunidade.',
+        'Seu jogo é a versão {}: estas opções são patches para a 1.09 e não são aplicadas; o jogo roda a 30 '
+        'FPS. Atualize o jogo para a 1.09 para usá-las.',
+        'Os arquivos do jogo, saves e patches.', 'Jogo', 'Pasta do jogo', 'Escolha a pasta com eboot.bin',
+        'Seus próprios arquivos de CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); versão 1.09 para '
+        'os patches da comunidade.',
         'Pasta de saves', 'Escolha a pasta de saves', 'Vazio: {} (o cache de shaders também fica lá).',
         'Idioma do jogo', 'Nome do jogador', 'Onde o jogo mostra o nome da PSN; vazio: o padrão.',
         'Efeitos', 'Aberração cromática', 'Profundidade de campo', 'Desfoque de movimento', 'Oclusão de ambiente (SSAO)',
@@ -452,9 +460,11 @@ TRANSLATIONS = {
         'Illimité (patch de temps d’image)', '30 FPS (comme sur PS4)',
         'Auto : fréquence de l’écran, 120 max (recommandé)', 'Aucune limite',
         'Mailbox (faible latence, sans déchirement)', 'Immediate (déchirement)', '1 (par défaut)', 'Illimité',
-        'Votre jeu est en version {} : ces options sont des patchs pour la 1.09 et ne sont pas appliquées ; le jeu tourne à 30 FPS. Mettez votre dump à jour en 1.09 pour les utiliser.',
-        'Votre dump du jeu, vos sauvegardes et les patchs.', 'Jeu', 'Dossier du jeu', 'Choisissez le dossier contenant eboot.bin',
-        'Votre propre dump de CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4) ; version 1.09 pour les patchs de la communauté.',
+        'Votre jeu est en version {} : ces options sont des patchs pour la 1.09 et ne sont pas appliquées ; '
+        'le jeu tourne à 30 FPS. Mettez le jeu à jour en 1.09 pour les utiliser.',
+        'Les fichiers du jeu, vos sauvegardes et les patchs.', 'Jeu', 'Dossier du jeu', 'Choisissez le dossier contenant eboot.bin',
+        'Vos propres fichiers de CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4) ; version 1.09 pour '
+        'les patchs de la communauté.',
         'Dossier des sauvegardes', 'Choisissez le dossier des sauvegardes', 'Vide : {} (le cache des shaders y est aussi).',
         'Langue du jeu', 'Nom du joueur', 'Là où le jeu affiche le nom PSN ; vide : par défaut.',
         'Effets', 'Aberration chromatique', 'Profondeur de champ', 'Flou de mouvement', 'Occlusion ambiante (SSAO)',
@@ -551,9 +561,11 @@ TRANSLATIONS = {
         'Unbegrenzt (Bildzeit-Patch)', '30 FPS (wie auf PS4)',
         'Automatisch: Bildwiederholrate, max. 120 (empfohlen)', 'Keine Grenze',
         'Mailbox (geringe Latenz, ohne Tearing)', 'Immediate (mit Tearing)', '1 (Standard)', 'Unbegrenzt',
-        'Dein Spiel ist Version {}: diese Optionen sind Patches für 1.09 und werden nicht angewendet; das Spiel läuft mit 30 FPS. Aktualisiere den Dump auf 1.09, um sie zu nutzen.',
-        'Dein Spiel-Dump, Spielstände und Spiel-Patches.', 'Spiel', 'Spielordner', 'Ordner mit eboot.bin wählen',
-        'Dein eigener Dump von CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); Version 1.09 für die Community-Patches.',
+        'Dein Spiel ist Version {}: diese Optionen sind Patches für 1.09 und werden nicht angewendet; das '
+        'Spiel läuft mit 30 FPS. Aktualisiere das Spiel auf 1.09, um sie zu nutzen.',
+        'Deine Spieldateien, Spielstände und Spiel-Patches.', 'Spiel', 'Spielordner', 'Ordner mit eboot.bin wählen',
+        'Deine eigenen Spieldateien von CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); Version '
+        '1.09 für die Community-Patches.',
         'Spielstandordner', 'Spielstandordner wählen', 'Leer: {} (dort liegt auch der Shader-Cache).',
         'Spielsprache', 'Spielername', 'Wo das Spiel den PSN-Namen zeigt; leer: Standard.',
         'Effekte', 'Chromatische Aberration', 'Tiefenschärfe', 'Bewegungsunschärfe', 'Umgebungsverdeckung (SSAO)',
@@ -650,9 +662,11 @@ TRANSLATIONS = {
         'Senza limite (patch del tempo di fotogramma)', '30 FPS (come su PS4)',
         'Automatico: frequenza dello schermo, max 120 (consigliato)', 'Nessun limite',
         'Mailbox (bassa latenza, senza tearing)', 'Immediate (con tearing)', '1 (predefinito)', 'Illimitato',
-        'Il tuo gioco è la versione {}: queste opzioni sono patch per la 1.09 e non vengono applicate; il gioco gira a 30 FPS. Aggiorna il dump alla 1.09 per usarle.',
-        'Il tuo dump del gioco, i salvataggi e le patch.', 'Gioco', 'Cartella del gioco', 'Scegli la cartella con eboot.bin',
-        'Il tuo dump di CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); versione 1.09 per le patch della community.',
+        'Il tuo gioco è la versione {}: queste opzioni sono patch per la 1.09 e non vengono applicate; il '
+        'gioco gira a 30 FPS. Aggiorna il gioco alla 1.09 per usarle.',
+        'I file del gioco, i salvataggi e le patch.', 'Gioco', 'Cartella del gioco', 'Scegli la cartella con eboot.bin',
+        'I tuoi file di CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); versione 1.09 per le patch '
+        'della community.',
         'Cartella dei salvataggi', 'Scegli la cartella dei salvataggi', 'Vuoto: {} (contiene anche la cache degli shader).',
         'Lingua del gioco', 'Nome del giocatore', 'Dove il gioco mostra il nome PSN; vuoto: quello predefinito.',
         'Effetti', 'Aberrazione cromatica', 'Profondità di campo', 'Sfocatura di movimento', 'Occlusione ambientale (SSAO)',
@@ -749,9 +763,11 @@ TRANSLATIONS = {
         'Bez limitu (łatka czasu klatki)', '30 FPS (jak na PS4)',
         'Auto: odświeżanie ekranu, maks. 120 (zalecane)', 'Bez limitu',
         'Mailbox (niskie opóźnienie, bez rozrywania)', 'Immediate (z rozrywaniem)', '1 (domyślnie)', 'Bez ograniczenia',
-        'Twoja gra to wersja {}: te opcje to łatki dla 1.09 i nie są stosowane; gra działa w 30 FPS. Zaktualizuj zrzut do 1.09, aby z nich korzystać.',
-        'Twój zrzut gry, zapisy i łatki gry.', 'Gra', 'Folder gry', 'Wybierz folder z eboot.bin',
-        'Twój własny zrzut CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); wersja 1.09 dla łatek społeczności.',
+        'Twoja gra ma wersję {}: te opcje to łatki dla 1.09 i nie są stosowane; gra działa w 30 FPS. '
+        'Zaktualizuj grę do 1.09, aby z nich korzystać.',
+        'Pliki gry, zapisy i łatki gry.', 'Gra', 'Folder gry', 'Wybierz folder z eboot.bin',
+        'Twoje własne pliki gry CUSA03173 (eboot.bin, sce_module, sce_sys, dvdroot_ps4); wersja 1.09 dla '
+        'łatek społeczności.',
         'Folder zapisów', 'Wybierz folder zapisów', 'Puste: {} (tam też jest pamięć podręczna shaderów).',
         'Język gry', 'Nazwa gracza', 'Tam, gdzie gra pokazuje nazwę PSN; puste: domyślna.',
         'Efekty', 'Aberracja chromatyczna', 'Głębia ostrości', 'Rozmycie ruchu', 'Okluzja otoczenia (SSAO)',
@@ -848,9 +864,11 @@ TRANSLATIONS = {
         'Sınırsız (kare süresi yaması)', '30 FPS (PS4’teki gibi)',
         'Otomatik: ekran yenileme hızı, en fazla 120 (önerilen)', 'Sınır yok',
         'Mailbox (düşük gecikme, yırtılma yok)', 'Immediate (yırtılmalı)', '1 (varsayılan)', 'Sınırsız',
-        'Oyununuz {} sürümü: bu seçenekler 1.09 yamalarıdır ve uygulanmaz; oyun 30 FPS çalışır. Kullanmak için dökümünüzü 1.09’a güncelleyin.',
-        'Oyun dökümünüz, kayıtlarınız ve oyun yamaları.', 'Oyun', 'Oyun klasörü', 'eboot.bin içeren klasörü seçin',
-        'Kendi CUSA03173 dökümünüz (eboot.bin, sce_module, sce_sys, dvdroot_ps4); topluluk yamaları için sürüm 1.09.',
+        'Oyununuz {} sürümünde: bu seçenekler 1.09 yamalarıdır ve uygulanmaz; oyun 30 FPS çalışır. Kullanmak '
+        'için oyunu 1.09’a güncelleyin.',
+        'Oyun dosyaları, kayıtlar ve oyun yamaları.', 'Oyun', 'Oyun klasörü', 'eboot.bin içeren klasörü seçin',
+        'Kendi CUSA03173 oyun dosyalarınız (eboot.bin, sce_module, sce_sys, dvdroot_ps4); topluluk yamaları '
+        'için 1.09 sürümü.',
         'Kayıt klasörü', 'Kayıt klasörünü seçin', 'Boş: {} (shader önbelleği de orada tutulur).',
         'Oyun dili', 'Oyuncu adı', 'Oyunun PSN adını gösterdiği yerler; boş: varsayılan.',
         'Efektler', 'Renk sapması', 'Alan derinliği', 'Hareket bulanıklığı', 'Ortam perdeleme (SSAO)',
@@ -947,9 +965,9 @@ TRANSLATIONS = {
         '不限帧（帧时间补丁）', '30 FPS（与 PS4 相同）',
         '自动：显示器刷新率，最高 120（推荐）', '不限制',
         'Mailbox（低延迟，无撕裂）', 'Immediate（有撕裂）', '1（默认）', '不限',
-        '你的游戏是 {} 版本：这些选项是 1.09 的补丁，不会生效；游戏以 30 FPS 运行。将游戏更新到 1.09 后即可使用。',
-        '你的游戏转储、存档和游戏补丁。', '游戏', '游戏文件夹', '选择包含 eboot.bin 的文件夹',
-        '你自己的 CUSA03173 转储（eboot.bin、sce_module、sce_sys、dvdroot_ps4）；社区补丁需要 1.09 版本。',
+        '你的游戏是 {} 版本：这些选项是 1.09 的补丁，不会生效；游戏以 30 FPS 运行。请将游戏更新到 1.09 以使用它们。',
+        '游戏文件、存档和游戏补丁。', '游戏', '游戏文件夹', '选择包含 eboot.bin 的文件夹',
+        '你自己的 CUSA03173 游戏文件（eboot.bin、sce_module、sce_sys、dvdroot_ps4）；社区补丁需要 1.09 版本。',
         '存档文件夹', '选择存档文件夹', '为空：{}（着色器缓存也保存在此）。',
         '游戏语言', '玩家名称', '游戏显示 PSN 名称的位置；为空：默认。',
         '效果', '色差', '景深', '动态模糊', '环境光遮蔽 (SSAO)',
@@ -1046,9 +1064,9 @@ TRANSLATIONS = {
         '無制限（フレーム時間パッチ）', '30 FPS（PS4 と同じ）',
         '自動：ディスプレイのリフレッシュレート、最大 120（推奨）', '上限なし',
         'Mailbox（低遅延・ティアリングなし）', 'Immediate（ティアリングあり）', '1（既定）', '無制限',
-        'お使いのゲームはバージョン {} です。これらは 1.09 用のパッチのため適用されず、ゲームは 30 FPS で動作します。使うにはダンプを 1.09 に更新してください。',
-        'ゲームのダンプ、セーブデータ、ゲームパッチ。', 'ゲーム', 'ゲームフォルダー', 'eboot.bin のあるフォルダーを選択',
-        'ご自身の CUSA03173 のダンプ（eboot.bin、sce_module、sce_sys、dvdroot_ps4）。コミュニティパッチには 1.09 が必要です。',
+        'ゲームのバージョンは {} です。これらのオプションは 1.09 用のパッチのため適用されず、30 FPS で動作します。使うにはゲームを 1.09 に更新してください。',
+        'ゲームファイル、セーブデータ、ゲームパッチ。', 'ゲーム', 'ゲームフォルダー', 'eboot.bin のあるフォルダーを選択',
+        'ご自身の CUSA03173 のゲームファイル（eboot.bin、sce_module、sce_sys、dvdroot_ps4）。コミュニティパッチには 1.09 が必要です。',
         'セーブフォルダー', 'セーブフォルダーを選択', '空欄：{}（シェーダーキャッシュもここに保存されます）。',
         'ゲームの言語', 'プレイヤー名', 'ゲームが PSN 名を表示する箇所。空欄：既定。',
         'エフェクト', '色収差', '被写界深度', 'モーションブラー', 'アンビエントオクルージョン (SSAO)',
@@ -1145,9 +1163,9 @@ TRANSLATIONS = {
         '제한 없음 (프레임 시간 패치)', '30 FPS (PS4와 동일)',
         '자동: 디스플레이 주사율, 최대 120 (권장)', '제한 없음',
         'Mailbox (낮은 지연, 티어링 없음)', 'Immediate (티어링 있음)', '1 (기본)', '무제한',
-        '게임 버전이 {}입니다. 이 옵션들은 1.09용 패치라 적용되지 않으며 게임은 30 FPS로 실행됩니다. 사용하려면 덤프를 1.09로 업데이트하세요.',
-        '게임 덤프, 세이브, 게임 패치.', '게임', '게임 폴더', 'eboot.bin이 있는 폴더 선택',
-        '직접 만든 CUSA03173 덤프 (eboot.bin, sce_module, sce_sys, dvdroot_ps4). 커뮤니티 패치에는 1.09가 필요합니다.',
+        '게임 버전이 {}입니다. 이 옵션들은 1.09용 패치라 적용되지 않으며 게임은 30 FPS로 실행됩니다. 사용하려면 게임을 1.09로 업데이트하세요.',
+        '게임 파일, 저장 데이터, 게임 패치.', '게임', '게임 폴더', 'eboot.bin이 있는 폴더 선택',
+        '본인의 CUSA03173 게임 파일(eboot.bin, sce_module, sce_sys, dvdroot_ps4); 커뮤니티 패치에는 1.09 버전이 필요합니다.',
         '세이브 폴더', '세이브 폴더 선택', '비어 있음: {} (셰이더 캐시도 여기에 저장됩니다).',
         '게임 언어', '플레이어 이름', '게임이 PSN 이름을 표시하는 곳. 비어 있으면 기본값.',
         '효과', '색수차', '피사계 심도', '모션 블러', '앰비언트 오클루전 (SSAO)',
@@ -1213,8 +1231,29 @@ WINDOWS_LANGUAGES = {0x19: 'ru', 0x01: 'ar', 0x0a: 'es', 0x16: 'pt', 0x0c: 'fr',
                      0x15: 'pl', 0x1f: 'tr', 0x04: 'zh', 0x11: 'ja', 0x12: 'ko'}
 
 from bbport_lang_more import MORE, MORE_KEYS  # noqa: E402 (texts added later, Russian included)
+from bbport_lang_fsr411 import TRANSLATIONS as FSR411_TRANSLATIONS  # noqa: E402
+from bbport_lang_motion_cache import TRANSLATIONS as MOTION_CACHE_TRANSLATIONS  # noqa: E402
+from bbport_lang_input import TRANSLATIONS as INPUT_TRANSLATIONS  # noqa: E402
+from bbport_lang_cpu import TRANSLATIONS as CPU_TRANSLATIONS  # noqa: E402
+from bbport_lang_messages import TRANSLATIONS as MESSAGES_TRANSLATIONS  # noqa: E402
+from bbport_lang_tls import TRANSLATIONS as TLS_TRANSLATIONS  # noqa: E402
+from bbport_lang_supermedo import TRANSLATIONS as SUPERMEDO_TRANSLATIONS  # noqa: E402
+from bbport_lang_sharp_ui import TRANSLATIONS as SHARP_UI_TRANSLATIONS  # noqa: E402
+from bbport_fg401 import TRANSLATIONS as FG401_TRANSLATIONS  # noqa: E402
+from bbport_fsr411 import TRANSLATIONS as FSR411_SUPPORT_TRANSLATIONS
+from bbport_lang_trophies import TRANSLATIONS as TROPHY_TRANSLATIONS
+from bbport_lang_exit import TRANSLATIONS as EXIT_TRANSLATIONS  # noqa: E402
+from bbport_lang_window import TRANSLATIONS as WINDOW_TRANSLATIONS  # noqa: E402
+from bbport_lang_workshop import TRANSLATIONS as WORKSHOP_TRANSLATIONS  # noqa: E402
 
 EXTRA_TRANSLATIONS = {
+    'zh': {
+        'Traditional Chinese': '繁體中文',
+        'Simplified Chinese': '简体中文',
+        'Traditional Chinese (繁體中文)': '繁體中文',
+        'Simplified Chinese (简体中文)': '简体中文',
+        'Korean': '韩语',
+    },
     'pt': {
         'Text language': 'Idioma dos textos',
         'Voice language': 'Idioma da dublagem',
@@ -1238,4 +1277,18 @@ def table(language):
         _tables[language] = {**(dict(zip(KEYS, texts)) if texts else {}),
                              **(dict(zip(MORE_KEYS, more)) if more else {}),
                              **EXTRA_TRANSLATIONS.get(language, {})}
+        _tables[language].update(FSR411_TRANSLATIONS.get(language, {}))
+        _tables[language].update(MOTION_CACHE_TRANSLATIONS.get(language, {}))
+        _tables[language].update(INPUT_TRANSLATIONS.get(language, {}))
+        _tables[language].update(CPU_TRANSLATIONS.get(language, {}))
+        _tables[language].update(MESSAGES_TRANSLATIONS.get(language, {}))
+        _tables[language].update(TLS_TRANSLATIONS.get(language, {}))
+        _tables[language].update(SUPERMEDO_TRANSLATIONS.get(language, {}))
+        _tables[language].update(SHARP_UI_TRANSLATIONS.get(language, {}))
+        _tables[language].update(FG401_TRANSLATIONS.get(language, {}))
+        _tables[language].update(FSR411_SUPPORT_TRANSLATIONS.get(language, {}))
+        _tables[language].update(TROPHY_TRANSLATIONS.get(language, {}))
+        _tables[language].update(EXIT_TRANSLATIONS.get(language, {}))
+        _tables[language].update(WINDOW_TRANSLATIONS.get(language, {}))
+        _tables[language].update(WORKSHOP_TRANSLATIONS.get(language, {}))
     return _tables[language]

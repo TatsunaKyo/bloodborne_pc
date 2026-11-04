@@ -27,8 +27,18 @@ namespace Vulkan {
 
 std::mutex Scheduler::submit_mutex;
 
+void Scheduler::SetExecutionQueue(vk::Queue queue) {
+    if (execution_queue == queue) {
+        return;
+    }
+    // The timeline and command-pool retirement order span this scheduler's submissions.
+    // Drain the old queue before a provider switch can signal a later value on another queue.
+    Finish();
+    execution_queue = queue;
+}
+
 Scheduler::Scheduler(const Instance& instance, bool threaded_recording, vk::Queue queue)
-    : instance{instance}, submission_queue{queue ? queue : instance.GetGraphicsQueue()},
+    : instance{instance}, execution_queue{queue ? queue : instance.GetGraphicsQueue()},
       work_semaphore{instance}, command_pool{instance, &work_semaphore} {
     // bbport: BB_VK_RECORD_THREAD=0 records on the calling thread.
     const char* env = std::getenv("BB_VK_RECORD_THREAD");
@@ -452,16 +462,21 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     // Guest memory copies into staging read by this submission (copy threads).
     WaitHostCopies();
     Check(current_cmdbuf.end());
-    // bbport: one command buffer per submission (upstream's sessions add an upload buffer that
-    // nothing records into since batching was removed upstream)
-    const std::array<vk::CommandBuffer, 1> cmd_buffers{current_cmdbuf};
 
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 
+    // Frame-generation inputs may be consumed by compute/transfer before colour output.
+    // Every acquired-image, scene-ready and external-provider dependency gates all work.
     std::array<vk::PipelineStageFlags, std::tuple_size_v<decltype(info.wait_semas)>>
         wait_stage_masks;
     wait_stage_masks.fill(vk::PipelineStageFlagBits::eAllCommands);
+    if (pending_external_wait) {
+        ASSERT(info.num_wait_semas < info.wait_semas.size());
+        wait_stage_masks[info.num_wait_semas] = vk::PipelineStageFlagBits::eAllCommands;
+        info.AddWait(pending_external_wait, pending_external_value);
+        pending_external_wait = nullptr;
+    }
 
     const vk::TimelineSemaphoreSubmitInfo timeline_si = {
         .waitSemaphoreValueCount = info.num_wait_semas,
@@ -475,8 +490,8 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         .waitSemaphoreCount = info.num_wait_semas,
         .pWaitSemaphores = info.wait_semas.data(),
         .pWaitDstStageMask = wait_stage_masks.data(),
-        .commandBufferCount = static_cast<u32>(cmd_buffers.size()),
-        .pCommandBuffers = cmd_buffers.data(),
+        .commandBufferCount = 1U,
+        .pCommandBuffers = &current_cmdbuf,
         .signalSemaphoreCount = info.num_signal_semas,
         .pSignalSemaphores = info.signal_semas.data(),
     };
@@ -490,7 +505,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         std::scoped_lock lk{submit_mutex};
         BbHitch::Record("Vulkan queue lock",lock_started);
         BbHitch::Scope hitch{"Vulkan queue submit"};
-        const auto submit_result = submission_queue.submit(submit_info, info.fence);
+        const auto submit_result = execution_queue.submit(submit_info, info.fence);
         if (submit_result == vk::Result::eErrorDeviceLost) instance.ReportDeviceLost("submit");
         ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
     }

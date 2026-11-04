@@ -1,127 +1,184 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+// bbport: frame generation (BbSettings::frame_gen, BB_FRAME_GEN), as in the Uncharted port.
+// From two finished frames of the game (UI included) it makes the frames in between; the
+// Presenter shows them before the game's frame, evenly paced. The depth and motion vectors are
+// taken where the temporal upscaler runs, before the game's post-processing (BeginCapture):
+// the scene depth and the upscaler's motion vectors (CameraMotion, camera and object motion).
+//  - FSR 3.1 frame interpolation (FireBurn/FSR-Vulkan, native Vulkan): any GPU, 2x.
+//  - DLSS Frame Generation (bbport_dlss.dll with nvngx_dlssg.dll): GeForce RTX 40 2x,
+//    RTX 50 up to 4x.
+
 #pragma once
+#include "video_core/renderer_vulkan/vk_workshop_frame_generation.h"
+
 #include <array>
-#include <atomic>
+#include <chrono>
 #include <deque>
-#include <functional>
 #include <memory>
-#include "video_core/renderer_vulkan/fg_capture.h"
+#include <span>
+#include <vector>
+
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
-
-VK_DEFINE_HANDLE(VmaAllocation)
-VK_DEFINE_HANDLE(VmaAllocator)
+#include "video_core/texture_cache/image.h"
 
 struct FfxVkFsr3_3_1_6FrameGenerationContext;
+
 namespace Vulkan {
+
+class Instance;
 class Scheduler;
+class Fg401Native;
+class FusedFgUi;
 
-struct FrameGenerationDepthCopy;
-
-// Camera and owned scene inputs captured before display advances camera history.
-struct FrameGenerationSource {
-    vk::ImageView depth_view;
-    vk::Image motion_image;
-    vk::ImageView motion_view;
-    u32 render_width{}, render_height{};
-    std::array<float, 2> jitter{};
-    std::array<float, 12> inverse_view{};
-    float near_plane{}, vertical_fov{}, frame_ms{16.666f};
-    bool reset{}, valid{};
-    std::array<float,12> view{}, previous_view{}, previous_inverse_view{};
-    std::array<float,4> projection{}, previous_projection{};
-    std::shared_ptr<const FrameGenerationDepthCopy> depth_owner;
+/// The game's camera of a frame: near and far planes, vertical field of view (radians).
+struct FrameGenCamera {
+    float near_plane = 0.1f;
+    float far_plane = 10000.0f;
+    float vertical_fov = 1.0f;
+    /// Row-vector D3D clip-space matrices (CameraMotion::ClipTransforms): the projection,
+    /// current to previous clip, and back. Without them DLSS gets a camera that stood still.
+    bool has_matrices = false;
+    bool has_world_camera = false;
+    std::array<float,12> view_to_world{};
+    std::array<float, 16> view_to_clip{};
+    std::array<float, 16> clip_to_prev_clip{};
+    std::array<float, 16> prev_clip_to_clip{};
 };
 
-class FrameGeneration {
+class FrameGenerator {
 public:
-    // Submission callbacks keep resource retirement tied to the queue that
-    // actually runs FI/OF, including when tested on a headless Vulkan device.
-    struct Submissions {
-        std::function<void()> wait_submitted;
-        std::function<void(u64)> wait;
-        std::function<bool(u64)> is_free;
+    /// Frames generated per game frame at most (DLSS 4x).
+    static constexpr u32 MaxGenerated = 3;
+    /// The format of the frames read and written (the Presenter's frame images).
+    static constexpr vk::Format ColorFormat = vk::Format::eR8G8B8A8Unorm;
+    struct Output {
+        vk::Image image;
+        vk::ImageView view;
     };
-    struct Image {
-        VmaAllocator allocator{};
-        VmaAllocation allocation{};
-        vk::Image image{};
-        Image() = default;
-        ~Image();
-        Image(const Image&) = delete;
-        Image& operator=(const Image&) = delete;
-        bool Create(VmaAllocator allocator, vk::Format format, u32 width, u32 height);
-        bool Create(VmaAllocator allocator, vk::Format format, u32 width, u32 height,
-                    vk::ImageUsageFlags image_usage);
-        operator vk::Image() const { return image; }
-    };
-    struct Snapshot {
-        FrameGenerationSource source;
-        u32 width{}, height{};
-        bool hdr{}, sdr_unorm{}, nvidia_input_only{};
-        Image color, depth, motion, generated, encoded;
-        vk::UniqueImageView color_view, depth_view, motion_view, generated_view, encoded_view;
-        vk::Image PresentImage() const { return hdr || sdr_unorm ? vk::Image(encoded) : vk::Image(generated); }
-    };
-    FrameGeneration(vk::PhysicalDevice physical, vk::Device device,
-                    VmaAllocator allocator, Submissions submissions);
-    ~FrameGeneration();
-    // Draw queue: copy per-frame depth/motion and decode SDR sRGB or HDR10 PQ
-    // frame into stable linear color. Snapshot ownership follows the final fence.
-    void Capture(vk::CommandBuffer cmdbuf, const FrameGenerationSource& source,
-                 vk::ImageView color_view, u32 width, u32 height, vk::Format format,
-                 std::shared_ptr<Snapshot>& snapshot);
-    // Opt-in readback of the exact resources and constants tagged for NVIDIA.
-    static void CaptureDiagnostic(Scheduler& scheduler, vk::Device device, VmaAllocator allocator,
-                                  vk::CommandBuffer command, const Snapshot& snapshot,
-                                  vk::Image backbuffer, vk::Format format, u32 output_width, u32 output_height,
-                                  uint32_t submission_frame, uint32_t generated,
-                                  const BbCapture::FrameGenerationCamera& camera);
-    // Freeze the scene depth at reconstruction time. The game's later UI passes
-    // can reuse its depth buffer before the final presentation snapshot is made.
-    static bool FreezeDepth(vk::Device device, VmaAllocator allocator, vk::CommandBuffer command,
-                            vk::Image source, vk::Format format, u32 width, u32 height,
-                            std::shared_ptr<FrameGenerationDepthCopy>& copy);
-    // The motion field belongs to the same scene as the frozen depth. Never
-    // leave FG pointing at the upscaler's scratch field for the next frame.
-    static bool FreezeMotion(vk::Device device, VmaAllocator allocator,
-                             vk::CommandBuffer command, vk::Image source,
-                             const std::shared_ptr<FrameGenerationDepthCopy>& copy);
-    // Present queue: record the real FI/OF prepare and dispatch. False still
-    // permits a history-seeding dispatch, but suppresses the first generated frame.
-    bool Record(vk::CommandBuffer cmdbuf, const std::shared_ptr<Snapshot>& snapshot);
-    void Submitted(u64 tick);
-    void Invalidate();
-    void Reset();
+
+    FrameGenerator(const Instance& instance, Scheduler& scheduler);
+    ~FrameGenerator();
+
+    /// Switched on in the settings (BbSettings::frame_gen), with a provider that can run.
+    [[nodiscard]] bool Wanted() const;
+    /// Generated frames per game frame the settings ask for (FSR 3.1: one; DLSS: the
+    /// multiplier less one, within what the GPU can).
+    [[nodiscard]] u32 WantedCount() const;
+    /// A presented frame without generation (HDR output): its captured inputs are dropped and
+    /// the next generation starts over.
+    void Skip();
+    /// Switched off: frees the inputs, the copy without UI and the providers' contexts.
+    void Release();
+
+    /// At the upscaler's trigger, render size `w` x `h`: records the copy of the scene depth
+    /// (depth aspect view, sampled in General layout) and returns the motion vector image to
+    /// write next (RG16F storage, General: pixels, previous minus current), or null when off.
+    vk::ImageView BeginCapture(vk::CommandBuffer cmdbuf, vk::ImageView depth, u32 w, u32 h);
+    using Camera = FrameGenCamera;
+    /// After the motion vectors are written. `motion_valid` false: they are zero this frame.
+    void EndCapture(vk::CommandBuffer cmdbuf, std::array<float, 2> jitter, bool motion_valid,
+                    Camera camera = {});
+
+    /// The game's picture before its UI (`source`, TransferSrcOptimal layout): copied.
+    void CaptureHudless(vk::CommandBuffer cmdbuf, vk::Image source, vk::Format format, u32 w,
+                        u32 h);
+    /// This frame's copy without UI, sampled (ShaderReadOnlyOptimal) with alpha one, like the
+    /// presenter reads the display buffer in `format`: the copy's channel order with the sRGB
+    /// decoding of `format` (the game's display pass draws the UI target into the display
+    /// buffer). Null when there is none.
+    vk::ImageView Hudless(vk::Format format, vk::Extent2D& size);
+
+    /// The frame was composed into `color` (ColorFormat, General layout, `width` x `height`):
+    /// records the generated frames into `outputs` (storage and transfer source, oldest first,
+    /// left in General layout) and returns how many. Zero when off, and for frames without a
+    /// Capture (menus, movies). `hudless`: the same frame composed from Hudless() (General),
+    /// or null: FSR 3.1 then interpolates it and draws this frame's UI over the result; DLSS
+    /// gets it as its HUD-less input.
+    u32 Generate(vk::CommandBuffer& cmdbuf, vk::Image color, vk::ImageView color_view,
+                 vk::ImageUsageFlags color_usage, vk::Image hudless, vk::ImageView hudless_view,
+                 u32 width, u32 height, std::span<const Output> outputs);
+
+    struct Completion { vk::Semaphore semaphore{}; u64 tick{}; };
+    Completion CompletionTicket() const { return detached_completion; }
+    static bool OverlapWanted();
+    void DrainOverlap();
+
+    /// Diagnosis: with the presenter's frame dump pending (BB_FRAME_DUMP_TRIGGER), writes
+    /// `image` (General layout, 4 bytes per pixel) to BB_DUMP_DIR as fg_<name>_*.raw.
+    void DumpIfRequested(vk::CommandBuffer cmdbuf, vk::Image image, u32 w, u32 h,
+                         const char* name);
+
 private:
-    bool EnsureCopyPipeline();
-    void RetireCompleted();
-    const vk::PhysicalDevice physical;
-    const vk::Device device;
-    const VmaAllocator allocator;
-    Submissions submissions;
-    vk::UniqueDescriptorSetLayout copy_descriptors;
-    vk::UniquePipelineLayout copy_layout;
-    vk::UniquePipeline copy_pipeline;
-    FfxVkFsr3_3_1_6FrameGenerationContext* context{};
-    u32 render_width{}, render_height{}, width{}, height{};
-    u64 frame_id{}, paused_ns{};
-    bool history{}, context_hdr{};
-    std::atomic<bool> failed{false};
-    struct Pending {
-        u64 id{}, tick{};
-        std::shared_ptr<Snapshot> snapshot;
+    void EnsureInputs(u32 w, u32 h);
+    void CreatePipeline();
+    u32 GenerateFsr3(vk::CommandBuffer cmdbuf, vk::Image color, vk::ImageUsageFlags color_usage,
+                     u32 width, u32 height, const Output& output, float frame_ms);
+    u32 GenerateDlss(vk::CommandBuffer cmdbuf, vk::Image color, vk::ImageView color_view,
+                     vk::Image hudless, vk::ImageView hudless_view, u32 width, u32 height,
+                     std::span<const Output> outputs, u32 count, float frame_ms);
+    /// Where `color` and `hudless` differ (the UI), `color` replaces the generated pixels.
+    void ComposeUi(vk::CommandBuffer cmdbuf, vk::ImageView color, vk::ImageView hudless,
+                   const Output& output, u32 width, u32 height);
+    void DestroyFsr3();
+#ifdef _WIN32
+    u32 GenerateFsr401Overlap(vk::CommandBuffer& command, vk::Image source,
+        vk::ImageView color_view, vk::ImageView hudless_view, u32 width, u32 height,
+        const Output& output, float frame_ms);
+    std::unique_ptr<Scheduler> fg401_completion_scheduler;
+    std::unique_ptr<Fg401Native> fsr401_overlap;
+    std::unique_ptr<FusedFgUi> fg401_fused_ui;
+#endif
+    Completion detached_completion{};
+    /// A provider failed for good: DLSS hands over to FSR 3.1, FSR 3.1 switches it off.
+    void Fail(int provider, const char* reason);
+
+    const Instance& instance;
+    Scheduler& scheduler;
+
+    // Inputs at render size, rewritten every captured frame.
+    VideoCore::UniqueImage depth_image;  ///< R32F hardware depth
+    VideoCore::UniqueImage motion_image; ///< RG16F pixels, previous - current
+    vk::UniqueImageView depth_view, motion_view;
+    u32 input_width = 0, input_height = 0;
+    vk::UniqueDescriptorSetLayout desc_layout;
+    vk::UniquePipelineLayout pipeline_layout;
+    vk::UniquePipeline pipeline;
+    vk::UniqueDescriptorSetLayout ui_desc_layout;
+    vk::UniquePipelineLayout ui_pipeline_layout;
+    vk::UniquePipeline ui_pipeline;
+
+    // The picture before the UI, as the game drew it (display buffer format).
+    VideoCore::UniqueImage hudless_image;
+    vk::Format hudless_format{};
+    u32 hudless_width = 0, hudless_height = 0;
+    struct HudlessView {
+        vk::Format format;
+        vk::UniqueImageView view;
     };
-    std::deque<Pending> pending;
-    Pending recording;
+    std::vector<HudlessView> hudless_views;
+    bool hudless_captured = false; ///< this frame's
+
+    bool captured = false; ///< BeginCapture ran since the last Generate
+    std::array<float, 2> capture_jitter{};
+    Camera capture_camera{};
+    bool reset = true;
+    int last_provider = 0;
+    bool last_hudless = false;
+    u32 hudless_changes = 0; ///< reported the first few times
+    bool depth_inverted = false;
+    std::chrono::steady_clock::time_point last_generate{}, last_capture{};
+    float capture_frame_ms=16.6f;
+
+    // FSR 3.1: the context and the frames it still holds views for until the GPU is done.
+    FfxVkFsr3_3_1_6FrameGenerationContext* fsr3 = nullptr;
+    u32 fsr3_width = 0, fsr3_height = 0, fsr3_render_width = 0, fsr3_render_height = 0;
+    u64 fsr3_frame_id = 0;
+    struct Pending {
+        u64 frame_id;
+        u64 tick;
+    };
+    std::deque<Pending> fsr3_pending;
 };
 
-struct FrameGenerationDepthCopy {
-    FrameGeneration::Image depth;
-    vk::UniqueImageView view;
-    FrameGeneration::Image motion;
-    vk::UniqueImageView motion_view;
-    vk::Format format{};
-    u32 width{}, height{};
-};
 } // namespace Vulkan

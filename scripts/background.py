@@ -7,7 +7,8 @@ Never suspend the process containing that thread.
 import subprocess
 
 
-def run_game(command, *, config, env, **kwargs):
+def run_game(command, *, config, env, after_exit=None, **kwargs):
     # config remains part of the launch interface; the renderer reads its menu INI.
     child = subprocess.Popen(command, env=env, **kwargs)
-    return child.wait()
+    code = child.wait()
+    return after_exit(child) if after_exit is not None else code

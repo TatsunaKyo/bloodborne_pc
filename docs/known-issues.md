@@ -2,6 +2,8 @@
 
 **Published baseline: R55, 21 October 2026 (CEST).** [Later source maintenance](maintenance.md) requires a subsequent binary build. Gameplay evidence, controlled tests and unverified hardware have different scope.
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 ## Latest gameplay evidence
 
 | Report | Status |
@@ -25,7 +27,7 @@ R41–R55 address reproduced invalidation, locking, resource churn, cache and mo
 
 ## Inherited reports and implementation limits
 
-The empty character-creation preview and some AMD world-loading reports need current hardware comparisons. They are not established failures of every installation. The HUD remains in FG input; HUDless colour/UI recomposition is unfinished. Native Supermedo FSR/DLSS FG is SDR-only, while the existing provider routes retain HDR10. Native DLSS selection needs restart. Dynamic MFG, XeSS FG/XeLL and AMD ML FG are not included Vulkan backends.
+The empty character-creation preview and some AMD world-loading reports need current hardware comparisons. They are not established failures of every installation. The HUD remains in FG input; HUDless colour/UI recomposition is unfinished. Native Supermedo FSR/DLSS FG is SDR-only, while the existing provider routes retain HDR10. Native DLSS selection needs restart. Dynamic MFG and XeSS FG/XeLL remain unavailable Vulkan backends. Current unreleased source includes experimental AMD ML-FG 4.0.1/4.0.2 through the upstream Vulkan/D3D12 bridge; that is distinct from a native Vulkan ML implementation.
 
 Earlier NameError, ignored-checkbox, background-refocus and legacy stable-tag corrections remain in their [revision records](releases/index.md). Hardware evidence is revision-specific: [Compatibility](compatibility.md).
 

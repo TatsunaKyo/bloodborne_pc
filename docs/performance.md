@@ -1,5 +1,7 @@
 # Performance work and optional comparisons
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 ## Current traversal and capture status
 
 The cemetery-exit hitch remains open **with FG on or off**. Clearing or precompiling shader cache has not established a fix. R55 includes reviewed cache, staging, sparse-memory, pipeline-priority and motion-target changes; controlled resource tests do not establish gameplay improvement.

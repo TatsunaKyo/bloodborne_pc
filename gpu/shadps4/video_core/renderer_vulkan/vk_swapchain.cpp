@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <cstdio>
+#include <string>
 #include <limits>
 #include "bbport_settings.h"
 #include "common/assert.h"
@@ -13,6 +15,7 @@
 #include "bbport_settings.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_low_latency.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -60,6 +63,7 @@ void Swapchain::Create(u32 width_, u32 height_) {
         exclusive ? vk::SharingMode::eExclusive : vk::SharingMode::eConcurrent;
     const auto format = needs_hdr ? SURFACE_FORMAT_HDR : surface_format;
     vk::SwapchainCreateInfoKHR swapchain_info = {
+        .pNext = LowLatency::SwapchainCreateNext(),
         .surface = surface,
         .minImageCount = image_count,
         .imageFormat = format.format,
@@ -94,6 +98,7 @@ void Swapchain::Create(u32 width_, u32 height_) {
     ASSERT_MSG(swapchain_result == vk::Result::eSuccess, "Failed to create swapchain: {}",
                vk::to_string(swapchain_result));
     swapchain = chain;
+    LowLatency::OnSwapchain(swapchain);
 
     SetupImages();
     BbNvidia::BindDevice(instance.GetPhysicalDevice(),instance.GetDevice());
@@ -152,8 +157,13 @@ bool Swapchain::AcquireNextImage() {
     return !needs_recreation;
 }
 
-bool Swapchain::Present() {
+bool Swapchain::Present(vk::Queue queue, u64 present_id) {
+    const vk::PresentIdKHR present_ids = {
+        .swapchainCount = 1,
+        .pPresentIds = &present_id,
+    };
     const vk::PresentInfoKHR present_info = {
+        .pNext = present_id && instance.IsPresentIdEnabled() ? &present_ids : nullptr,
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &present_ready[image_index],
         .swapchainCount = 1,
@@ -161,7 +171,7 @@ bool Swapchain::Present() {
         .pImageIndices = &image_index,
     };
 
-    auto result = instance.GetPresentQueue().presentKHR(present_info);
+    auto result = (queue ? queue : instance.GetPresentQueue()).presentKHR(present_info);
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
         needs_recreation = true;
     } else {
@@ -196,6 +206,19 @@ void Swapchain::FindPresentFormat() {
         surface_format.format = vk::Format::eR8G8B8A8Unorm;
         surface_format.colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
         return;
+    }
+
+    // bbport: on a display Windows runs in HDR the picture is re-encoded for the desktop's sRGB
+    // decode (post_process.frag), which leaves the game's 12 darkest 8-bit levels on 4 codes of
+    // an 8-bit swapchain. A 10-bit one keeps them apart.
+    if (window.IsOnHdrDisplay() && EmulatorSettings.IsHdrGammaEnabled()) {
+        const auto it = std::ranges::find(
+            formats, vk::SurfaceFormatKHR{vk::Format::eA2B10G10R10UnormPack32,
+                                          vk::ColorSpaceKHR::eSrgbNonlinear});
+        if (it != formats.end()) {
+            surface_format = *it;
+            return;
+        }
     }
 
     // Try to find a suitable format.
@@ -248,9 +271,14 @@ void Swapchain::FindPresentMode() {
         return;
     }
 
-    const auto requested_mode = window_mode == BbSettings::Borderless
-        ? std::string{borderless_vsync ? "Mailbox" : "Immediate"}
-        : EmulatorSettings.GetPresentMode();
+    const auto requested_mode = EmulatorSettings.IsVrr() ? std::string{"Fifo"} :
+        window_mode == BbSettings::Borderless
+            ? std::string{borderless_vsync ? "Mailbox" : "Immediate"}
+            : EmulatorSettings.GetPresentMode();
+    if (EmulatorSettings.IsVrr()) {
+        std::printf("VRR: V-Sync (FIFO), frame cap %u FPS (display %u Hz)\n",
+                    EmulatorSettings.GetFrameLimit(), BbDisplayRefreshHz());
+    }
     if (requested_mode == "Mailbox") {
         present_mode = vk::PresentModeKHR::eMailbox;
     } else if (requested_mode == "Fifo") {
@@ -306,7 +334,7 @@ void Swapchain::SetSurfaceProperties() {
     // Select number of images in swap chain, we prefer one buffer in the background to work on
     // (bbport: two with frame generation, which presents several images per game frame).
     image_count = capabilities.minImageCount +
-                  (BbSettings::Get().frame_gen != BbSettings::FrameGenOff ? 2 : 1);
+                  (BbSettings::Get().ActiveFrameGen() != BbSettings::FrameGenOff ? 2 : 1);
     if (capabilities.maxImageCount > 0) {
         image_count = std::min(image_count, capabilities.maxImageCount);
     }
@@ -344,6 +372,7 @@ void Swapchain::Destroy() {
     images_view.clear();
 
     if (swapchain) {
+        LowLatency::OnSwapchain({});
         device.destroySwapchainKHR(swapchain);
     }
 

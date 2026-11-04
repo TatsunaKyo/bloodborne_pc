@@ -449,9 +449,65 @@ void Shoulder(Canvas& c, const char* name) {
     Text(c, name, 16, 16.5f, 26, 19, 9, kGlyph);
 }
 
+// The PlayStation symbols' colours, as the game's key guide draws them on the round plate.
+constexpr Color kPsCross{58, 104, 232, 255}, kPsCircle{222, 50, 50, 255}, kPsTriangle{52, 186, 150, 255},
+                kPsSquare{218, 112, 180, 255};
+
+/// A PlayStation button in the game's style: the face symbols in their colours on the round
+/// plate, the others by name. The d-pad and the sticks stay the game's own.
+bool DrawPlayStation(Icon icon, Pixels& out) {
+    Canvas c;
+    switch (icon) {
+    case Cancel:  // Cross
+        Round(c);
+        Line(c, 10.5f, 10.5f, 21.5f, 21.5f, 2.6f, kPsCross);
+        Line(c, 21.5f, 10.5f, 10.5f, 21.5f, 2.6f, kPsCross);
+        break;
+    case OK:  // Circle: a ring
+        Round(c);
+        FillRoundRect(c, 8.5f, 8.5f, 23.5f, 23.5f, 7.5f, kPsCircle);
+        FillRoundRect(c, 11.1f, 11.1f, 20.9f, 20.9f, 4.9f, kPlate);
+        break;
+    case R_U:  // Triangle
+        Round(c);
+        Line(c, 16, 9, 23.2f, 21.5f, 2.4f, kPsTriangle);
+        Line(c, 23.2f, 21.5f, 8.8f, 21.5f, 2.4f, kPsTriangle);
+        Line(c, 8.8f, 21.5f, 16, 9, 2.4f, kPsTriangle);
+        break;
+    case R_L:  // Square
+        Round(c);
+        FillRoundRect(c, 9.5f, 9.5f, 22.5f, 22.5f, 0.8f, kPsSquare);
+        FillRoundRect(c, 12, 12, 20, 20, 0.2f, kPlate);
+        break;
+    case L1: Shoulder(c, "L1"); break;
+    case R1: Shoulder(c, "R1"); break;
+    case L2: Shoulder(c, "L2"); break;
+    case R2: Shoulder(c, "R2"); break;
+    case L3: case R3:
+        Round(c);
+        Text(c, icon == L3 ? "L3" : "R3", 16, 16, 22, 15, 9, kGlyph);
+        break;
+    case Start:  // Options: three short lines
+        Round(c);
+        for (const float y : {11.5f, 16.0f, 20.5f}) Line(c, 11, y, 21, y, 2, kGlyph);
+        break;
+    case TP_L:  // the touchpad's left half
+        Round(c);
+        FillRoundRect(c, 7, 10, 25, 22, 2.5f, kGlyph);
+        FillRoundRect(c, 8.6f, 11.6f, 23.4f, 20.4f, 1.2f, kPlate);
+        FillRoundRect(c, 8.6f, 11.6f, 16, 20.4f, 1.2f, kGlyph);
+        break;
+    default:
+        return false;
+    }
+    out = Finish(c);
+    return true;
+}
+
 } // namespace
 
 bool DrawPad(Icon icon, Pad pad, Pixels& out) {
+    if (pad == PadPlayStation) return DrawPlayStation(icon, out);
     const bool xbox = pad == PadXbox;
     Canvas c;
     switch (icon) {

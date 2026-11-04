@@ -59,7 +59,7 @@ sl::Result PacingOptions(const sl::ReflexOptions& options) {
 void Caps() {
     auto& s=BbSettings::Get();
     BbNvidia::reflex_options=&PacingOptions;BbNvidia::reflex_options_applied=false;
-    s.frame_generation=BbSettings::FrameGenerationNvidia;s.variable_frame_time=true;
+    s.frame_generation=BbSettings::FrameGenerationNvidia;s.variable_frame_time=true;s.startup_workshop_nvidia=true;
     struct Scenario {int real, output, generated;unsigned effective, interval;};
     const Scenario cases[]{
         {60,120,1,60,8334},{75,130,1,65,7693},{75,0,1,75,6667},
@@ -211,9 +211,12 @@ struct {void Reset(){}} frame_metrics;
         code=code.replace('__HANDOFF__',tokens.section(source,'void BeginRender()','void BeforePresent('))
         code=code.replace('__SHUTDOWN__','')
         gnm=at(GNM,revision)
-        start=gnm.index('    const auto hitch_submission=') if not revision else gnm.index('    BbNvidia::QueueFlip(buf_idx,flip_arg);')
+        start=gnm.index('        const auto hitch_submission =') if not revision else gnm.index('    BbNvidia::QueueFlip(buf_idx,flip_arg);')
         tail=gnm[start:gnm.index('\n}',start)]
         schedule=SCHEDULE.replace('__GNM_TAIL__',tail)
+        if not revision:
+            schedule=schedule.replace('    std::unique_lock lk{m_submit_lock};','    s32 result; {std::unique_lock lk{m_submit_lock};')
+        schedule='namespace Vulkan::LowLatency {void FrameSubmitted(){} bool PacesFrames(){return false;}}\n'+schedule
         driver=at('gpu/shadps4/core/libraries/videoout/driver.cpp',revision)
         start=driver.index('    const auto update_limit = [&] {')
         update=driver[start:driver.index('    std::printf("VideoOut:',start)]

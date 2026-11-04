@@ -36,11 +36,11 @@ class ForkUpdates(unittest.TestCase):
         return {'tag_name': tag, 'html_url': 'https://github.com/TatsunaKyo/bloodborne_pc/releases/tag/' + tag,
                 'assets': assets if assets is not None else [
                     {'name': 'source.zip', 'browser_download_url': 'https://example.invalid/source.zip'},
-                    {'name': f'Bloodborne-Windows-v1.6-TatsunaKyo-Revision-{future_revision}.zip',
+                    {'name': launcher.update_package_name(future_version),
                      'browser_download_url': 'https://example.invalid/windows.zip'}]}
 
     def latest(self, release):
-        with patch.object(launcher.urllib.request, 'urlopen', return_value=io.BytesIO(json.dumps(release).encode())) as request:
+        with patch.object(launcher.bbport_tls, 'urlopen', return_value=io.BytesIO(json.dumps(release).encode())) as request:
             result = launcher.latest_release()
         self.assertEqual(request.call_args.args[0].full_url,
                          'https://api.github.com/repos/TatsunaKyo/bloodborne_pc/releases/latest')
@@ -54,7 +54,7 @@ class ForkUpdates(unittest.TestCase):
         app.messagebox = types.SimpleNamespace(
             showinfo=lambda *args: calls.append(('info', args)),
             showerror=lambda *args: calls.append(('error', args)))
-        with patch.object(launcher.urllib.request, 'urlopen', return_value=io.BytesIO(json.dumps(release).encode())):
+        with patch.object(launcher.bbport_tls, 'urlopen', return_value=io.BytesIO(json.dumps(release).encode())):
             app.check_update(manual)
         while not app.ui_calls.empty():
             app.ui_calls.get_nowait()()
@@ -75,13 +75,13 @@ class ForkUpdates(unittest.TestCase):
         candidates=[self.release('windows-v1.9.2'), {}, None, current,
                     {**current,'draft':True}, {**current,'prerelease':True}, oldest,
                     self.release('windows-v1.6-tatsunakyo.53'), current]
-        with patch.object(launcher.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps(candidates).encode())) as request:
+        with patch.object(launcher.bbport_tls,'urlopen',return_value=io.BytesIO(json.dumps(candidates).encode())) as request:
             found=launcher.installable_releases()
         self.assertEqual([item[0] for item in found],[future_version,'1.6-tatsunakyo.54'])
         self.assertEqual(request.call_args.args[0].full_url,
                          'https://api.github.com/repos/TatsunaKyo/bloodborne_pc/releases?per_page=100')
         for value in ({},None,'wrong'):
-            with patch.object(launcher.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps(value).encode())), self.assertRaises(ValueError):
+            with patch.object(launcher.bbport_tls,'urlopen',return_value=io.BytesIO(json.dumps(value).encode())), self.assertRaises(ValueError):
                 launcher.installable_releases()
 
     def test_published_stable_preview_tags(self):
@@ -150,7 +150,7 @@ class ForkUpdates(unittest.TestCase):
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.1')), [])
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.0')), [])
         self.assertEqual(self.check(self.release())[0][0], 'update')
-        self.assertEqual(self.check(self.release('windows-v1.7-tatsunakyo.1'))[0][0], 'update')
+        self.assertEqual(self.check(self.release('windows-v9.9.9-tatsunakyo.1'))[0][0], 'update')
         self.assertGreater(launcher.version_tuple('1.6-tatsunakyo.11'),
                            launcher.version_tuple('1.6-tatsunakyo.2'))
         self.assertEqual(self.check(self.release('windows-v1.6-tatsunakyo.1'), manual=True)[0][0], 'info')
@@ -160,7 +160,7 @@ class ForkUpdates(unittest.TestCase):
         app.ui_calls = queue.Queue()
         error = HTTPError(launcher.RELEASES_API, 404, 'Not Found', {}, None)
         try:
-            with patch.object(launcher.urllib.request, 'urlopen', side_effect=error):
+            with patch.object(launcher.bbport_tls, 'urlopen', side_effect=error):
                 app.check_update()
         finally:
             error.close()

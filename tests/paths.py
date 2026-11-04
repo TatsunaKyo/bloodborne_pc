@@ -4,8 +4,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 def setup_imports():
-    if str(ROOT / 'scripts') not in sys.path:
-        sys.path.insert(0, str(ROOT / 'scripts'))
+    for folder in ('tools', 'scripts', 'launcher'):
+        path = str(ROOT / folder)
+        if path not in sys.path:
+            sys.path.insert(0, path)
 
 
 setup_imports()

@@ -5,11 +5,14 @@ src/runtime_input_config.c, the authoritative parser this mirrors). Scope: keybo
 button bindings for the plain button/d-pad outputs (BUTTON_OUTPUTS) and the stick half-axes
 (STICK_OUTPUTS, keyboard only -- a mouse button is a press, not an axis), which is what the
 launcher's remap page edits, up to SLOTS per action, plus walk (leftjoystick_halfmode).
-Controller bindings are preserved untouched (round-tripped as unknown lines by save_input_ini),
-not edited here.
+save_input_ini keeps controller lines untouched; the Controller section edits one controller
+button per button action through load_controller_bindings/save_controller_bindings (below).
 """
 import os
+import sys
 from pathlib import Path
+
+import bbport_textfile as textfile
 
 # Keyboard-only outputs the remap page edits. (action key in the .ini, Tk display order).
 BUTTON_OUTPUTS = ['cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'l3', 'r3',
@@ -54,7 +57,7 @@ ACTION_GROUPS = [
         ('leftjoystick_halfmode', ('Walk (hold)', 'Шаг (удерживать)')),
         ('circle', ('Dodge / dash (hold); back in menus (Circle)',
                     'Уклонение / бег (удерживать); назад в меню (Круг)')),
-        ('l3', ('Jump while dashing (L3)', 'Прыжок во время бега (L3)')),
+        ('l3', ('Left stick click (L3)', 'Нажатие левого стика (L3)')),
         ('r3', ('Lock on / reset camera (R3)', 'Захват цели / сброс камеры (R3)')),
         ('axis_right_y_minus', ('Camera up', 'Камера вверх')),
         ('axis_right_y_plus', ('Camera down', 'Камера вниз')),
@@ -252,15 +255,67 @@ def keysym_to_name(keysym):
 # Windows delivers wheel scroll separately via <MouseWheel>/event.delta, so there is no clash on
 # this platform). Requires a reasonably current Tcl/Tk (8.6.12+, which is what Python 3.10+'s
 # official Windows installers bundle); an older frozen interpreter would simply never fire a
-# <ButtonPress> for the side buttons, same as if the button didn't exist.
+# <ButtonPress> for the side buttons, same as if the button didn't exist. 8/9 are the X11 (and
+# newer Tk) numbers for the same two buttons.
 TK_BUTTON_NUM_TO_NAME = {1: 'leftbutton', 2: 'middlebutton', 3: 'rightbutton',
-                          4: 'sidebuttonback', 5: 'sidebuttonforward'}
+                          4: 'sidebuttonback', 5: 'sidebuttonforward',
+                          8: 'sidebuttonback', 9: 'sidebuttonforward'}
 
 
 def button_num_to_name(num):
     """Tk's event.num from a <ButtonPress> -> our mouse button name, or None for a button number
     Tk reports that bbport has no name for."""
     return TK_BUTTON_NUM_TO_NAME.get(num)
+
+
+# Win32 virtual-key codes of the mouse buttons Tk does not reliably turn into <ButtonPress>
+# events (it depends on the Tcl/Tk build, and mouse drivers can interfere): the wheel click and
+# the two side buttons. The Controls page polls them with GetAsyncKeyState while it waits for an
+# input, next to the Tk events, so they can always be bound.
+WIN_POLLED_MOUSE_BUTTONS = {0x04: 'middlebutton',        # VK_MBUTTON
+                             0x05: 'sidebuttonback',      # VK_XBUTTON1
+                             0x06: 'sidebuttonforward'}   # VK_XBUTTON2
+
+
+class MouseButtonPoller:
+    """Reports the wheel click / side buttons by polling `get_key_state(vk)` (Win32's
+    GetAsyncKeyState: the high bit 0x8000 is set while the button is down). A button already
+    held when the poller is made is not reported until it has been let go and pressed again,
+    so the click that opened the capture never binds itself."""
+
+    def __init__(self, get_key_state, buttons=None):
+        self._get = get_key_state
+        self._buttons = dict(WIN_POLLED_MOUSE_BUTTONS if buttons is None else buttons)
+        self._down = {vk: self._is_down(vk) for vk in self._buttons}
+
+    def _is_down(self, vk):
+        return bool(self._get(vk) & 0x8000)
+
+    def poll(self):
+        """The name of a button that went from up to down since the last poll, or None. State is
+        refreshed for every button on every call, whether or not one is reported."""
+        pressed = None
+        for vk, name in self._buttons.items():
+            down = self._is_down(vk)
+            if down and not self._down[vk] and pressed is None:
+                pressed = name
+            self._down[vk] = down
+        return pressed
+
+
+def windows_mouse_poller():
+    """A MouseButtonPoller on the real GetAsyncKeyState, or None where there is none (not
+    Windows) or it cannot be loaded."""
+    if sys.platform != 'win32':
+        return None
+    try:
+        import ctypes
+        get_key_state = ctypes.windll.user32.GetAsyncKeyState
+        get_key_state.argtypes = [ctypes.c_int]
+        get_key_state.restype = ctypes.c_short
+    except (AttributeError, OSError, ImportError):
+        return None
+    return MouseButtonPoller(get_key_state)
 
 
 def wheel_to_name(delta, horizontal=False):
@@ -426,6 +481,17 @@ def apply_layout(lines, layout=DS3_LAYOUT):
     return out + [''] + layout.splitlines()
 
 
+def keyboard_layout(lines):
+    """Which keyboard and mouse bindings `lines` hold: 'ds3' (DS3_LAYOUT), 'default' (the shipped
+    file's) or 'own' (changed by hand). The order of an action's bindings does not count."""
+    def bindings(of):
+        return {output: sorted(values) for output, values in read_input_lines(of)[0].items()}
+    current, default = bindings(lines), DEFAULT_INPUT_INI.splitlines()
+    if current == bindings(apply_layout(default)):
+        return 'ds3'
+    return 'default' if current == bindings(default) else 'own'
+
+
 # shadPS4/bbport defaults when mouse_movement_params is absent (spec section 4.2 / 4.3).
 MOUSE_SETTINGS_DEFAULTS = {'enabled': False, 'stick': 'right',
                             'deadzone_offset': 0.5, 'speed': 1.0, 'speed_offset': 0.125,
@@ -489,13 +555,27 @@ def load_input_ini(path):
     just whether the mouse is live right now -- uncommenting it is exactly what the "Enable
     mouse look" checkbox does in save_input_ini.
     """
-    bindings = {key: [] for key in KEYBOARD_OUTPUTS}
     try:
-        lines = Path(path).read_text(encoding='utf-8').splitlines()
+        text, clean = textfile.read(path)
+        lines = text.splitlines()
     except FileNotFoundError:
-        lines = DEFAULT_INPUT_INI.splitlines()
+        lines, clean = DEFAULT_INPUT_INI.splitlines(), True
     except OSError:
-        lines = []
+        lines, clean = [], True
+    if not clean:  # saved in another encoding by an editor: rewritten as UTF-8, the old file kept as .bad
+        bad = textfile.keep_bad(path)
+        try:
+            textfile.write(path, '\n'.join(lines) + '\n')
+            textfile.REPAIRS.append(f'Controls: {path} was not UTF-8; rewritten as UTF-8, '
+                                    f'the old file is {bad.name if bad else "not kept"}')
+        except OSError:
+            pass
+    return read_input_lines(lines)
+
+
+def read_input_lines(lines):
+    """load_input_ini for lines already read."""
+    bindings = {key: [] for key in KEYBOARD_OUTPUTS}
     toggle_key, reload_key = 'f7', 'f8'
     mouse = dict(MOUSE_SETTINGS_DEFAULTS)
     for raw in lines:
@@ -570,14 +650,16 @@ def save_input_ini(path, bindings, lines):
         if output not in written and bindings.get(output):
             values = bindings[output]
             out.extend(f'{output} = {format_binding(v)}' for v in (values if isinstance(values, list) else [values]))
-    Path(path).write_text('\n'.join(out) + '\n', encoding='utf-8')
+    textfile.write(path, '\n'.join(out) + '\n')
 
 
 def save_mouse_settings(path, settings, lines):
     """Rewrites mouse_to_joystick (commenting it out when settings['enabled'] is False, same as
     the default file ships it) and mouse_movement_params in place; appends either line if the
     file never had it (an input.ini from before this feature, or one copied from shadPS4, which
-    uses the same key names but never had mouse_to_joystick to begin with)."""
+    uses the same key names but never had mouse_to_joystick to begin with). The line's key itself,
+    not hotkey_toggle_mouse_to_joystick (after the Dark Souls III layout it comes first); a second
+    mouse_to_joystick line is dropped, or it would decide instead."""
     written_toggle = written_params = False
     written_simple = set()
     out = []
@@ -586,13 +668,14 @@ def save_mouse_settings(path, settings, lines):
         hash_pos = line.find('#')
         body = line[:hash_pos] if hash_pos >= 0 else line
         commented_body = line[hash_pos + 1:] if hash_pos >= 0 else ''
-        is_toggle_line = ('mouse_to_joystick' in body.split('=', 1)[0] if '=' in body else False) or \
-            ('mouse_to_joystick' in commented_body.split('=', 1)[0] if '=' in commented_body else False)
+        is_toggle_line = any('=' in part and part.split('=', 1)[0].split(':')[0] == 'mouse_to_joystick'
+                             for part in (body, commented_body))
         is_params_line = '=' in body and body.split('=', 1)[0].split(':')[0] == 'mouse_movement_params'
-        if is_toggle_line and not written_toggle:
-            written_toggle = True
-            new_line = f"mouse_to_joystick = {settings['stick']}"
-            out.append(new_line if settings['enabled'] else f'# {new_line}')
+        if is_toggle_line:
+            if not written_toggle:
+                written_toggle = True
+                new_line = f"mouse_to_joystick = {settings['stick']}"
+                out.append(new_line if settings['enabled'] else f'# {new_line}')
             continue
         simple = next((key for key, name in MOUSE_SIMPLE_LINES.items()
                        if '=' in body and body.split('=', 1)[0].split(':')[0] == name), None)
@@ -616,7 +699,7 @@ def save_mouse_settings(path, settings, lines):
     for key in MOUSE_SIMPLE_LINES:
         if key not in written_simple and settings[key] != MOUSE_SETTINGS_DEFAULTS[key]:
             out.append(_mouse_simple_line(key, settings[key]))
-    Path(path).write_text('\n'.join(out) + '\n', encoding='utf-8')
+    textfile.write(path, '\n'.join(out) + '\n')
 
 
 def _mouse_simple_line(key, value):
@@ -625,3 +708,99 @@ def _mouse_simple_line(key, value):
     if isinstance(value, str):
         return f'{MOUSE_SIMPLE_LINES[key]} = {value}'
     return f'{MOUSE_SIMPLE_LINES[key]} = {value:.3g}'
+
+
+# ---- Controller bindings (the Controls page's Controller section) ------------------------------
+# Controller buttons a game action can take: runtime_input_config.c's button names and the two
+# triggers. A line "cross = circle" makes the controller's Circle press the game's Cross; each
+# action takes one controller button here (the game keeps four bindings per action: three
+# keyboard and mouse ones and this). Sticks keep their own axis lines, not edited here.
+CONTROLLER_NAMES = ('cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'l3', 'r3',
+                    'options', 'back', 'pad_up', 'pad_down', 'pad_left', 'pad_right',
+                    'l4', 'r4', 'l5', 'r5')
+# Other names the game accepts for the same buttons: read as the first ones.
+CONTROLLER_ALIASES = {'share': 'back', 'lpaddle_high': 'l4', 'lpaddle_low': 'l5',
+                      'rpaddle_high': 'r4', 'rpaddle_low': 'r5'}
+CONTROLLER_NAMES_SET = set(CONTROLLER_NAMES) | set(CONTROLLER_ALIASES)
+CONTROLLER_OUTPUTS = BUTTON_OUTPUTS
+# What the game's own input.ini binds (src/runtime_input_config.c DEFAULT_CONTROLLER): every
+# button to itself, the touchpad's left click to Share/View. The touchpad itself always works.
+DEFAULT_CONTROLLER = {**{o: o for o in BUTTON_OUTPUTS if o in CONTROLLER_NAMES},
+                      'touchpad_left': 'back', 'touchpad_right': None}
+
+# How a slot shows a controller button: PlayStation name / Xbox name.
+CONTROLLER_DISPLAY = {
+    'cross': '✕ / A', 'circle': '○ / B', 'square': '□ / X', 'triangle': '△ / Y',
+    'l1': 'L1 / LB', 'r1': 'R1 / RB', 'l2': 'L2 / LT', 'r2': 'R2 / RT', 'l3': 'L3 / LS', 'r3': 'R3 / RS',
+    'options': 'Options / Menu', 'back': 'Share / View',
+    'pad_up': ('D-pad ↑', 'Крестовина ↑'), 'pad_down': ('D-pad ↓', 'Крестовина ↓'),
+    'pad_left': ('D-pad ←', 'Крестовина ←'), 'pad_right': ('D-pad →', 'Крестовина →'),
+    'l4': ('Paddle L4', 'Лепесток L4'), 'r4': ('Paddle R4', 'Лепесток R4'),
+    'l5': ('Paddle L5', 'Лепесток L5'), 'r5': ('Paddle R5', 'Лепесток R5'),
+}
+
+
+def controller_display_name(name, russian=False):
+    shown = CONTROLLER_DISPLAY.get(name, name)
+    return shown[1 if russian else 0] if isinstance(shown, tuple) else shown
+
+
+def _controller_line(raw):
+    """(output, controller name) of an input.ini line binding one controller button to a game
+    button action, else None."""
+    line = ''.join(raw.split())
+    hash_pos = line.find('#')
+    body = line[:hash_pos] if hash_pos >= 0 else line
+    if '=' not in body:
+        return None
+    output, value = (p.split(':')[0] for p in body.split('=', 1))
+    if output in CONTROLLER_OUTPUTS and value in CONTROLLER_NAMES_SET:
+        return output, CONTROLLER_ALIASES.get(value, value)
+    return None
+
+
+def load_controller_bindings(lines):
+    """{output: controller button name or None} for CONTROLLER_OUTPUTS: the first controller line
+    of each (a second one is kept in the file, not shown)."""
+    found = {o: None for o in CONTROLLER_OUTPUTS}
+    seen = set()
+    for raw in lines:
+        hit = _controller_line(raw)
+        if hit and hit[0] not in seen:
+            seen.add(hit[0])
+            found[hit[0]] = hit[1]
+    return found
+
+
+def save_controller_bindings(path, controller, lines):
+    """Writes `controller` ({output: name or None}, the edited outputs only) into input.ini: an
+    output's first controller line is replaced in place (or removed for None), new ones go after
+    the last controller line. Everything else is kept as it is."""
+    written, out, last_controller = set(), [], None
+    for raw in lines:
+        hit = _controller_line(raw)
+        if hit and hit[0] in controller:
+            if hit[0] not in written:
+                written.add(hit[0])
+                if controller[hit[0]]:
+                    out.append(f'{hit[0]} = {controller[hit[0]]}')
+                    last_controller = len(out)
+                continue
+        out.append(raw)
+        if hit:
+            last_controller = len(out)
+    new = [f'{o} = {controller[o]}' for o in CONTROLLER_OUTPUTS
+           if o in controller and o not in written and controller[o]]
+    at = last_controller if last_controller is not None else len(out)
+    out[at:at] = new
+    textfile.write(path, '\n'.join(out) + '\n')
+
+
+def controller_conflicts(controller):
+    """{output: [other outputs on the same controller button]}: both fire on that button."""
+    by_button = {}
+    for output, name in controller.items():
+        if name:
+            by_button.setdefault(name, []).append(output)
+    return {o: [p for p in outputs if p != o] for outputs in by_button.values() if len(outputs) > 1
+            for o in outputs}

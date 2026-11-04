@@ -9,6 +9,8 @@
 #include "common/thread.h"
 #include "core/emulator_settings.h"
 #include <array>
+#include <algorithm>
+#include <cstdlib>
 #include <condition_variable>
 #include <cstring>
 #include <fstream>
@@ -17,6 +19,7 @@
 #include <mutex>
 #include <queue>
 #include <span>
+#include <string_view>
 
 namespace {
 std::mutex request_mutex{};
@@ -25,6 +28,55 @@ std::queue<std::packaged_task<void()>> req_queue{};
 bool accepting_requests{};
 mz_zip_archive zip_ar{};
 bool ar_is_read_only{true};
+u64 CacheMaxBytes() {
+    static const u64 limit = [] {
+        const char* value = std::getenv("BB_CACHE_MAX_MB");
+        const long mb = value != nullptr && *value != '\0' ? std::strtol(value, nullptr, 10) : 2048;
+        return mb > 0 ? static_cast<u64>(mb) * 1024ULL * 1024ULL : 0ULL;
+    }();
+    return limit;
+}
+
+void PruneCache(const std::filesystem::path& dir) {
+    const u64 limit = CacheMaxBytes();
+    if (limit == 0) {
+        return;
+    }
+    std::error_code error;
+    std::vector<std::pair<std::filesystem::file_time_type, std::pair<u64, std::filesystem::path>>> files;
+    u64 total = 0;
+    for (const auto& entry : std::filesystem::directory_iterator{dir, error}) {
+        if (!entry.is_regular_file(error)) {
+            continue;
+        }
+        const auto size = static_cast<u64>(entry.file_size(error));
+        if (error) {
+            continue;
+        }
+        total += size;
+        files.emplace_back(entry.last_write_time(error), std::pair<u64, std::filesystem::path>{size, entry.path()});
+    }
+    if (total <= limit) {
+        return;
+    }
+    std::sort(files.begin(), files.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+    // Leave some headroom so the sweep does not run on every start.
+    const u64 target = limit - limit / 10;
+    u64 removed = 0;
+    for (const auto& [time, info] : files) {
+        if (total <= target) {
+            break;
+        }
+        if (std::filesystem::remove(info.second, error)) {
+            total -= std::min(total, info.first);
+            ++removed;
+        }
+    }
+    LOG_WARNING(Render, "Shader cache pruned: {} file(s) removed, {} MiB left (cap {} MiB)", removed,
+                total >> 20, limit >> 20);
+}
+
 } // namespace
 
 namespace Storage {
@@ -78,7 +130,10 @@ void DataBase::Open() {
   const auto &game_info = Common::ElfInfo::Instance();
   using namespace Common::FS;
   std::error_code error;
-  std::filesystem::create_directories(GetUserPath(PathType::CacheDir), error);
+  auto cache_root = GetUserPath(PathType::CacheDir);
+  if (const char* env = std::getenv("BB_CACHE_DIR"); env && *env)
+    cache_root = std::filesystem::path{std::u8string_view(reinterpret_cast<const char8_t*>(env))};
+  std::filesystem::create_directories(cache_root, error);
   if (error) {
     LOG_WARNING(Render, "Cannot open shader cache: {}", error.message());
     return;
@@ -87,7 +142,7 @@ void DataBase::Open() {
     mz_zip_zero_struct(&zip_ar);
     ar_is_read_only = true;
     cache_path =
-        GetUserPath(PathType::CacheDir) /
+        cache_root /
         std::filesystem::path{game_info.GameSerial()}.replace_extension(".zip");
     if (!mz_zip_reader_init_file(&zip_ar, cache_path.string().c_str(),
                                  MZ_ZIP_FLAG_READ_ALLOW_WRITING) ||
@@ -100,13 +155,14 @@ void DataBase::Open() {
       ar_is_read_only = false;
     }
   } else {
-    cache_path = GetUserPath(PathType::CacheDir) / game_info.GameSerial();
+    cache_path = cache_root / game_info.GameSerial();
     std::filesystem::create_directories(cache_path, error);
     if (error) {
       LOG_WARNING(Render, "Cannot open shader cache: {}", error.message());
       return;
     }
   }
+  if (!EmulatorSettings.IsPipelineCacheArchived()) PruneCache(cache_path);
   {
     std::scoped_lock lock{request_mutex};
     accepting_requests = true;
@@ -316,6 +372,12 @@ void DataBase::ForEachBlob(
   }
 }
 
+std::filesystem::path DataBase::DriverCachePath() const {
+  if (EmulatorSettings.IsPipelineCacheArchived())
+    return std::filesystem::path{cache_path}.replace_extension(".vkcache");
+  return cache_path / "driver.vkcache";
+}
+
 void DataBase::Clear() {
   if (!opened)
     return;
@@ -337,7 +399,7 @@ void DataBase::Clear() {
     const auto path = it->path();
     it.increment(error);
     std::error_code file_error;
-    if (std::filesystem::is_regular_file(
+    if (path.extension() != ".vkcache" && std::filesystem::is_regular_file(
             std::filesystem::symlink_status(path, file_error)) &&
         std::filesystem::remove(path, file_error))
       ++removed;

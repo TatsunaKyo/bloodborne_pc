@@ -4,6 +4,7 @@
 #include "bbport_nvidia_preset.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cfloat>
 #include <chrono>
@@ -13,11 +14,24 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <type_traits>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <pdh.h>
+#include <pdhmsg.h>
+#include <cwchar>
+#include <thread>
+#include <vector>
+#endif
 
 #include <SDL3/SDL.h>
+#include "bbport_process_memory.h"
 #include "bbport_settings.h"
 #include "bbport_frametime.h"
 #include "../bbcheats.h"
+#include "bbport_fsr41_ui.h"
+#include <filesystem>
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -57,15 +71,224 @@ namespace {
 std::mutex imgui_mutex; // the ImGui context: window thread (input) and present thread
 bool initialized = false;
 std::atomic<bool> menu_open{false};
-bool l3_down = false, r3_down = false;
+bool l3_down = false, r3_down = false, back_down = false, start_down = false;
+
+// What opens the menu (the launcher's Controls page): BB_MENU_KEY, a key's name ("Insert", the
+// default, "F10", ...) or "none"; BB_MENU_PAD, "l3+r3" (the default), "back+start" or "off".
+SDL_Keycode MenuKey() {
+    static const SDL_Keycode key = [] {
+        const char* name = std::getenv("BB_MENU_KEY");
+        if (!name || !*name) return SDLK_INSERT;
+        if (!SDL_strcasecmp(name, "none")) return SDLK_UNKNOWN;
+        const SDL_Keycode found = SDL_GetKeyFromName(name);
+        return found != SDLK_UNKNOWN ? found : SDLK_INSERT;
+    }();
+    return key;
+}
+enum class MenuPad { Off, L3R3, BackStart };
+MenuPad MenuPadCombo() {
+    static const MenuPad combo = [] {
+        const char* name = std::getenv("BB_MENU_PAD");
+        if (name && !SDL_strcasecmp(name, "off")) return MenuPad::Off;
+        if (name && !SDL_strcasecmp(name, "back+start")) return MenuPad::BackStart;
+        return MenuPad::L3R3;
+    }();
+    return combo;
+}
+// "Insert / L3+R3", as the window title and the log name it.
+std::string MenuOpeners() {
+    std::string text = MenuKey() != SDLK_UNKNOWN ? SDL_GetKeyName(MenuKey()) : "";
+    const MenuPad pad = MenuPadCombo();
+    if (pad != MenuPad::Off) {
+        text += text.empty() ? "" : " / ";
+        text += pad == MenuPad::L3R3 ? "L3+R3" : "Select+Start";
+    }
+    return text.empty() ? "the launcher only" : text;
+}
 bool dirty = false; // settings changed while open: saved on close
 // The game's text dialog (SetTextEntry), guarded by imgui_mutex.
 bool text_entry_active = false;
 std::string text_entry_prompt, text_entry_text;
+// Video memory warning (BbOverlay::Warn): text from the GPU thread, read by the present thread.
+std::mutex warn_mutex;
+std::string warn_headline;
+std::string warn_detail;
+float warn_fraction = -1.0f; ///< memory in use over the limit, or negative for no bar
+std::chrono::steady_clock::time_point warn_until{};
+
+// Video memory readout (SetVramUsage): written by the GPU thread's collector, read by the present
+// thread.
+std::atomic<u64> vram_used{0};
+std::atomic<u64> vram_limit{0};
+std::atomic<u64> vram_pressure{0};
+std::atomic<u64> vram_critical{0};
+std::atomic<u64> vram_card_free{0};
+
+// CPU, GPU and RAM for the counter, sampled at a few Hz (the readings are syscalls, and none of
+// the numbers moves between two frames). Negative: not known (yet, or not available).
+struct SystemLoad {
+    std::atomic<float> cpu{-1.0f}; ///< this process, % of the machine (all cores = 100 %)
+    std::atomic<float> gpu{-1.0f}; ///< this process, % of the busiest 3D engine
+    std::atomic<u64> ram{0};       ///< this process's working set
+    std::atomic<u64> ram_free{0};  ///< the machine's available physical memory, 0: not known
+};
+// Leaked on purpose: the GPU sampler thread reads it while the process is shutting down.
+SystemLoad& Load() {
+    static SystemLoad* load = new SystemLoad;
+    return *load;
+}
+
+#ifdef _WIN32
+// This process's CPU time over wall time, as a share of the whole machine.
+void SampleCpu() {
+    FILETIME created{}, exited{}, kernel{}, user{};
+    if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) {
+        return;
+    }
+    const u64 ticks = (u64(kernel.dwHighDateTime) << 32 | kernel.dwLowDateTime) +
+                      (u64(user.dwHighDateTime) << 32 | user.dwLowDateTime);
+    static u64 last_ticks = 0;
+    static std::chrono::steady_clock::time_point last_time{};
+    const auto now = std::chrono::steady_clock::now();
+    if (last_ticks != 0 && now > last_time) {
+        const double wall_us = std::chrono::duration<double, std::micro>(now - last_time).count();
+        const double cpu_us = double(ticks - last_ticks) / 10.0; // FILETIME: 100 ns ticks
+        const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
+        Load().cpu.store(float(100.0 * cpu_us / (wall_us * cores)), std::memory_order_relaxed);
+    }
+    last_ticks = ticks;
+    last_time = now;
+}
+
+// Windows' per-process GPU Engine counters (the number Task Manager shows), 3D engine only: the
+// one a game loads. Opening the query and enumerating the instances is not free, so this runs on
+// its own thread once a second, never on the present thread.
+float QueryGpuLoad() {
+    static PDH_HQUERY query{};
+    static PDH_HCOUNTER counter{};
+    static const bool ready = [&] {
+        return PdhOpenQueryW(nullptr, 0, &query) == ERROR_SUCCESS &&
+               PdhAddEnglishCounterW(query, L"\\GPU Engine(*)\\Utilization Percentage", 0,
+                                     &counter) == ERROR_SUCCESS;
+    }();
+    if (!ready || PdhCollectQueryData(query) != ERROR_SUCCESS) {
+        return -1.0f;
+    }
+    constexpr DWORD format = PDH_FMT_DOUBLE | PDH_FMT_NOCAP100;
+    DWORD bytes = 0, count = 0;
+    if (PdhGetFormattedCounterArrayW(counter, format, &bytes, &count, nullptr) != PDH_MORE_DATA) {
+        return -1.0f;
+    }
+    static std::vector<BYTE> buffer;
+    buffer.resize(bytes);
+    auto* items = reinterpret_cast<PDH_FMT_COUNTERVALUE_ITEM_W*>(buffer.data());
+    if (PdhGetFormattedCounterArrayW(counter, format, &bytes, &count, items) != ERROR_SUCCESS) {
+        return -1.0f;
+    }
+    const std::wstring mine = L"pid_" + std::to_wstring(GetCurrentProcessId()) + L"_";
+    double load = 0.0;
+    for (DWORD i = 0; i < count; ++i) {
+        if (!items[i].szName || !std::wcsstr(items[i].szName, L"engtype_3D") ||
+            std::wcsncmp(items[i].szName, mine.c_str(), mine.size()) != 0) {
+            continue;
+        }
+        load += items[i].FmtValue.doubleValue;
+    }
+    return float(std::min(load, 100.0));
+}
+
+// The machine's available physical memory: what Task Manager's "Available" shows (free plus
+// standby). The RAM row's process figure alone reads as a leak.
+u64 AvailableMemory() {
+    MEMORYSTATUSEX status{};
+    status.dwLength = sizeof(status);
+    return GlobalMemoryStatusEx(&status) ? status.ullAvailPhys : 0;
+}
+
+void StartGpuSampler() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        // shortcut: runs until the process exits (nothing joins it), upgrade if the overlay ever
+        // needs an orderly shutdown. Idle while the readout is switched off, so it costs nothing
+        // for players who never enable it.
+        std::thread([] {
+            for (;;) {
+                if (BbSettings::Get().show_gpu) {
+                    Load().gpu.store(QueryGpuLoad(), std::memory_order_relaxed);
+                }
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }).detach();
+    });
+}
+#else
+void SampleCpu() {}
+u64 AvailableMemory() {
+    return 0;
+}
+void StartGpuSampler() {}
+#endif
+
+// The frame-time graph (NotePresent writes, FpsCounter reads, both on the present thread).
+constexpr size_t FrameHistorySize = 240; ///< about four seconds at 60 Hz
+std::array<float, FrameHistorySize> frame_history{};
+size_t frame_history_count = 0;
+size_t frame_history_next = 0;
+
+// The counter's values in plain grey when the player turned its colours off (counter_colors=0).
+constexpr ImVec4 PlainValue{0.80f, 0.80f, 0.80f, 1.0f};
+bool PlainCounter() {
+    return !BbSettings::Get().counter_colors.load(std::memory_order_relaxed);
+}
+
+// Green while the frame rate can keep up with a display, amber down to the game's 30 FPS floor,
+// red below it. The numbers mean the same thing however the game is capped.
+ImVec4 PaceColor(float frame_ms) {
+    if (PlainCounter()) {
+        return PlainValue;
+    }
+    if (frame_ms <= 20.0f) {
+        return ImVec4(0.55f, 0.95f, 0.55f, 1.0f);
+    }
+    if (frame_ms <= 33.5f) {
+        return ImVec4(1.00f, 0.82f, 0.45f, 1.0f);
+    }
+    return ImVec4(1.00f, 0.45f, 0.40f, 1.0f);
+}
+
+// A load in percent: amber from `amber`, red from `red`.
+ImVec4 LoadColor(float percent, float amber, float red) {
+    if (PlainCounter()) {
+        return PlainValue;
+    }
+    if (percent >= red) {
+        return ImVec4(1.00f, 0.45f, 0.40f, 1.0f);
+    }
+    if (percent >= amber) {
+        return ImVec4(1.00f, 0.82f, 0.45f, 1.0f);
+    }
+    return ImVec4(0.55f, 0.95f, 0.55f, 1.0f);
+}
+
+// Video memory against the collector's own marks: the colours then mean what the collector does
+// (green: room, amber: evicting, red: evicting aggressively).
+ImVec4 VramColor(u64 used, u64 pressure, u64 critical) {
+    if (PlainCounter()) {
+        return PlainValue;
+    }
+    if (critical != 0 && used >= critical) {
+        return ImVec4(1.00f, 0.45f, 0.40f, 1.0f);
+    }
+    if (pressure != 0 && used >= pressure) {
+        return ImVec4(1.00f, 0.82f, 0.45f, 1.0f);
+    }
+    return ImVec4(0.55f, 0.95f, 0.55f, 1.0f);
+}
 float base_scale = 1.0f;
 
 // Present rate for the FPS counter.
 std::chrono::steady_clock::time_point last_present{};
+float last_present_ms = 0.0f;
 float frame_ms_avg = 0.0f;
 BbFrameMetrics::RealFrameHistory real_frame_history;
 
@@ -140,6 +363,13 @@ template <typename T>
 void Store(std::atomic<T>& target, T value, bool changed) {
     if (changed) {
         target = value;
+        if constexpr (std::is_same_v<T, int>) {
+            auto& settings = BbSettings::Get();
+            if (&target == &settings.frame_generation)
+                settings.frame_gen = BbSettings::NativeForRoute(value);
+            if (&target == &settings.real_fps_limit) settings.frame_cap = value;
+            if (&target == &settings.frame_cap) settings.real_fps_limit = value;
+        }
         BbSettings::UpdateCheatMask();
         dirty = true;
     }
@@ -196,6 +426,78 @@ void Hint(const char* text) {
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
+}
+
+bool IsFsr41(int upscaler) {
+    return upscaler == BbSettings::UpscalerFsr411 || upscaler == BbSettings::UpscalerFsr412;
+}
+struct Fsr41Route { int version, backend; const char* title; const char* method; int hint; };
+static constexpr Fsr41Route Fsr41Routes[] = {
+    {BbSettings::UpscalerFsr412, 0, "FSR 4.1.2 - AMD Vulkan", "AMD Vulkan", Fsr41Ui::Hint412Vk},
+    {BbSettings::UpscalerFsr412, 1, "FSR 4.1.2 - AMD DX12", "AMD DX12", Fsr41Ui::Hint412Dx},
+    {BbSettings::UpscalerFsr411, 1, "FSR 4.1.1 - AMD DX12", "AMD DX12", Fsr41Ui::Hint411Dx},
+    {BbSettings::UpscalerFsr411, 0, "FSR 4.1.1 - Vulkan (fsr4vk)", "Vulkan (fsr4vk)", Fsr41Ui::Hint411Vk},
+};
+bool AnyFsr41() {
+    const auto& s=BbSettings::Get();
+    for(const auto& route:Fsr41Routes) if(s.FsrMethodSupported(route.version,route.backend)) return true;
+    return false;
+}
+void Fsr41Settings() {
+    auto& s=BbSettings::Get();
+    const float max_width=std::max(300.f, ImGui::GetMainViewport()->WorkSize.x-60.f*base_scale);
+    ImGui::SetNextWindowSize(ImVec2(std::min(420.f*base_scale,max_width),0), ImGuiCond_Appearing);
+    const std::string title=std::string(Fsr41Ui::Text(Fsr41Ui::Settings))+"###FSR41Settings";
+    if(!ImGui::BeginPopupModal(title.c_str(),nullptr,ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoTitleBar)) return;
+    ImGui::TextUnformatted(Fsr41Ui::Text(Fsr41Ui::Settings));
+    ImGui::Spacing();
+    if(ImGui::BeginTable("FSR41Methods",2,ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Method",ImGuiTableColumnFlags_WidthStretch,1.1f);
+        ImGui::TableSetupColumn("Support",ImGuiTableColumnFlags_WidthStretch,1.f);
+        for(const auto& route:Fsr41Routes) {
+            if ((route.backend==0 && route.version==BbSettings::UpscalerFsr412) ||
+                (route.backend==1 && route.version==BbSettings::UpscalerFsr411)) {
+                ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0);
+                ImGui::TextDisabled("FSR %s",route.version==BbSettings::UpscalerFsr412 ? "4.1.2" : "4.1.1");
+            }
+            const bool ready=s.FsrMethodSupported(route.version,route.backend);
+            const bool selected=s.upscaler==route.version && s.fsr411_backend==route.backend;
+            int status=ready ? 0 : s.fsr41_status[route.version==BbSettings::UpscalerFsr412][route.backend].load();
+            if(status<0 || status>8 || (!ready && status==0)) status=5;
+            ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0);
+            if(selected) ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,IM_COL32(45,42,34,255));
+            ImGui::BeginDisabled(!ready);
+            const std::string label=std::string(route.method)+"###"+route.title;
+            if(ImGui::RadioButton(label.c_str(),selected)) {
+                Store(s.fsr41_version,route.version,true);
+                Store(s.fsr411_backend,route.backend,true);
+                Store(s.upscaler,route.version,true);
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::PushID(route.title);
+            ImGui::SmallButton("(i)");
+            if(ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) || ImGui::IsItemFocused()) {
+                ImGui::BeginTooltip();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize()*30.f);
+                ImGui::TextUnformatted(Fsr41Ui::Text(route.hint));
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
+            ImGui::PopID();
+            ImGui::TableSetColumnIndex(1);
+            const ImVec4 color=status==0 ? ImVec4(.47f,.74f,.57f,1) :
+                status==1 ? ImVec4(.88f,.47f,.44f,1) :
+                status==5 || status==6 || status==8 ? ImVec4(.54f,.55f,.56f,1) : ImVec4(.85f,.64f,.25f,1);
+            ImGui::PushTextWrapPos();
+            ImGui::TextColored(color,"%s",Fsr41Ui::Text(Fsr41Ui::Supported+status));
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::Spacing();
+    if(ImGui::Button(Fsr41Ui::Text(Fsr41Ui::Close))) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
 }
 
 float DisplayFps() {
@@ -263,7 +565,7 @@ void ImageSettings() {
         "FSR 3.1", "FSR 4 (INT8)", "FSR 4.1.1 (INT8)",
         Text("TAA (native anti-aliasing)###upscaler_taa",
              "TAA (нативное сглаживание)###upscaler_taa"),
-        "DLSS (NVIDIA RTX)", "XeSS (Intel / compatible GPUs)",
+        "DLSS (NVIDIA RTX)", "XeSS (Intel / compatible GPUs)", "FSR 4.1.2",
     };
     int upscaler = s.upscaler;
     if (ImGui::BeginCombo(Text("Upscaler###upscaler", "Апскейлер###upscaler"), upscalers[upscaler])) {
@@ -271,10 +573,28 @@ void ImageSettings() {
             const bool supported = i == BbSettings::UpscalerFsr4 ? s.fsr4_supported.load()
                 : i == BbSettings::UpscalerFsr411 ? s.fsr411_supported.load()
                 : i == BbSettings::UpscalerDlss   ? s.dlss_supported.load()
-                : i == BbSettings::UpscalerXess   ? s.xess_supported.load() : true;
+                : i == BbSettings::UpscalerXess   ? s.xess_supported.load()
+                : i == BbSettings::UpscalerFsr412 ? AnyFsr41() : true;
             ImGui::BeginDisabled(!supported);
-            if (ImGui::Selectable(upscalers[i], i == upscaler)) {
-                Store(s.upscaler, i, true);
+            const bool family = i == BbSettings::UpscalerFsr412;
+            if (ImGui::Selectable(family ? Fsr41Ui::Text(Fsr41Ui::Family) : upscalers[i],
+                                  family ? IsFsr41(upscaler) : i == upscaler)) {
+                if (family) {
+                    if (!IsFsr41(upscaler)) {
+                        bool restored=false;
+                        if(s.FsrMethodSupported(s.fsr41_version,s.fsr411_backend)) {
+                            Store(s.upscaler,s.fsr41_version.load(),true);
+                            restored=true;
+                        }
+                        if(!restored) for (const auto& route : Fsr41Routes) {
+                            if (!s.FsrMethodSupported(route.version, route.backend)) continue;
+                            Store(s.fsr41_version, route.version, true);
+                            Store(s.fsr411_backend, route.backend, true);
+                            Store(s.upscaler, route.version, true);
+                            break;
+                        }
+                    }
+                } else Store(s.upscaler, i, true);
             }
             ImGui::EndDisabled();
             if (!supported) {
@@ -286,6 +606,24 @@ void ImageSettings() {
         }
         ImGui::EndCombo();
     }
+#ifdef _WIN32
+    const bool fsr411_selected = IsFsr41(s.upscaler);
+    const std::string settings_button = std::string(Fsr41Ui::Text(Fsr41Ui::Settings))+"##FSR41SettingsButton";
+    ImGui::BeginDisabled(!fsr411_selected);
+    if (ImGui::Button(settings_button.c_str())) ImGui::OpenPopup("###FSR41Settings");
+    ImGui::EndDisabled();
+    if (fsr411_selected) {
+        ImGui::SameLine();
+        for (const auto& route : Fsr41Routes) if (route.version==s.upscaler && route.backend==s.fsr411_backend)
+            ImGui::TextDisabled("%s: %s", Fsr41Ui::Text(Fsr41Ui::Selected), route.title);
+    } else if (!AnyFsr41()) ImGui::TextDisabled("%s", Fsr41Ui::Text(Fsr41Ui::Unavailable));
+    Fsr41Settings();
+    if (const char* problem = s.fsr4_method_problem.load(); problem && fsr411_selected) {
+        ImGui::PushTextWrapPos();
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", problem);
+        ImGui::PopTextWrapPos();
+    }
+#endif
     // ConfigureDlssSupport switches to FSR on failure. Keep the reason visible
     // after that fallback instead of incorrectly blaming the selected GPU.
     if (const char* problem = s.dlss_problem.load()) {
@@ -306,15 +644,14 @@ void ImageSettings() {
         ImGui::PopTextWrapPos();
     }
     if (BbSettings::IsFsr4(s.upscaler)) {
-        if (s.upscaler == BbSettings::UpscalerFsr411) {
-            Hint(Text("FSR 4.1.1 in INT8 mode: the model from the AMD 4.1.1 DLL, reproduced in "
-                      "Vulkan (the output matches the DLL). One model for Native through "
-                      "Performance, and a separate model for Ultra Performance. Assets: "
-                      "tools/fsr4cap/build_assets.sh (requires the DLL and Proton).",
-                      "FSR 4.1.1 в режиме INT8: модель из DLL AMD 4.1.1, воспроизведённая в "
-                      "Vulkan (результат совпадает с DLL). Одна модель для Native..Performance и "
-                      "отдельная для Ultra Performance. Ассеты: tools/fsr4cap/build_assets.sh "
-                      "(нужны DLL и Proton)."));
+        if (s.upscaler == BbSettings::UpscalerFsr412) {
+            Hint("FSR 4.1.2 uses the original AMD Vulkan driver or AMD DX12 bridge. Both FSR 4.1.1 methods remain available.");
+        } else if (s.upscaler == BbSettings::UpscalerFsr411) {
+#ifdef _WIN32
+            Hint("FSR 4.1.1 temporal upscaling uses the method selected above. AMD DX12 is included in the Windows package; Vulkan assets can be downloaded in the launcher. Quality presets and sharpening apply to both methods.");
+#else
+            Hint("FSR 4.1.1 uses the Vulkan model passes. One model covers Native through Performance, with another for Ultra Performance. See tools/fsr4cap/build_assets.sh for asset preparation.");
+#endif
         } else {
             Hint(Text("FSR 4 in INT8 mode (v07 model from the AMD FidelityFX SDK sources). Higher"
                       " quality than FSR 3.1, but the pass is more expensive. Changing the preset"
@@ -555,16 +892,19 @@ void FrameSettings() {
     Hint(Text("Requires Apply and restart. Only the selected RTX 20/30 can load the isolated mod; RTX 40/50 keep the original NVIDIA path. Vulkan support is experimental. The launcher prepares the provider on restart.",
               "Нужны применение и перезапуск. Изолированный мод загружается только для выбранной RTX 20/30; RTX 40/50 используют исходный путь NVIDIA. Vulkan экспериментален. Лаунчер подготовит мод при перезапуске."));
     if (const char* status=s.nvidia_fg_mod_status) ImGui::TextWrapped("DLSSG: %s",status);
-    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG","FSR FG - Supermedo (SDR)","DLSS FG - Supermedo (SDR, restart)"};
-    const int fg=std::clamp(s.frame_generation.load(),0,4);
+    const char* frame_generators[]={Text("Off###fg_off","Выключено###fg_off"),"FSR Frame Generation (2x)","NVIDIA DLSS Frame Generation / MFG","FSR FG - Supermedo (SDR)","DLSS FG - Supermedo (SDR, restart)", "AMD ML-FG 4.0.1 (SDR, RX 9000)", "AMD ML-FG 4.0.2 (SDR, RX 9000)"};
+    const int fg=std::clamp(s.frame_generation.load(),0,6);
     if (ImGui::BeginCombo(Text("Frame Generation###frame_generation","Генерация кадров###frame_generation"),frame_generators[fg])) {
-        for (int i=0;i<5;++i) {
-            ImGui::BeginDisabled(i!=0 && (!upscaler_on || (i==2 && !s.nvidia_fg_supported && !s.nvidia_fg_mod && !s.startup_native_dlss)));
+        for (int i=0;i<7;++i) {
+            ImGui::BeginDisabled(i!=0 && !upscaler_on);
             if (ImGui::Selectable(frame_generators[i],fg==i)) Store(s.frame_generation,i,true);
             ImGui::EndDisabled();
         }
         ImGui::EndCombo();
     }
+    if ((s.frame_generation == BbSettings::FrameGenerationNvidia && !s.startup_workshop_nvidia) ||
+        (s.startup_workshop_nvidia && s.frame_generation >= BbSettings::FrameGenerationNativeFsr))
+        ImGui::TextWrapped("FG backend change saved: Apply and restart to activate it.");
     if (s.startup_native_dlss != (s.frame_generation==BbSettings::FrameGenerationNativeDlss))
         ImGui::TextWrapped("Apply and restart to switch between the native DLSS bridge and Streamline.");
     if (s.frame_generation>=BbSettings::FrameGenerationNativeFsr) {
@@ -647,7 +987,7 @@ void FrameSettings() {
     Section(Text("Latency", "Задержка"));
     const char* reflex_modes[]={Text("Off","Выключено"),Text("On","Включено"),"On + Boost"};
     const int reflex=std::clamp(s.reflex.load(),0,2);
-    ImGui::BeginDisabled(!s.reflex_supported);
+    ImGui::BeginDisabled(!s.reflex_supported && s.gpu_vendor_id != 0x10de);
     if (ImGui::BeginCombo("NVIDIA Reflex###reflex",reflex_modes[reflex])) {
         for(int i=0;i<3;++i) if(ImGui::Selectable(reflex_modes[i],i==reflex)) Store(s.reflex,i,true);
         ImGui::EndCombo();
@@ -758,6 +1098,16 @@ void OverlaySettings() {
                   "Показывать график времени кадров###show_frametime_graph"),s.show_frametime_graph);
     Hint(Text("Last 240 real-frame presentation intervals, latest and peak time. Generated frames are not included. This is not GPU render time or monitor latency.",
               "Последние 240 интервалов показа реальных кадров, текущее и пиковое время. Сгенерированные кадры не включены. Это не время рендера GPU и не задержка монитора."));
+    Section(Text("System readouts", "Системная статистика"));
+    Checkbox("App-present interval###show_frame_times", s.show_frame_times);
+    Checkbox("Render-path latency###show_render_latency", s.show_render_latency);
+    Checkbox("VRAM usage###show_vram", s.show_vram);
+    Checkbox("GPU usage###show_gpu", s.show_gpu);
+    Checkbox("CPU usage###show_cpu", s.show_cpu);
+    Checkbox("RAM usage###show_ram", s.show_ram);
+    Checkbox("App-present graph###show_fps_graph", s.show_fps_graph);
+    Checkbox("Color-coded values###counter_colors", s.counter_colors);
+
 }
 
 void CheatSettings() {
@@ -1034,13 +1384,18 @@ void Menu() {
         ImGui::EndTabBar();
     }
     ImGui::Separator();
-    bool restart = s.object_motion != s.startup_object_motion ||
+    bool restart =
+        (s.frame_generation == BbSettings::FrameGenerationNvidia && !s.startup_workshop_nvidia) ||
+        (s.startup_workshop_nvidia && s.frame_generation >= BbSettings::FrameGenerationNativeFsr) ||
+        (!s.startup_workshop_nvidia && (s.reflex != s.startup_reflex || s.amd_antilag != s.startup_amd_antilag)) ||
+        s.object_motion != s.startup_object_motion ||
                    ((s.upscaler == BbSettings::UpscalerOff) != (s.startup_upscaler == BbSettings::UpscalerOff)) ||
                    s.nvidia_fg_mod != s.startup_nvidia_fg_mod ||
                    s.nvidia_fg_preset != s.startup_nvidia_fg_preset ||
                    s.model_lod != s.startup_model_lod ||
                    s.fov != s.startup_fov ||
                    s.live_resolution != s.startup_live_resolution ||
+                   s.fps_mode != s.startup_fps_mode || s.frame_cap != s.startup_frame_cap ||
                    BbSettings::ResolutionNeedsRestart();
     for (int e = 0; e < BbSettings::EffectCount; ++e) {
         restart |= s.effects[e] != s.startup_effects[e];
@@ -1109,6 +1464,163 @@ void TextEntryBox() {
     ImGui::End();
 }
 
+const char* UpscalerLabel(int upscaler) {
+    switch (upscaler) {
+    case BbSettings::UpscalerFsr3: return "FSR 3.1";
+    case BbSettings::UpscalerFsr4: return "FSR 4";
+    case BbSettings::UpscalerFsr411: return "FSR 4.1.1";
+    case BbSettings::UpscalerFsr412: return "FSR 4.1.2";
+    case BbSettings::UpscalerTaa: return "TAA";
+    case BbSettings::UpscalerDlss: return "DLSS";
+    default: return "";
+    }
+}
+
+// The upscaler's vendor colour, as the vendors brand them.
+// TODO(port): Intel XeSS (blue, #0068B5) when it is implemented: add the enum value in
+// bbport_settings.h and a case here.
+ImVec4 UpscalerColor(int upscaler) {
+    switch (upscaler) {
+    case BbSettings::UpscalerDlss:
+        return ImVec4(0.55f, 0.90f, 0.30f, 1.0f); // NVIDIA green
+    case BbSettings::UpscalerFsr3:
+    case BbSettings::UpscalerFsr4:
+    case BbSettings::UpscalerFsr411:
+    case BbSettings::UpscalerFsr412:
+        return ImVec4(0.95f, 0.40f, 0.35f, 1.0f); // AMD red
+    default:
+        return ImVec4(0.75f, 0.75f, 0.75f, 1.0f); // TAA, off: no vendor
+    }
+}
+
+/// The processor name Windows shows in System settings, read once (a reference: the counter asks
+/// for it every frame).
+const std::string& CpuName() {
+#if defined(_WIN32)
+    static const std::string name = [] {
+        wchar_t buffer[256]{};
+        DWORD bytes = sizeof(buffer);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                         L"ProcessorNameString", RRF_RT_REG_SZ, nullptr, buffer, &bytes) !=
+            ERROR_SUCCESS) {
+            return std::string{};
+        }
+        char utf8[512]{};
+        const int length =
+            WideCharToMultiByte(CP_UTF8, 0, buffer, -1, utf8, sizeof(utf8), nullptr, nullptr);
+        return std::string(utf8, length > 1 ? size_t(length - 1) : 0);
+    }();
+    return name;
+#else
+    static const std::string name;
+    return name;
+#endif
+}
+
+std::string gpu_name; ///< the Vulkan device's model name, set in Init
+u32 output_width = 0, output_height = 0; ///< the presented size, set in Render
+
+// A dim label, with every value starting in the same column (the reference overlay's look). The
+// column is measured, not a constant: a longer label or a larger UI scale would otherwise crowd a
+// value or clip it.
+void Label(const char* text, float column) {
+    ImGui::TextDisabled("%s", text);
+    ImGui::SameLine(column);
+}
+
+// Frame-time graph: the last four seconds as a filled curve, milliseconds on the left, the same
+// heights read as FPS on the right. Auto-ranged like a scope, no fixed reference lines: the axes
+// carry the scale. Each axis gets a gutter sized from its own widest tick, and the plot is inset by
+// half a line top and bottom, so no number sits on the curve or gets cut by the box.
+void FrameTimeGraph(float average_ms) {
+    char text[32];
+    const float font = ImGui::GetFontSize();
+    const float unit = 4.0f * base_scale;
+    // The samples in ring order, oldest first. frame_history_next is the next slot to write, so the
+    // oldest stored one is frame_history_count back from it (not next itself: it is unwritten until
+    // the ring has filled once).
+    const size_t oldest =
+        (frame_history_next + FrameHistorySize - frame_history_count) % FrameHistorySize;
+    float lo = frame_history[oldest];
+    float hi = lo;
+    for (size_t i = 1; i < frame_history_count; ++i) {
+        const float ms = frame_history[(oldest + i) % FrameHistorySize];
+        lo = std::min(lo, ms);
+        hi = std::max(hi, ms);
+    }
+    // At least 4 ms of span, so a steady scene does not zoom into noise.
+    if (hi - lo < 4.0f) {
+        const float mid = 0.5f * (lo + hi);
+        lo = mid - 2.0f;
+        hi = mid + 2.0f;
+    }
+    lo = std::max(lo - 0.4f, 0.0f);
+    hi += 0.4f;
+
+    const float ticks[3] = {lo, 0.5f * (lo + hi), hi};
+    float gutter_l = 0.0f, gutter_r = 0.0f;
+    for (const float ms : ticks) {
+        std::snprintf(text, sizeof(text), "%.1f", double(ms));
+        gutter_l = std::max(gutter_l, ImGui::CalcTextSize(text).x);
+        std::snprintf(text, sizeof(text), "%.0f", double(ms > 0.0f ? 1000.0f / ms : 0.0f));
+        gutter_r = std::max(gutter_r, ImGui::CalcTextSize(text).x);
+    }
+    gutter_l += unit * 2.0f;
+    gutter_r += unit * 2.0f;
+
+    const float plot_w = 210.0f * base_scale;
+    const float vpad = font * 0.5f + unit; // half a line above and below the plot
+    const float w = gutter_l + plot_w + gutter_r;
+    const float h = 60.0f * base_scale + 2.0f * vpad;
+
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 end{origin.x + w, origin.y + h};
+    ImGui::Dummy(ImVec2(w, h));
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImVec2 plot_min{origin.x + gutter_l, origin.y + vpad};
+    const ImVec2 plot_max{end.x - gutter_r, end.y - vpad};
+    IM_ASSERT(plot_max.x > plot_min.x && plot_max.y > plot_min.y); // gutters fit in the box
+    const float plot_h = plot_max.y - plot_min.y;
+    const ImVec4 tone = PaceColor(average_ms);
+    const ImU32 line = ImGui::ColorConvertFloat4ToU32(tone);
+    const ImU32 fill_top = ImGui::ColorConvertFloat4ToU32(ImVec4(tone.x, tone.y, tone.z, 0.35f));
+    const ImU32 fill_bottom = ImGui::ColorConvertFloat4ToU32(ImVec4(tone.x, tone.y, tone.z, 0.02f));
+    const ImU32 grid = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.08f));
+    const bool plain = PlainCounter();
+    const ImU32 ms_text = ImGui::ColorConvertFloat4ToU32(plain ? PlainValue : ImVec4(0.62f, 0.80f, 0.92f, 1.0f));
+    const ImU32 fps_text = ImGui::ColorConvertFloat4ToU32(plain ? PlainValue : ImVec4(0.55f, 0.95f, 0.55f, 1.0f));
+
+    draw->AddRectFilled(origin, end, ImGui::ColorConvertFloat4ToU32(ImVec4(0, 0, 0, 0.42f)),
+                        4.0f * base_scale);
+    const auto y_for = [&](float ms) {
+        return plot_max.y - plot_h * (ms - lo) / (hi - lo);
+    };
+    for (int tick = 2; tick >= 0; --tick) {
+        const float y = y_for(ticks[tick]);
+        draw->AddLine(ImVec2(plot_min.x, y), ImVec2(plot_max.x, y), grid, 1.0f);
+        std::snprintf(text, sizeof(text), "%.1f", double(ticks[tick]));
+        draw->AddText(ImVec2(origin.x + unit, y - font * 0.5f), ms_text, text);
+        std::snprintf(text, sizeof(text), "%.0f",
+                      double(ticks[tick] > 0.0f ? 1000.0f / ticks[tick] : 0.0f));
+        const ImVec2 size = ImGui::CalcTextSize(text);
+        draw->AddText(ImVec2(end.x - unit - size.x, y - font * 0.5f), fps_text, text);
+    }
+
+    const float step = (plot_max.x - plot_min.x) / float(FrameHistorySize);
+    ImVec2 points[FrameHistorySize];
+    for (size_t i = 0; i < frame_history_count; ++i) {
+        const size_t sample = (oldest + i) % FrameHistorySize; // oldest first
+        const float x = plot_min.x + step * float(i + 1);
+        points[i] = ImVec2(x, std::clamp(y_for(frame_history[sample]), plot_min.y, plot_max.y));
+        draw->AddRectFilledMultiColor(ImVec2(x - step, points[i].y), ImVec2(x, plot_max.y),
+                                      fill_top, fill_top, fill_bottom, fill_bottom);
+    }
+    draw->AddPolyline(points, int(frame_history_count), line, ImDrawFlags_None, 1.5f * base_scale);
+    draw->AddCircleFilled(points[frame_history_count - 1], 2.2f * base_scale, line);
+}
+
+float counter_bottom = 12.0f;
+
 void FpsCounter() {
     const auto& s = BbSettings::Get();
     if (!s.show_fps) return;
@@ -1125,6 +1637,7 @@ void FpsCounter() {
     const char* upscaler = s.upscaler == BbSettings::UpscalerFsr3   ? "FSR 3.1"
                 : s.upscaler == BbSettings::UpscalerFsr4 ? "FSR 4"
                 : s.upscaler == BbSettings::UpscalerFsr411 ? "FSR 4.1.1"
+                : s.upscaler == BbSettings::UpscalerFsr412 ? "FSR 4.1.2"
                 : s.upscaler == BbSettings::UpscalerTaa ? "TAA"
                 : s.upscaler == BbSettings::UpscalerDlss ? "DLSS"
                 : s.upscaler == BbSettings::UpscalerXess ? "XeSS"
@@ -1222,7 +1735,188 @@ void FpsCounter() {
             real_frame_history.PlotCeiling(),ImVec2(width,32.0f*base_scale));
         ImGui::PopStyleColor();
     }
+    counter_bottom = ImGui::GetWindowPos().y + ImGui::GetWindowSize().y - viewport->WorkPos.y + 8.0f * base_scale;
     ImGui::End();
+}
+
+void SystemCounter() {
+    const auto& options = BbSettings::Get();
+    if (!options.show_fps || !(options.show_frame_times || options.show_render_latency || options.show_vram || options.show_gpu ||
+          options.show_cpu || options.show_ram || options.show_fps_graph)) return;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float pad = 12.0f * base_scale;
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - pad,
+                                   viewport->WorkPos.y + counter_bottom),
+                            ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.5f);
+    ImGui::Begin("##system_readouts", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoFocusOnAppearing);
+    const auto& s = BbSettings::Get();
+    const ImVec4 pace = PaceColor(frame_ms_avg);
+    const float model_gap = 8.0f * base_scale;
+    const double rate = frame_ms_avg > 0.0f ? 1000.0 / frame_ms_avg : 0.0;
+    constexpr double gb = 1024.0 * 1024.0 * 1024.0;
+    // One value column for the whole panel, as wide as the longest label it can show plus a gap.
+    // Measured and constant, so values line up and never move when a switch is flipped.
+    float column = 0.0f;
+    for (const char* label : {"FPS:", "Frame:", "Latency:", "VRAM:", "GPU:", "CPU:", "RAM:"}) {
+        column = std::max(column, ImGui::CalcTextSize(label).x);
+    }
+    column += 10.0f * base_scale;
+
+    if (s.show_frame_times) {
+        Label("Frame:", column);
+        ImGui::PushStyleColor(ImGuiCol_Text, pace);
+        ImGui::Text("%.1f ms", frame_ms_avg);
+        ImGui::PopStyleColor();
+    }
+    // Render latency, its own line (it sat under FPS, where players took it for the frame time):
+    // from the game starting a frame to its present (vk_low_latency.cpp), and the low latency mode.
+    if (s.show_render_latency) {
+        static const char* modes[] = {"Low latency off", "Reflex", "Reflex + Boost", "Anti-Lag 2",
+                                      "Low latency"};
+        const int mode = std::clamp(s.latency_mode.load(), 0, 4);
+        Label("Latency:", column);
+        if (const float latency = s.latency_ms.load(std::memory_order_relaxed); latency > 0.0f) {
+            ImGui::Text("%.1f ms", double(latency));
+        } else {
+            ImGui::TextDisabled("--");
+        }
+        ImGui::SameLine(0.0f, model_gap);
+        ImGui::TextDisabled("|  render latency, %s", modes[mode]);
+    }
+    // Video memory in use, against the limit the collector holds itself to: the same numbers the
+    // low-memory warning reports. 0, so nothing shown, until the first collector pass.
+    const u64 used = vram_used.load(std::memory_order_relaxed);
+    if (s.show_vram && used != 0) {
+        const u64 limit = vram_limit.load(std::memory_order_relaxed);
+        Label("VRAM:", column);
+        ImGui::PushStyleColor(ImGuiCol_Text,
+                             VramColor(used, vram_pressure.load(std::memory_order_relaxed),
+                                       vram_critical.load(std::memory_order_relaxed)));
+        if (limit != 0) {
+            ImGui::Text("%.1f / %.1f GB", double(used) / gb, double(limit) / gb);
+        } else {
+            ImGui::Text("%.1f GB", double(used) / gb);
+        }
+        ImGui::PopStyleColor();
+        // The card's own headroom: the limit above is the port's conservative budget, so without
+        // this "4.6 of 4.6" reads as "the card is full" when it is not.
+        ImGui::SameLine(0.0f, 8.0f * base_scale);
+        ImGui::TextDisabled("(card: %.1f GB free)",
+                            double(vram_card_free.load(std::memory_order_relaxed)) / gb);
+    }
+    if (s.show_gpu) {
+        Label("GPU:", column);
+        const float gpu = Load().gpu.load(std::memory_order_relaxed);
+        if (gpu < 0.0f) {
+            ImGui::TextDisabled("--");
+        } else {
+            ImGui::TextColored(LoadColor(gpu, 90.0f, 97.0f), "%.0f%%", double(gpu));
+        }
+        if (!gpu_name.empty()) {
+            ImGui::SameLine(0.0f, model_gap);
+            ImGui::TextDisabled("%s", gpu_name.c_str());
+        }
+    }
+    if (s.show_cpu) {
+        Label("CPU:", column);
+        const float cpu = Load().cpu.load(std::memory_order_relaxed);
+        if (cpu < 0.0f) {
+            ImGui::TextDisabled("--");
+        } else {
+            ImGui::TextColored(LoadColor(cpu, 70.0f, 90.0f), "%.0f%%", double(cpu));
+        }
+        const std::string& model = CpuName();
+        if (!model.empty()) {
+            ImGui::SameLine(0.0f, model_gap);
+            ImGui::TextDisabled("%s", model.c_str());
+        }
+    }
+    if (s.show_ram) {
+        Label("RAM:", column);
+        const u64 ram = Load().ram.load(std::memory_order_relaxed);
+        if (ram == 0) {
+            ImGui::TextDisabled("--");
+        } else {
+            ImGui::Text("%.1f GB", double(ram) / gb);
+            // The machine's headroom, like the VRAM row's card figure: the game's working set on
+            // its own looks like it is eating all the memory.
+            const u64 free = Load().ram_free.load(std::memory_order_relaxed);
+            if (free != 0) {
+                ImGui::SameLine(0.0f, 8.0f * base_scale);
+                ImGui::TextDisabled("(%.1f GB free)", double(free) / gb);
+            }
+        }
+    }
+    if (s.show_fps_graph && frame_history_count > 1) {
+        FrameTimeGraph(frame_ms_avg);
+        // Legend under the graph, the current values of what the line shows.
+        const float square = 9.0f * base_scale;
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(square, square));
+        ImGui::GetWindowDrawList()->AddRectFilled(at, ImVec2(at.x + square, at.y + square),
+                                                  ImGui::ColorConvertFloat4ToU32(pace),
+                                                  1.5f * base_scale);
+        ImGui::SameLine(0.0f, 6.0f * base_scale);
+        ImGui::Text("Frame: %.1f ms", frame_ms_avg);
+        ImGui::SameLine(0.0f, 14.0f * base_scale);
+        ImGui::TextDisabled("%.0f FPS", double(rate));
+    }
+    ImGui::End();
+}
+
+bool WarningActive() {
+    std::scoped_lock lock{warn_mutex};
+    return !warn_headline.empty() && std::chrono::steady_clock::now() < warn_until;
+}
+
+// Amber banner at the top of the screen: the player should save before the game runs out of
+// video memory (nothing is blocked; the game still crashes if it has to). The headline is
+// brighter than the detail so the point of the banner reads first.
+void WarningBanner() {
+    std::string headline, detail;
+    float fraction = -1.0f;
+    {
+        std::scoped_lock lock{warn_mutex};
+        headline = warn_headline;
+        detail = warn_detail;
+        fraction = warn_fraction;
+    }
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                   viewport->WorkPos.y + 24.0f * base_scale),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.92f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.42f, 0.20f, 0.02f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.95f, 0.60f, 0.20f, 1.0f));
+    if (ImGui::Begin("##vram-warning", nullptr,
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                         ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoFocusOnAppearing)) {
+        ImGui::PushTextWrapPos(560.0f * base_scale);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.82f, 0.45f, 1.00f));
+        ImGui::TextUnformatted(headline.c_str());
+        ImGui::PopStyleColor();
+        if (fraction >= 0.0f) {
+            // How much of the memory in use: the bar says in one glance what the numbers say.
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+                                  fraction > 0.90f ? ImVec4(1.00f, 0.45f, 0.40f, 1.0f)
+                                                   : ImVec4(1.00f, 0.72f, 0.30f, 1.0f));
+            ImGui::ProgressBar(std::min(fraction, 1.0f), ImVec2(-FLT_MIN, 5.0f * base_scale), "");
+            ImGui::PopStyleColor();
+        }
+        if (!detail.empty()) {
+            ImGui::Spacing();
+            ImGui::TextUnformatted(detail.c_str());
+        }
+        ImGui::PopTextWrapPos();
+    }
+    ImGui::End();
+    ImGui::PopStyleColor(2);
 }
 
 } // namespace
@@ -1240,6 +1934,7 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
     if (initialized) {
         return;
     }
+    gpu_name = std::string(instance.GetModelName());
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -1252,11 +1947,29 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
     ImGuiStyle& style = ImGui::GetStyle();
     WorkshopTheme(style);
 
+    static ImVector<ImWchar> picker_glyphs;
+    ImFontGlyphRangesBuilder ranges;
+    ranges.AddRanges(io.Fonts->GetGlyphRangesDefault());
+    ranges.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
+    for (const char* text : Fsr41Ui::texts[Fsr41Ui::Language()]) ranges.AddText(text);
+    ranges.BuildRanges(&picker_glyphs);
     ImFontConfig font_config;
     font_config.FontDataOwnedByAtlas = false;
     io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(bb_font_ttf),
-                                   int(bb_font_ttf_end - bb_font_ttf), 18.0f, &font_config);
+                                   int(bb_font_ttf_end - bb_font_ttf), 18.0f, &font_config, picker_glyphs.Data);
 
+#ifdef _WIN32
+    if (const char* windows=std::getenv("WINDIR")) {
+        const std::string language=Fsr41Ui::languages[Fsr41Ui::Language()];
+        const char* candidates[] = {"msyh.ttc","YuGothM.ttc","msgothic.ttc","malgun.ttf"};
+        if (language=="zh" || language=="ja" || language=="ko") for(const char* file:candidates) {
+            const auto path=std::filesystem::path(windows)/"Fonts"/file;
+            if(!std::filesystem::is_regular_file(path)) continue;
+            ImFontConfig merge; merge.MergeMode=true;
+            io.Fonts->AddFontFromFileTTF(path.string().c_str(),18.f,&merge,picker_glyphs.Data);
+        }
+    }
+#endif
     const vk::Instance vk_instance = instance.GetInstance();
     ImGui_ImplVulkan_LoadFunctions(
         instance.ApiVersion(),
@@ -1289,7 +2002,7 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
         return;
     }
     initialized = true;
-    std::printf("Overlay: menu ready (Insert or L3+R3)\n");
+    std::printf("Overlay: menu ready (%s)\n", MenuOpeners().c_str());
 }
 
 void UpdateTextInput(SDL_Window* window) {
@@ -1326,9 +2039,9 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
-        if (down && !event.key.repeat &&
-            (event.key.key == SDLK_INSERT || (is_open && event.key.key == SDLK_ESCAPE))) {
-            SetOpen(event.key.key == SDLK_INSERT ? !is_open : false);
+        const bool menu_key = MenuKey() != SDLK_UNKNOWN && event.key.key == MenuKey();
+        if (down && !event.key.repeat && (menu_key || (is_open && event.key.key == SDLK_ESCAPE))) {
+            SetOpen(menu_key ? !is_open : false);
             return true;
         }
         if (!is_open) {
@@ -1350,8 +2063,14 @@ bool HandleEvent(const SDL_Event& event) {
             l3_down = down;
         } else if (button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
             r3_down = down;
+        } else if (button == SDL_GAMEPAD_BUTTON_BACK) {
+            back_down = down;
+        } else if (button == SDL_GAMEPAD_BUTTON_START) {
+            start_down = down;
         }
-        if (down && l3_down && r3_down) {
+        const MenuPad pad = MenuPadCombo();
+        if (down && ((pad == MenuPad::L3R3 && l3_down && r3_down) ||
+                     (pad == MenuPad::BackStart && back_down && start_down))) {
             SetOpen(!is_open);
             return true;
         }
@@ -1407,8 +2126,14 @@ bool HandleEvent(const SDL_Event& event) {
     }
 }
 
+// Any of the counter's readouts asked for (the graph lives in the same window).
+bool ReadoutsOn() {
+    return BbSettings::Get().show_fps;
+}
+
 bool Visible() {
-    return initialized && (menu_open || text_entry_active || BbSettings::Get().show_fps);
+    return initialized &&
+           (menu_open || text_entry_active || WarningActive() || ReadoutsOn());
 }
 
 bool CapturesInput() {
@@ -1433,13 +2158,46 @@ void RecordPresent(bool real_frame, bool presented) {
     }
 }
 
-void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
-    // Present interval for the FPS readout (measured also while nothing is drawn).
+void Warn(const std::string& headline, const std::string& detail, float used_fraction) {
+    std::scoped_lock lock{warn_mutex};
+    warn_headline = headline;
+    warn_detail = detail;
+    warn_fraction = used_fraction;
+    warn_until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+}
+
+void SetVramUsage(u64 used_bytes, u64 limit_bytes, u64 pressure_bytes, u64 critical_bytes,
+                  u64 card_free_bytes) {
+    vram_used.store(used_bytes, std::memory_order_relaxed);
+    vram_limit.store(limit_bytes, std::memory_order_relaxed);
+    vram_pressure.store(pressure_bytes, std::memory_order_relaxed);
+    vram_critical.store(critical_bytes, std::memory_order_relaxed);
+    vram_card_free.store(card_free_bytes, std::memory_order_relaxed);
+}
+
+// Called for every presented image: the interval for the FPS readout and BB_FPS_LOG.
+void NotePresent() {
     const auto now = std::chrono::steady_clock::now();
     const float ms = std::chrono::duration<float, std::milli>(now - last_present).count();
+    last_present_ms = ms;
     last_present = now;
     if (ms > 0.0f && ms < 1000.0f) {
         frame_ms_avg = frame_ms_avg == 0.0f ? ms : frame_ms_avg * 0.95f + ms * 0.05f;
+        frame_history[frame_history_next] = ms;
+        frame_history_next = (frame_history_next + 1) % FrameHistorySize;
+        frame_history_count = std::min(frame_history_count + 1, FrameHistorySize);
+    }
+    // CPU and RAM at 4 Hz (syscalls, and neither changes between two frames); the GPU reading
+    // has its own thread, started the first time the readout is asked for.
+    static auto last_sample = now;
+    if (now - last_sample >= std::chrono::milliseconds(250)) {
+        last_sample = now;
+        SampleCpu();
+        Load().ram.store(BbProcessMemory::Get().working_set, std::memory_order_relaxed);
+        Load().ram_free.store(AvailableMemory(), std::memory_order_relaxed);
+        if (BbSettings::Get().show_gpu) {
+            StartGpuSampler();
+        }
     }
     // BB_FPS_LOG=1: presents per second and the slowest frame, every 5 seconds (test runs).
     static const bool fps_log = [] {
@@ -1461,6 +2219,13 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
         }
     }
 
+}
+
+void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
+    const float ms = last_present_ms;
+    // What is actually presented: follows a window resize, unlike the configured output.
+    output_width = extent.width;
+    output_height = extent.height;
     if (!Visible()) {
         return;
     }
@@ -1482,11 +2247,16 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (menu_open) {
         Menu();
     }
-    if (BbSettings::Get().show_fps && !menu_open) {
+    if (ReadoutsOn() && !menu_open) {
+        counter_bottom = 12.0f * base_scale;
         FpsCounter();
+        SystemCounter();
     }
     if (text_entry_active) {
         TextEntryBox();
+    }
+    if (WarningActive()) {
+        WarningBanner();
     }
     ImGui::Render();
 

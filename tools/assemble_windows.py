@@ -18,6 +18,7 @@ from release_integrity import (checksum, package_name, canonical_tag, validate, 
 from pe_integrity import PE, system
 from nvidia_fg_runtime import install as install_nvidia_fg
 from native_fg_runtime import install as install_native_fg
+from amd_graphics_runtime import install as install_amd_graphics
 
 ROOT=Path(__file__).resolve().parents[1]
 TESTS=('frame-limits-test','frame-pacing-test','background-pause-test','temporal-history-test',
@@ -29,14 +30,16 @@ def git(*args):
 
 
 def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=None):
-    lock=json.loads((ROOT/'packaging/windows/runtime-baseline.lock.json').read_text())
+    lock=json.loads((ROOT/'packaging/windows/runtime-baseline.lock.json').read_text(encoding='utf-8'))
     baseline=Path(baseline); native=Path(native); launcher=Path(launcher); destination=Path(destination)
     require(checksum(baseline)==lock['sha256'],'Baseline runtime bundle checksum mismatch')
-    source=ast.parse((ROOT/'launcher/bbport_launcher_win.py').read_text())
+    source=ast.parse((ROOT/'launcher/bbport_launcher_win.py').read_text(encoding='utf-8'))
     version=next(n.value.value for n in source.body if isinstance(n,ast.Assign)
                  and any(isinstance(t,ast.Name) and t.id=='VERSION' for t in n.targets))
     revision=version.rsplit('.',1)[1]; commit=git('rev-parse','HEAD').decode().strip()
-    require(not git('diff','--name-only','--ignore-submodules=all','HEAD'),'Commit source changes before packaging')
+    dirty=git('diff','--name-only','--ignore-submodules=all','HEAD').decode('utf-8',errors='replace').splitlines()
+    require(not dirty, 'Commit source changes before packaging: '+', '.join(dirty[:20])
+            + (f' and {len(dirty)-20} more' if len(dirty)>20 else ''))
     require(all((native/(name+'.exe')).is_file() for name in TESTS),'Native regression executables are missing')
     require((ROOT/'out/verification/native-windows-tests.log').is_file(), 'Run the native Windows tests before packaging')
     destination.mkdir(parents=True,exist_ok=True)
@@ -63,11 +66,17 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         for p in (stage/'bin').glob('*-test.exe'):p.unlink()
         programs={'Bloodborne.exe':checksum(stage/'Bloodborne.exe')}
         for name,output in [('bb-probe','bin/bb-probe.exe'),('bb-gpu-capabilities','bin/bb-gpu-capabilities.exe'),
+                            ('bb-fg401-capabilities','bin/bb-fg401-capabilities.exe'),
                             ('bb-play','Play Bloodborne.exe')]:
             subprocess.run(['llvm-strip','--strip-debug','-o',str(stage/output),str(native/(name+'.exe'))],check=True)
             programs[output]=checksum(stage/output)
+        amd_lock=install_amd_graphics(stage, ROOT)
         install_nvidia_fg(stage, ROOT)
         native_lock=install_native_fg(stage, ROOT)
+        # AMD's DX12 DLLs load from bin, outside the Streamline and XeSS
+        # directories. Reuse the checksum-pinned baseline redistributables.
+        for name in ('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll'):
+            shutil.copy2(stage/'bin/streamline'/name,stage/'bin'/name)
         (stage/'redist/vc_redist.x64.exe').unlink(missing_ok=True)
         # Use the pinned CLANG64 DLLs selected for this build, including transitive dependencies.
         require(dll_dir is not None, 'Provide the CLANG64 DLL directory for this build')
@@ -78,7 +87,7 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         # A new compiler/library may need a DLL absent from the baseline. Resolve
         # that closure from the same pinned toolchain instead of silently omitting it.
         available={p.name.lower():p for p in prefix.glob('*.dll')}
-        pending=list((stage/'bin').glob('*.dll'))+[stage/'bin/bb-probe.exe',stage/'bin/bb-gpu-capabilities.exe',stage/'Play Bloodborne.exe']
+        pending=list((stage/'bin').glob('*.dll'))+[stage/'bin/bb-probe.exe',stage/'bin/bb-gpu-capabilities.exe',stage/'bin/bb-fg401-capabilities.exe',stage/'Play Bloodborne.exe']
         seen=set()
         while pending:
             program=pending.pop()
@@ -96,17 +105,17 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         verify_dlss_search_paths(lambda name: (stage/name).read_bytes())
         command='@echo off\r\ncd /d "%~dp0"\r\npowershell -NoProfile -Command "$p=Join-Path (Get-Location) \'Bloodborne.exe\'; if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne \''+programs['Bloodborne.exe']+'\') {Write-Error \'Incorrect launcher for TatsunaKyo revision '+revision+'.\'; exit 1}; Start-Process -FilePath $p -WorkingDirectory (Get-Location)"\r\n'
         (stage/'Start-Verified-Launcher.cmd').write_bytes(command.encode('ascii'))
-        source_dir=stage/'source';source_dir.mkdir()
-        base=json.loads((temp/'baseline'/old/'BUILD-IDENTITY.json').read_text())['upstream_base']
+        source_dir=stage/'source';source_dir.mkdir(exist_ok=True)
+        base=json.loads((temp/'baseline'/old/'BUILD-IDENTITY.json').read_text(encoding='utf-8'))['upstream_base']
         (source_dir/'tatsunakyo-revision.patch').write_bytes(git('diff','--binary',base,commit))
         provenance={'project':'Bloodborne: The Crowned Workshop','version':version,'revision':int(revision),
                     'channel':channel,'release_tag':canonical_tag(version,channel),'source_commit':commit,
-                    'source_tree':git('rev-parse','HEAD^{tree}').decode().strip(),'upstream_base':base,
+                    'source_tree':git('show','-s','--format=%T',commit).decode().strip(),'upstream_base':base,
                     'repository':'https://github.com/TatsunaKyo/bloodborne_pc','executables':programs,
                     'runtime_files':{p.relative_to(stage).as_posix():checksum(p) for p in stage.rglob('*')
                                      if p.suffix.lower() in ('.dll','.pyd')},
                     'runtime_source_files':verify_runtime_sources(lambda name:(stage/name).read_bytes(),ROOT,commit),
-                    'native_fg_runtime':native_lock,
+                    'native_fg_runtime':native_lock,'amd_graphics_runtime':amd_lock,
                     'runtime_baseline':lock,'native_and_launcher_fresh_build':True,
                     'byte_identical_build_claimed':False}
         (stage/'BUILD-IDENTITY.json').write_text(json.dumps(provenance,indent=2)+'\n')
@@ -114,15 +123,19 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         (recovery/'checkpoint.json').write_text(json.dumps({'source_commit':commit,'source_tree':provenance['source_tree'],'version':version,'runtime_lock':'packaging/windows/nvidia-fg-runtime.lock.json','rebuild':'.github/workflows/windows-build.yml','single_archive':True},indent=2)+'\n')
         (stage/'BUILD-INFO.txt').write_text('The Crowned Workshop\nSource: '+commit+'\nNative and launcher built from this checkout. Unchanged SDK redistributables are pinned to the recorded baseline. No claim of byte-identical compiler output.\n')
         records=source_dir/'verification';records.mkdir()
-        for p in (ROOT/'out/verification').rglob('*'):
-            if p.is_file() and p.suffix.lower() in ('.json','.log','.txt'):
-                out=records/p.relative_to(ROOT/'out/verification');out.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,out)
+        for name in ('native-windows-tests.log', 'compatibility-summary.json'):
+            record=ROOT/'out/verification'/name
+            if record.is_file():shutil.copy2(record,records/name)
         with (records/'msys2-installed-packages.txt').open('wb') as record:
             subprocess.run(['pacman','-Q'],check=True,stdout=record)
         with (records/'compiler.txt').open('wb') as record:
             subprocess.run(['clang++','--version'],check=True,stdout=record)
-        notes=(ROOT/f'docs/releases/windows-v{version}.md').read_text()
-        (stage/'README-EN.txt').write_text(notes)
+        notes_path=f'docs/releases/windows-v{version}.md'
+        # Checkout line endings vary on Windows. The release validator compares
+        # the embedded notes with the exact source object, like startup inputs.
+        notes=git('show', commit+':'+notes_path)
+        (stage/notes_path).write_bytes(notes)
+        (stage/'README-EN.txt').write_bytes(notes)
         # The portable current player guide is kept instead of a previous revision summary.
         (stage/'README-IT.txt').write_text('Bloodborne: The Crowned Workshop\nVersione '+version+'\nApri README-Windows.txt per installazione, impostazioni live e documentazione aggiornata.\n')
         for p in stage.rglob('__pycache__'):shutil.rmtree(p,ignore_errors=True)

@@ -16,7 +16,6 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_frame_generation.h"
-#include "video_core/renderer_vulkan/vk_native_frame_generation.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
 #include "video_core/texture_cache/texture_cache.h"
@@ -31,13 +30,6 @@ struct Liverpool;
 
 namespace Vulkan {
 
-struct NativeFrames {
-    FrameGeneration::Image color, hudless;
-    std::array<FrameGeneration::Image, FrameGenerator::MaxGenerated> outputs;
-    vk::UniqueImageView color_view, hudless_view;
-    std::array<vk::UniqueImageView, FrameGenerator::MaxGenerated> output_views;
-    u32 width=0, height=0;
-};
 struct Frame {
     u32 width;
     u32 height;
@@ -56,9 +48,19 @@ struct Frame {
     u64 nvidia_fence_value{};
     u64 nvidia_fence_epoch{};
     BbHitch::FramePath hitch_path;
-    std::unique_ptr<NativeFrames> native;
-    u32 native_count=0;
+    int generation_route = 0; ///< the provider captured for this owned frame
 
+    /// bbport: frame generation: frames between the previous game frame and this one,
+    /// presented before it (FrameGenerator), the first `generated_count` of them.
+    struct Generated {
+        VmaAllocation allocation{};
+        vk::Image image{};
+        vk::ImageView view{};
+    };
+    std::array<Generated, FrameGenerator::MaxGenerated> generated{};
+    u32 generated_count{};
+    bool detached_output{};
+    u64 latency_id{}; ///< bbport: the submitted game frame shown (LowLatency), 0 for others
 };
 
 enum SchedulerType {
@@ -124,10 +126,24 @@ public:
 
 private:
     Frame* GetRenderFrame();
-    void PrepareNativeFrame(Frame*, vk::CommandBuffer, vk::ImageView, vk::Extent2D, vk::Format);
-    void UpdateFrameGenLimit(bool wanted, double present_ms);
 
     void RecreateFrame(Frame* frame, u32 width, u32 height);
+    /// bbport: the first `count` images frame generation writes for `frame` (its size), made
+    /// when missing; the others are freed. Returns how many there are.
+    u32 EnsureGenerated(Frame* frame, u32 count);
+    void DestroyGenerated(Frame* frame, u32 from = 0);
+    /// bbport: frame generation is off (or the output HDR): its memory is freed.
+    void ReleaseFrameGen(Frame* frame);
+    /// bbport: present thread, after a game frame: how many generated frames the display can
+    /// show per game frame (frame_gen_limit). `present_ms`: the time Present took.
+    void UpdateFrameGenLimit(bool wanted, double present_ms);
+    /// bbport: blits `image` (General layout) into a swapchain image with the overlay and
+    /// presents it. `last`: the game frame itself, which also signals the frame's fence.
+    /// False when the swapchain could not give an image.
+    bool PresentImage(Frame* frame, vk::Image image, bool last);
+    void PresentWorkshop(Frame* frame, bool is_reusing_frame, bool is_game_frame);
+    void PresentNative(Frame* frame, bool is_reusing_frame, bool is_game_frame);
+    u64 present_latency_id{}; ///< bbport: the game frame's id for its last image (LowLatency)
 
     void SetExpectedGameSize(s32 width, s32 height);
 
@@ -159,16 +175,28 @@ private:
     std::condition_variable free_cv;
     std::condition_variable_any frame_cv;
     std::vector<VAddr> vo_buffers_addr;
+    /// bbport: frame generation, and the interval of the game's frames its frames are paced
+    /// in (present thread).
+    std::unique_ptr<FrameGenerator> frame_generator;
+    /// The game's picture before its UI, through the same passes as the frame.
+    Frame hudless_frame{};
+    // One per presentation frame: the completion queue may still sample the older HUD.
+    std::vector<Frame> overlap_hudless_frames;
+    std::chrono::steady_clock::time_point last_game_present{};
+    std::atomic<double> game_frame_ms{16.7}; ///< written by the present thread
+    /// Generated frames per game frame the display can show (UpdateFrameGenLimit).
+    std::atomic<u32> frame_gen_limit{0};
+    // Present thread: the share of the frame interval spent presenting, the pause after
+    // presenting fell behind, and whether the swapchain was made for frame generation.
+    double present_busy{};
+    int frame_gen_hold_seconds{5};
+    std::chrono::steady_clock::time_point frame_gen_hold_until{};
+    bool swapchain_frame_gen{};
+    // Present thread: the game frames of the current second, and the seconds with room for
+    // one more generated frame.
     std::unique_ptr<FrameGeneration> frame_generation;
-    std::unique_ptr<FrameGenerator> native_frame_generator;
-    HostPasses::PostProcessingPass native_pp_pass;
-    std::atomic<u32> frame_gen_limit{FrameGenerator::MaxGenerated};
-    std::atomic<double> game_frame_ms{16.6667};
-    double present_busy=0;
     std::chrono::steady_clock::time_point limit_window{};
     u32 limit_frames=0,limit_up_seconds=0;
-    std::chrono::steady_clock::time_point last_game_present{}, frame_gen_last_adjust{}, frame_gen_hold_until{};
-    int frame_gen_hold_seconds=5;
 };
 
 } // namespace Vulkan

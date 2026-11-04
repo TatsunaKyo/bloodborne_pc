@@ -6,8 +6,12 @@ The game unlocks a trophy through sceNpTrophyUnlockTrophy; the runtime appends "
 what it reads in the game's output (or in last_run.log) in the same file, so older runtimes and
 games started without the launcher are tracked too. The platinum is the console's job: it is
 awarded here once every base-game trophy is unlocked (The Old Hunters does not count).
+
+The unlocks of another installation (a port folder from an old PC, shadPS4's TROP.XML) are added to
+this one's with add_unlocks: a player with a new Windows merged two trophies.log files by hand.
 """
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -92,6 +96,112 @@ def append_log(path, trophy, when):
             log.write(f'{trophy} {int(when)}\n')
     except OSError:
         pass
+
+
+def merge_log(source, target):
+    """The unlocks of another saves folder's trophies.log added to `target` (a character brought over keeps its
+    achievements); returns how many trophies were not in `target` before. Nothing is removed; the earliest time
+    counts, as in read_log."""
+    have = read_log(target)
+    new = 0
+    for trophy, when in sorted(read_log(source).items(), key=lambda item: item[1]):
+        if trophy not in have or when < have[trophy]:
+            append_log(target, trophy, when)
+            new += trophy not in have
+    return new
+
+
+# shadPS4 and its forks keep the unlocks in the game's trophy list (TROP.XML, unpacked from trophy00.trp): a
+# trophy's element gets unlockstate="true" and the time, sceRtcGetCurrentTick's microseconds since the year 1.
+TROPHY_LIST = re.compile(r'^TROP.*\.XML$', re.I)  # TROP.XML, TROP_00.XML ... (TROPCONF.XML: no unlocks)
+TROPHY_ELEMENT = re.compile(r'<trophy\b([^>]*)>', re.I)
+ATTRIBUTE = re.compile(r'([\w-]+)\s*=\s*"([^"]*)"')
+RTC_UNIX = 62135596800  # seconds from 0001-01-01 to 1970-01-01
+
+
+def unix_time(stamp, fallback):
+    """Seconds since 1970 from a trophy's timestamp: an RTC tick (microseconds since the year 1), milliseconds or
+    seconds; `fallback` (the file's time) when it is none of these."""
+    try:
+        value = int(stamp)
+    except (TypeError, ValueError):
+        return int(fallback)
+    seconds = (value // 1_000_000 - RTC_UNIX if value > 10 ** 16 else value // 1000 if value > 10 ** 11 else value)
+    return seconds if 946684800 <= seconds <= time.time() + 86400 else int(fallback)  # 2000 .. now
+
+
+def read_trop_xml(path):
+    """{id: unlock time} of a shadPS4 TROP.XML of Bloodborne; {} for another game's, or one that cannot be read."""
+    try:
+        text = Path(path).read_text(encoding='utf-8', errors='replace')
+        fallback = Path(path).stat().st_mtime
+    except OSError:
+        return {}
+    if 'bloodborne' not in text.lower():
+        return {}
+    unlocked = {}
+    for match in TROPHY_ELEMENT.finditer(text):
+        values = {key.lower(): value for key, value in ATTRIBUTE.findall(match.group(1))}
+        trophy = values.get('id', '')
+        if values.get('unlockstate', '').lower() == 'true' and trophy.isdigit() and int(trophy) in BY_ID:
+            unlocked[int(trophy)] = unix_time(values.get('timestamp'), fallback)
+    return unlocked
+
+
+def read_unlocks(path):
+    """{id: earliest unlock time} of a trophies.log, a TROP.XML or an Xml folder of them (shadPS4 may mark the
+    unlocks in each language's list, TROP_xx.XML, as well)."""
+    path = Path(path)
+    if path.is_dir():
+        unlocks = {}
+        try:
+            lists = sorted(entry for entry in path.iterdir() if TROPHY_LIST.match(entry.name))
+        except OSError:
+            return {}
+        for name in lists:
+            for trophy, when in read_trop_xml(name).items():
+                unlocks[trophy] = min(when, unlocks.get(trophy, when))
+        return unlocks
+    if path.suffix.lower() == '.xml':
+        return read_trop_xml(path)
+    return {trophy: when for trophy, when in read_log(path).items() if trophy in BY_ID}
+
+
+def missing(found, target):
+    """The unlocks of `found` the trophies.log `target` lacks: trophies not in it, and earlier times."""
+    have = read_log(target)
+    return {trophy: when for trophy, when in found.items() if trophy not in have or when < have[trophy]}
+
+
+def add_unlocks(found, target):
+    """The unlocks of other installations ({id: time}) added to this port's trophies.log `target`: the trophies
+    it lacks and the earlier times (read_log keeps the earliest); nothing is removed, the file is only appended
+    to. It is copied beside itself first. Returns (new trophies, the copy or None). The saves folder must be
+    there: never made here (a renamed or disconnected one of the player's own would come back empty, run.py)."""
+    target = Path(target)
+    if not target.parent.is_dir():
+        raise FileNotFoundError(f'The saves folder {target.parent} is not there')
+    adds = missing({trophy: when for trophy, when in found.items() if trophy in BY_ID}, target)
+    if not adds:
+        return 0, None
+    have = read_log(target)
+    copy = None
+    if target.is_file():
+        stamp, number = time.strftime('%Y-%m-%d_%H%M%S'), 1
+        copy = target.with_name(f'{target.name}.{stamp}.bak')
+        while copy.exists():  # a second import within the second: the first copy stays
+            number += 1
+            copy = target.with_name(f'{target.name}.{stamp}-{number}.bak')
+        shutil.copy2(target, copy)
+    with open(target, 'ab') as log:
+        if log.tell():  # a last line without its end would run into the first one added
+            with open(target, 'rb') as old:
+                old.seek(-1, 2)
+                if old.read(1) != b'\n':
+                    log.write(b'\n')
+        log.write(''.join(f'{trophy} {int(when)}\n' for trophy, when in sorted(adds.items(), key=lambda i: i[1]))
+                  .encode('utf-8'))
+    return sum(trophy not in have for trophy in adds), copy
 
 
 def unlocks_in(text):

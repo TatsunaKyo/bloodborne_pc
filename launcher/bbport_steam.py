@@ -9,6 +9,8 @@ from pathlib import Path
 import struct
 import zlib
 
+import bbport_textfile as textfile
+
 MAP, STRING, INT32, UINT64, END = 0, 1, 2, 7, 8
 
 
@@ -99,10 +101,12 @@ def add_shortcut(vdf_path, name, exe, start_dir, icon, options=''):
     else:
         shortcuts.append((MAP, str(len(shortcuts)), new))
         result = 'added'
+    # Whole or not at all: a file cut off (a full drive, a crash halfway) would cost the player every
+    # non-Steam game in Steam, not only this one.
     if data:
-        vdf_path.with_name(vdf_path.name + '.bak').write_bytes(data)
+        textfile.write_bytes(vdf_path.with_name(vdf_path.name + '.bak'), data)
     vdf_path.parent.mkdir(parents=True, exist_ok=True)
-    vdf_path.write_bytes(dump(root) + bytes([END]))
+    textfile.write_bytes(vdf_path, dump(root) + bytes([END]))
     return result
 
 

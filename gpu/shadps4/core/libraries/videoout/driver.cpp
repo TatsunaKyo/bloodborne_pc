@@ -29,6 +29,7 @@
 #include "core/libraries/videoout/videoout_error.h"
 #include "imgui/renderer/imgui_core.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/renderer_vulkan/vk_low_latency.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
@@ -577,6 +578,10 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
         const auto& group = port->groups[buffer.group_index];
         frame = presenter->PrepareFrame(group, buffer.address_left);
     }
+    // bbport: the game frame this flip shows, for the latency markers (vk_low_latency.h).
+    if (frame) {
+        frame->latency_id = is_eop && index != -1 ? Vulkan::LowLatency::RenderSubmitEnd() : 0;
+    }
 
     path.prepared=BbHitch::Clock::now();frame->hitch_path=path;
     BbNvidia::FinishRender(frame,index,flip_arg);
@@ -617,7 +622,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         // Avoid a second clock delaying already-rendered frames on this queue.
         // Background modes and provider/limit changes immediately use VideoOut
         // until the driver accepts the new foreground policy.
-        reflex_pacing=BbNvidia::PacesFrames(effective);
+        reflex_pacing=BbNvidia::PacesFrames(effective) || Vulkan::LowLatency::PacesFrames();
         const u32 current = reflex_pacing ? 0 : effective;
         if (current != frame_limit) {
             frame_limit = current;
@@ -723,7 +728,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                 if (next_flip >= tick_deadline) {
                     break;
                 }
-                BbFramePacing::SleepUntil(next_flip);
+                Common::PreciseSleepUntil(next_flip);
             }
             const auto request = receive_request();
             if (request) {
@@ -733,7 +738,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                 FRAME_END;
             }
         }
-        BbFramePacing::SleepUntil(tick_deadline);
+        Common::PreciseSleepUntil(tick_deadline);
     }
 }
 

@@ -84,7 +84,7 @@ system = {n + '.dll' for n in '''kernel32 ntdll user32 gdi32 gdi32full advapi32 
 ole32 oleaut32 comdlg32 comctl32 ws2_32 wsock32 winmm imm32 setupapi version iphlpapi gdiplus
 bcrypt bcryptprimitives crypt32 secur32 uxtheme dxgi d3d9 d3d11 d3d12 dwmapi shlwapi
 normaliz wldap32 dnsapi mswsock msvcrt ucrtbase winspool opengl32 winhttp powrprof
-avrt propsys psapi dbghelp cfgmgr32 wintrust imagehlp oleacc usp10 wtsapi32 wininet
+avrt propsys psapi pdh dbghelp cfgmgr32 wintrust imagehlp oleacc usp10 wtsapi32 wininet
 authz netapi32 userenv hid dxva2 amsi winusb mf mfplat mfreadwrite rpcrt4 cryptbase
 win32u dwrite winmmbase mfplay msimg32 d3dcompiler_47 dsound ncrypt keyiso'''.split()}
 system.add('winspool.drv')

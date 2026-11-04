@@ -44,7 +44,7 @@ int main(){
     VULKAN_HPP_DEFAULT_DISPATCHER.vkEndCommandBuffer=End;
     VULKAN_HPP_DEFAULT_DISPATCHER.vkQueueSubmit=Submit;
     Vulkan::Scheduler draw,present;
-    present.submission_queue=vk::Queue(reinterpret_cast<VkQueue>(2));
+    present.execution_queue=vk::Queue(reinterpret_cast<VkQueue>(2));
     Vulkan::SubmitInfo frame;
     frame.AddWait(vk::Semaphore(reinterpret_cast<VkSemaphore>(7)),7);
     frame.AddWait(vk::Semaphore(reinterpret_cast<VkSemaphore>(8)),8);

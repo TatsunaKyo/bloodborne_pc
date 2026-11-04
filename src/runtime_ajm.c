@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
-#include "third_party/LibAtrac9/C/src/libatrac9.h"
+#include "../third_party/LibAtrac9/C/src/libatrac9.h"
 
 #define ERR_INVALID_CONTEXT ((int32_t)0x80930002)
 #define ERR_INVALID_INSTANCE ((int32_t)0x80930003)

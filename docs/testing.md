@@ -1,26 +1,22 @@
 # Testing The Crowned Workshop
 
-## R55 evidence and source maintenance
+## R56 integration checks
 
-The published R55 record contains 23 cross-compiled Windows targets, 69 verification logs, six compiled-launcher checks and 1,960 ImGui layouts. These are compilation/component/UI/package evidence. They do not mean the cemetery route, NVIDIA inference or physical display cadence ran on this host. [R55 integration record](investigations/2026-10-20-upstream-integration.md) · [Post-R55 changes](maintenance.md)
+[The integration record](investigations/2026-11-02-supermedo-197.md) identifies the upstream range and separates compiled binaries, production component tests, software Vulkan, and the Windows gameplay checks still open. [R55’s historical record](investigations/2026-10-20-upstream-integration.md) remains attached to the published binary.
 
-Current source checks first-party Python, every first-party Markdown destination/anchor and the revision badge before the portable suite. Install `tools/requirements-checks.txt` in your test environment. `--gui` enables real Tk checks, including Achievements in English/Russian at three scales. `--glm-include`, `--glslang` and `--validator` accept explicit tool paths. Add `--vulkan` only to request actual camera-shader execution on a Vulkan device/ICD; hosted Linux CI explicitly requests it with Mesa installed. The default suite needs no GPU.
+On a Linux host, install the dependencies from [Regression checks](../.github/workflows/regressions.yml), then run:
 
-The output-selector fixture clicks/reloads all ten choices and checks all 100 output transitions in both languages. The assembler fixture verifies actual ZIP assembly/source replay with fixture Windows/toolchain boundaries. Neither is Windows/NVIDIA gameplay.
+```bash
+python3 -m pip install -r tools/requirements-checks.txt
+python3 tools/setup_test_headers.py
+xvfb-run -a -s '-screen 0 3200x2200x24' python3 tools/ci_regressions.py --gui --vulkan
+```
 
-I test gameplay on my Windows 11 / RTX 5070 Ti PC and keep those results separate from automated checks. Current reports are in [their own page](known-issues.md), and [Compatibility](compatibility.md) records which hardware has gameplay evidence.
+`--gui` runs the current launcher pages and real combobox selections. `--vulkan` also executes the production camera shader on a Vulkan driver; Mesa llvmpipe can run it without a physical GPU. The suite checks updater/archive rejection, save and support tools, settings migration, live controls, provider ownership, shader persistence, transfer and presentation lifetimes, and ImGui controls. It needs no game data.
 
-## Portable regressions
+Build `frame-generation-test` separately from the GPU CMake project. Run it with Khronos validation 1.4.341 or newer and a Vulkan device exposing the required features. The fixture exercises capture, FSR optical flow/interpolation, SDR/HDR and delayed NVIDIA input capture. It does not call the NVIDIA SDK or present to a display. Exit 77 means a prerequisite is missing.
 
-With Python, Tk/Pillow, a C++ compiler, GLM headers, zstd and the pinned ImGui submodule available, first run `python3 tools/setup_test_headers.py`, then `python3 tools/ci_regressions.py`. The setup command verifies and prepares the same pinned Vulkan/VMA declarations used by the recording harnesses. Add `--gui` under a display or `xvfb-run` for the actual launcher layout/popup tests.
-
-The suite executes settings and updater behavior, altered-package rejection, production renderer branches with recorded calls, real ImGui controls and optional Tk layouts. It needs no game dump. The CI workflow uses the same entry point; private-image cheat tests and hardware gameplay remain separate.
-
-`tests/test_camera_motion_kernel.py` executes the production GLSL body with float32 GLM vectors and bounded image adapters. Its eight cases cover matched/new/untracked history, overwritten surfaces, invalid vectors and behind-camera points. This catches the arithmetic and history-selection cases without a GPU; `camera-motion-test.exe` remains the Vulkan counterpart.
-
-`tests/test_release_split.py` retains historical split-layout compatibility tests and rejects modern split exports before creating outputs. In the legacy cases it verifies that the original complete candidate is preserved, all its files survive the separation, runtime validation still passes and an interrupted export leaves no partial outputs. It also checks explicit ZIP dates in the local and central headers, writable Windows attributes, reproducible exports with a fixed timestamp and rejection of invalid dates. Release preparation and the published-release tests also check Developer provenance, sidecars, missing/corrupted companions and delayed uploads. The release-integrity and split tests run on Windows as well as Linux.
-
-`tests/test_launcher_startup.py` runs the real main function with frozen startup behavior, in English and Russian, including the `--play` fallback when no game files are configured. Pass the compiled `Bloodborne.exe` to test its actual entry-point bytecode. On Windows, the same test also starts the executable as a separate process through its normal entry point, checks the window and closes it with the normal Windows close message. This catches startup failures that a constructor-only layout test or a `--script` runtime test can miss. All settings and file operations use disposable folders.
+`tests/test_launcher_startup.py` exercises the actual main function in English and Russian, including the `--play` fallback with no game files. Pass the compiled `Bloodborne.exe` to read its embedded launcher code. On Windows the test also starts that executable as a separate process, waits for its window and closes it through the Windows close message. This is distinct from building the native renderer or inspecting Tk source layouts.
 
 ## Windows checks
 
@@ -28,7 +24,7 @@ Revision 36 adds `tests/test_audio_background.py` and `tests/test_cache_hotpaths
 
 The manual **Windows build and package** workflow compiles native components and the launcher, executes the CPU regression programs and checks the compiled Windows launcher before assembling a candidate. It pins MSYS2 package checksums and the unchanged vendor runtime baseline. Package validation checks PE imports/exports, binary/runtime hashes, source commit/tree, source patch and SHA256 sidecar.
 
-A successful hosted build does not test a player's graphics driver. FSR/NVIDIA presentation, HDR, latency, focus transitions and affected scenes still need the named hardware results. The first hosted Windows build is a separate manual run; portable CI starts automatically on source pushes. Local tests and hosted results are recorded with their actual environment.
+A successful hosted build does not test a player's graphics driver. FSR/NVIDIA presentation, HDR, latency, focus transitions and affected scenes still need the named hardware results. The full candidate workflow is a manual run. GitHub currently reports that workflows on the fork are suspended; [repository setup](repository-setup.md) records how the maintainer can restore them. Local tests and hosted results are recorded with their actual environment.
 
 ## Reporting a comparison
 
@@ -46,7 +42,7 @@ The two actual Tk dialog tests exercise inspection/export, named snapshots, rest
 
 ## Integration and recovery checks
 
-Portable CI now also runs the twelve existing CPU/provider fixtures through `tests/test_cpu_integrations.py`: real/FG caps, timer phase, background gates, output counts/Reflex reports, raw frametimes, camera/object history, settings, FSR support, XeSS quality/SDK contracts and AMD input/present contracts. It adds the swapchain recovery fixture, which executes the production failure/drain blocks against competing queue work. Windows CI compiles that fixture with MSVC as well.
+Portable CI now also runs the twelve existing CPU/provider fixtures through `tests/test_cpu_integrations.py`: real/FG caps, timer phase, background gates, output counts/Reflex reports, raw frametimes, camera/object history, settings, FSR support, XeSS quality/SDK contracts and AMD input/present contracts. It adds the swapchain recovery fixture, which executes the production failure/drain blocks against competing queue work. The recorder suite exercises that fixture on Linux; the Windows workflow runs its own compiled checks.
 
 `tests/test_update_archive.py` exercises the actual updater worker: a rejected checksum does not extract or execute a candidate, while a complete verified package reaches the expected launcher path. Altered binaries, wrong metadata/version, missing runtimes, malformed checksums, Windows aliases and truncated ZIPs are rejected. The frozen Windows runtime also imports the same release/dependency validators. [Code review](code-review-2026-10-13.md) records the findings and remaining hardware comparisons.
 

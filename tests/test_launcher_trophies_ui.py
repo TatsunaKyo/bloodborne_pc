@@ -51,21 +51,21 @@ with tempfile.TemporaryDirectory(prefix='workshop-trophies-ui-') as directory:
                 app.show('trophies')
                 root.update()
                 names = labels(app.trophy_body)
-                assert all(trophy[1] in names for trophy in launcher.trophies.TROPHIES)
+                assert all(launcher._(trophy[1]) in names for trophy in launcher.trophies.TROPHIES)
                 assert all(launcher._(*launcher.GRADE_NAMES[grade]) in names
                            for grade in launcher.trophies.GRADES)
                 app.tracker.unlocked = {14: 1_700_000_000, 35: 1_700_000_001}
                 app.set_trophy_filter('earned')
                 root.update()
                 names = labels(app.trophy_body)
-                assert launcher.trophies.BY_ID[14][1] in names
-                assert launcher.trophies.BY_ID[35][1] in names
-                assert launcher.trophies.BY_ID[21][1] not in names
+                assert launcher._(launcher.trophies.BY_ID[14][1]) in names
+                assert launcher._(launcher.trophies.BY_ID[35][1]) in names
+                assert launcher._(launcher.trophies.BY_ID[21][1]) not in names
                 app.set_trophy_filter('locked')
                 root.update()
                 names = labels(app.trophy_body)
-                assert launcher.trophies.BY_ID[14][1] not in names
-                assert launcher.trophies.BY_ID[21][1] in names
+                assert launcher._(launcher.trophies.BY_ID[14][1]) not in names
+                assert launcher._(launcher.trophies.BY_ID[21][1]) in names
                 app.tracker.unlocked = {trophy[0]: 1_700_000_000
                                        for trophy in launcher.trophies.TROPHIES}
                 app.render_trophies()

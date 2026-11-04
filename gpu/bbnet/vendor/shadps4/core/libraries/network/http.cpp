@@ -31,6 +31,7 @@
 #include "core/libraries/kernel/process.h"
 #include "core/libraries/libs.h"
 #include "core/libraries/network/http.h"
+#include "windows_trust.h"
 #include "http_error.h"
 
 #if __has_include(<httplib.h>)
@@ -452,8 +453,13 @@ struct SendRequestPlan {
     int ctx_id = 0;
 };
 
-// Extract the path-and-query portion from a full URL
+// Extract the path-and-query portion from a full URL or an origin-form target.
 static std::string ExtractPathFromUrl(const std::string& url) {
+    // bbport: Bloodborne also supplies paths such as /bb-eu/ss.info directly.
+    if (!url.empty() && url.front() == '/') {
+        return url;
+    }
+
     auto scheme_end = url.find("://");
     if (scheme_end == std::string::npos) {
         return "/";
@@ -890,6 +896,9 @@ static s32 RunRealHttpRequest(const SendRequestPlan& plan_in, HttpResponse& out_
                          plan.scheme, plan.host);
             }
             cli.enable_server_certificate_verification(verify_server);
+            if (verify_server) {
+                bbnet::TrustWindowsRoots(cli, base_url);
+            }
             if (config_disabled_verify) {
                 LOG_INFO(Lib_Http, "{}://{}: server cert verification disabled by configuration",
                          plan.scheme, plan.host);
@@ -1524,7 +1533,10 @@ int PS4_SYSV_ABI sceHttpCreateRequestWithURL(int connId, s32 method, const char*
     auto req = std::make_shared<HttpRequest>();
     req->conn_id = connId;
     req->method = method;
-    req->url = url;
+    // bbport: Bloodborne passes an empty request URL after creating a connection with
+    // the full URL. Keep that connection's path and query; using an empty URL
+    // here makes SendRequest request '/' instead (ss.info then returns 404).
+    req->url = url[0] ? url : conn_it->second.url;
     req->content_length = contentLength;
     req->settings = conn_it->second.settings;
     req->epoll_id = conn_it->second.epoll_id;

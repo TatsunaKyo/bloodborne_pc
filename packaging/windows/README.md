@@ -6,7 +6,7 @@ Players can use the ordinary game ZIP without installing Python or a compiler. T
 
 ## Verified release candidates
 
-I keep release preparation separate from the older development ZIP command. The **Windows build and package** workflow installs the checksum-pinned package set, builds the native programs and launcher, executes the Windows CPU regressions, checks the compiled launcher and assembles a complete candidate. It does not publish a release.
+I keep release preparation separate from the older development ZIP command. The **Windows build and package** workflow installs the checksum-pinned package set, builds the native programs and launcher, executes the Windows CPU regressions, checks the compiled launcher and assembles a complete candidate. It does not publish a release. The camera-motion executable is linked on Windows; the hosted Linux regression executes the production shader using software Vulkan. Run `./out/gpu/camera-motion-test.exe` separately on a Windows system with a compatible Vulkan driver.
 
 For the same process in an MSYS2 CLANG64 shell, set `WINPYTHON` to a python.org Python 3.14.8 executable, commit your source changes and run:
 
@@ -14,10 +14,10 @@ For the same process in an MSYS2 CLANG64 shell, set `WINPYTHON` to a python.org 
 "$WINPYTHON" tools/fetch_windows_dependencies.py
 pacman -U --noconfirm out/dependencies/*.pkg.tar.zst
 bash build.sh
-ninja -C out/gpu frame-limits-test frame-pacing-test background-pause-test temporal-history-test motion-history-test xess-presets-test amd-antilag-test camera-motion-test
+ninja -C out/gpu frame-limits-test frame-pacing-test background-pause-test temporal-history-test motion-history-test xess-presets-test amd-antilag-test camera-motion-test save-access-test
 set -euo pipefail
 mkdir -p out/verification
-for test in frame-limits frame-pacing background-pause temporal-history motion-history xess-presets amd-antilag camera-motion; do
+for test in frame-limits frame-pacing background-pause temporal-history motion-history xess-presets amd-antilag; do
   ./out/gpu/${test}-test.exe | tee -a out/verification/native-windows-tests.log
 done
 bash packaging/windows/package.sh --launcher-only
@@ -58,10 +58,15 @@ git submodule update --init --recursive
 bash build.sh                      # out/bb-probe.exe, out/bb-gpu-capabilities.exe
 BB_GAME_DIR=F:/path/to/CUSA03173 python run.py
 python launcher/bbport_launcher_win.py
-bash packaging/windows/package.sh  # dist/bbport-windows/ and .zip: Bloodborne.exe + DLLs
+bash packaging/windows/package.sh --launcher-only  # out/pyi-dist/Bloodborne/
 ```
 
+For a release candidate, follow the complete recipe above. The FSR4VK corresponding
+source and licenses go inside the one release ZIP.
+
 `run.py` is the Windows `run.sh` (same variables; works from a plain Windows Python too).
+The FSR 4.1 integration initializes installed-driver discovery for the GUI,
+`--run` and direct `run.py` starts; see [FSR 4.1 on Windows](../../docs/FSR41_WINDOWS.md).
 The package freezes the launcher with PyInstaller (a private venv in `out/pyenv`, from a
 python.org Python) into `Bloodborne.exe`, which also runs `run.py` (`--run`), the preparation
 scripts (`--script`) and the game without the window (`--play`): players need no Python.
@@ -73,6 +78,20 @@ game directly with the saved settings.
 From a source tree it adds `C:\msys64\clang64\bin` (or `$MSYS2_ROOT`) to `PATH` for the DLLs.
 `bash tools/fetch_fsr4_assets.sh` works in the CLANG64 shell as on Linux.
 
+FSR 4.1.1 (experimental): choose **AMD DX12** or **Vulkan (fsr4vk)** in Graphics
+or Play's quick settings. `package.sh` prepares AMD's original 4.1.1 runtime from
+the pinned official SDK archive (about 127 MB on the first build), verifies its
+hash, and includes the DLL with AMD's license/notices. The cached runtime is in
+`out/fsr411-dx12/`. The fsr4vk provider with the AMD Windows fix is also included,
+with its licenses and patch/source notice. `prepare_fsr4vk.py` verifies and caches
+the provider and corresponding source under `out/fsr4vk/`; the first build
+downloads about 14 MB of runtime files and 61 MB of source. Later builds reuse
+the verified cache. Graphics -> **Download fsr4vk** repairs missing or changed
+files, and the updater preserves the provider folder. Both use
+the normal PLAY path. See [FSR411_WINDOWS.md](../../docs/FSR411_WINDOWS.md) for
+source setup, requirements, synchronization and the uncapped Hunter's Dream
+comparison. The package also ships that document under `docs/`.
+
 DLSS (optional): `DLSS_SDK_ROOT=<checkout of github.com/NVIDIA/DLSS> bash
 packaging/windows/build_dlss.sh` builds `bbport_dlss.dll` (`gpu/dlss_bridge`, the only code that
 uses the NVIDIA SDK, compiled with MSVC 2022) and copies it with `nvngx_dlss.dll` next to
@@ -82,9 +101,12 @@ FSR 3 (scene color, depth, render-pixel motion vectors, jitter). `BB_DLSS=0` tur
 
 The launcher texts are written in English with the Russian beside them; the other languages
 are in `launcher/bbport_lang.py` (one list per language in the order of `KEYS`; a missing or
-empty text falls back to English). The icon (`launcher/bloodborne.ico`/`.png`) is drawn by
-`packaging/windows/make_icon.py` and built into `Bloodborne.exe`, `bb-probe.exe` (the game
-window) and `bb-gpu-capabilities.exe`.
+empty text falls back to English). The FSR 4.1.1 controls/status texts are merged from
+`launcher/bbport_lang_fsr411.py`, with complete entries for all 13 languages.
+The icon (`launcher/bloodborne.ico`/`.png`: the launcher's emblem on a dark tile) is made from
+`launcher/assets/emblem.png` by `packaging/windows/make_icon.py` and built into
+`Bloodborne.exe`, `Play Bloodborne.exe`, `bb-probe.exe` (the game window) and
+`bb-gpu-capabilities.exe`.
 
 ## What is different from Linux
 

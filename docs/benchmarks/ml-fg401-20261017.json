@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-10-17",
+  "game_build": "Windows 1.9 experimental integration",
+  "scene": "Hunter's Dream",
+  "camera": "stationary, fixed within each session",
+  "system": {
+    "cpu": "Intel Core i7-11700B (11th Gen)",
+    "gpu": "AMD Radeon RX 9070 16 GB",
+    "driver": "AMD 26.9.2 LLPC",
+    "os": "Windows 11"
+  },
+  "profile": "benchmark-default-v1",
+  "graphics": {
+    "upscaler": "fsr411",
+    "preset": "1",
+    "sharpen": "1",
+    "sharpness": "0.50",
+    "object_motion": "1",
+    "show_fps": "1",
+    "output_res": "3840x2160",
+    "model_lod": "-2",
+    "live_resolution": "auto",
+    "hud_position": "0",
+    "effect_chromatic_aberration": "0",
+    "effect_dof": "1",
+    "effect_motion_blur": "1",
+    "effect_ssao": "1",
+    "effect_game_aa": "0",
+    "effect_dynamic_shadows": "1",
+    "effect_ssr": "1",
+    "skip_intro": "1",
+    "debug_camera": "0",
+    "debug_menu": "0",
+    "cheat_no_death": "0",
+    "cheat_stealth": "0",
+    "cheat_silent": "0",
+    "cheat_rally_no_decay": "0",
+    "cheat_enemy_control": "0",
+    "tweak_no_rally": "0",
+    "tweak_camera_distance": "0",
+    "tweak_no_camera_rotation": "0",
+    "tweak_easy_run": "0",
+    "tweak_ragdoll": "0",
+    "tweak_circle_confirm": "0",
+    "quit_to_desktop": "1",
+    "frame_gen": "off",
+    "frame_gen_multiplier": "2",
+    "frame_gen_fit_display": "0"
+  },
+  "launcher": {
+    "fsr411_backend": "dx12",
+    "object_motion_cache": true,
+    "fullscreen": true,
+    "hdr": false,
+    "present_mode": "Immediate",
+    "fps_mode": "uncap",
+    "frame_cap": "0",
+    "mods_enabled": false,
+    "online": false
+  },
+  "render_resolution": [
+    2560,
+    1440
+  ],
+  "output_resolution": [
+    3840,
+    2160
+  ],
+  "fg_context_resolution": [
+    3840,
+    2160
+  ],
+  "method": {
+    "warmup_seconds": 10,
+    "measurement_seconds": 25,
+    "phases_per_method": 2,
+    "aggregation": "frame/output counter rates; mean of two phases; boundary seconds excluded"
+  },
+  "current_path_comparison": {
+    "FG off": {
+      "game_fps": 86.91234109620291,
+      "output_fps": 86.91234109620291,
+      "rounds": [
+        87.09169291991378,
+        86.732788313898
+      ]
+    },
+    "AMD ML-FG 4.0.1": {
+      "game_fps": 72.99726287204466,
+      "output_fps": 145.99452574408932,
+      "rounds": [
+        73.05502846299811,
+        72.93955452156305
+      ]
+    }
+  },
+  "overlap_ab": {
+    "serial": {
+      "game_fps": 70.17959940492874,
+      "output_fps": 140.35919880985747,
+      "game_fps_rounds": [
+        70.36063596018786,
+        69.99827377869843
+      ]
+    },
+    "overlap": {
+      "game_fps": 74.53814928340651,
+      "output_fps": 149.07629856681302,
+      "game_fps_rounds": [
+        74.62377181708885,
+        74.45267557836361
+      ]
+    }
+  },
+  "fused_copy_hud_ab": [
+    {
+      "label": "overlap-a",
+      "phase": 1,
+      "seconds": 24.112,
+      "samples": 24,
+      "game_fps": 74.65162574651626,
+      "output_fps": 149.30325149303252
+    },
+    {
+      "label": "fused-a",
+      "phase": 2,
+      "seconds": 23.125999999999998,
+      "samples": 23,
+      "game_fps": 74.9805413819943,
+      "output_fps": 149.9610827639886
+    },
+    {
+      "label": "fused-b",
+      "phase": 3,
+      "seconds": 24.113,
+      "samples": 24,
+      "game_fps": 74.77294405507403,
+      "output_fps": 149.54588811014807
+    },
+    {
+      "label": "overlap-b",
+      "phase": 4,
+      "seconds": 23.198999999999998,
+      "samples": 23,
+      "game_fps": 74.22733738523213,
+      "output_fps": 148.45467477046427
+    }
+  ],
+  "source_sha256": {
+    "current_summary": "0d0a2030aadf8526362c993471fb091d1b8538a75895283c53746d3794e6cd2d",
+    "overlap_summary": "33e08bc21dd8c8b56bc85f5cc544f205b0929dec45dd2ffa7857f8d2525b01f0",
+    "copy_hud_phases": "f82879b7f0db43cfd57eb342951b79f07210a077cca38183b77bbb9f2326f100"
+  }
+}

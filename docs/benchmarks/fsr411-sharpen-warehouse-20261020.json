@@ -1,0 +1,232 @@
+{
+  "date": "2026-10-20",
+  "windows_version": "1.9.2",
+  "source_base": "292b3a8b8f2671be980996a170f3f8494dae6ce5",
+  "cpu": "Intel Core i7-11700B (11th Gen)",
+  "gpu": "AMD Radeon RX 9070 16 GB",
+  "driver": "AMD 26.9.2 LLPC, Vulkan 1.4.355",
+  "scene": "Warehouse above the sewers near Eileen, Central Yharnam",
+  "settings": {
+    "render": [
+      2560,
+      1440
+    ],
+    "output": [
+      3840,
+      2160
+    ],
+    "preset": "Quality",
+    "hdr": false,
+    "sharpen": true,
+    "sharpness": 0.5,
+    "object_motion": true,
+    "object_motion_cache": true,
+    "ssr": true,
+    "model_lod": -2,
+    "game_aa": false,
+    "chromatic_aberration": false,
+    "fps_cap": 0,
+    "vsync": false,
+    "present_mode": "Immediate",
+    "cheats": false,
+    "external_mods": false
+  },
+  "method": {
+    "order": [
+      "original",
+      "direct",
+      "direct",
+      "original"
+    ],
+    "same_process_per_provider": true,
+    "same_candidate_binary_per_provider": true,
+    "warmup_seconds": 10,
+    "capture_seconds": 25,
+    "phases_per_variant": 2,
+    "fps_source": "Mean of complete native five-second game-frame reports",
+    "camera": "Unmodified loaded save, verified view matrix and projection",
+    "interpretation": "Game throughput; frame-time difference includes scheduling and overlap"
+  },
+  "results": [
+    {
+      "provider": "AMD DX12",
+      "frame_generation": "off",
+      "original_game_fps": 91.3,
+      "direct_game_fps": 94.65,
+      "gain_percent": 3.6692223439211524,
+      "game_frame_time_saved_ms": 0.387662159949409,
+      "phases": [
+        {
+          "path": "original",
+          "game_fps": 91.72,
+          "five_second_game_fps": [
+            91.8,
+            91.6,
+            91.7,
+            91.7,
+            91.8
+          ],
+          "warmup_seconds": 10.015999999995984,
+          "capture_seconds": 25.035078,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 0.0,
+            "max_position_component_delta": 0.0
+          }
+        },
+        {
+          "path": "direct",
+          "game_fps": 95.0,
+          "five_second_game_fps": [
+            94.6,
+            95.2,
+            95.2,
+            94.8,
+            95.2
+          ],
+          "warmup_seconds": 10.031000000002678,
+          "capture_seconds": 25.032367,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 0.0,
+            "max_position_component_delta": 0.0
+          }
+        },
+        {
+          "path": "direct",
+          "game_fps": 94.3,
+          "five_second_game_fps": [
+            94.4,
+            94.5,
+            94.4,
+            93.7,
+            94.5
+          ],
+          "warmup_seconds": 9.968999999997322,
+          "capture_seconds": 25.032241,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 0.0,
+            "max_position_component_delta": 0.0
+          }
+        },
+        {
+          "path": "original",
+          "game_fps": 90.88,
+          "five_second_game_fps": [
+            91.1,
+            91.1,
+            90.8,
+            90.9,
+            90.5
+          ],
+          "warmup_seconds": 10.014999999999418,
+          "capture_seconds": 24.986368,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 0.0,
+            "max_position_component_delta": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "provider": "Vulkan (fsr4vk)",
+      "frame_generation": "off",
+      "original_game_fps": 76.39,
+      "direct_game_fps": 78.80000000000001,
+      "gain_percent": 3.1548632019898104,
+      "game_frame_time_saved_ms": 0.4003633505063213,
+      "phases": [
+        {
+          "path": "original",
+          "game_fps": 76.56,
+          "five_second_game_fps": [
+            76.5,
+            76.5,
+            76.6,
+            76.6,
+            76.6
+          ],
+          "warmup_seconds": 10.031000000002678,
+          "capture_seconds": 25.035673,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 1.6990000000216554e-06,
+            "max_position_component_delta": 2.2999999998774e-05
+          }
+        },
+        {
+          "path": "direct",
+          "game_fps": 78.84,
+          "five_second_game_fps": [
+            78.8,
+            78.9,
+            78.8,
+            78.9,
+            78.8
+          ],
+          "warmup_seconds": 10.031999999999243,
+          "capture_seconds": 25.035182,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 1.6990000000216554e-06,
+            "max_position_component_delta": 2.2999999998774e-05
+          }
+        },
+        {
+          "path": "direct",
+          "game_fps": 78.76,
+          "five_second_game_fps": [
+            78.7,
+            78.8,
+            78.8,
+            78.7,
+            78.8
+          ],
+          "warmup_seconds": 10.031000000002678,
+          "capture_seconds": 25.037359,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 1.6990000000216554e-06,
+            "max_position_component_delta": 2.2999999998774e-05
+          }
+        },
+        {
+          "path": "original",
+          "game_fps": 76.22,
+          "five_second_game_fps": [
+            76.3,
+            76.3,
+            76.3,
+            76.1,
+            76.1
+          ],
+          "warmup_seconds": 10.030999999995402,
+          "capture_seconds": 25.03085,
+          "camera_rotation_span": 0.0,
+          "camera_position_span": 0.0,
+          "camera_comparison": {
+            "matched": true,
+            "max_rotation_component_delta": 1.6990000000216554e-06,
+            "max_position_component_delta": 2.2999999998774e-05
+          }
+        }
+      ]
+    }
+  ]
+}

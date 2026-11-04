@@ -26,7 +26,6 @@
 #include "video_core/amdgpu/regs_primitive.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
-#include "vulkan/vulkan.hpp"
 
 namespace tracy {
 class VkCtxScope;
@@ -671,7 +670,10 @@ class Scheduler {
 public:
     /// `threaded_recording`: Vulkan commands passed to Record() are recorded by a worker thread.
     explicit Scheduler(const Instance& instance, bool threaded_recording = false,
-                       vk::Queue queue = {});
+                       vk::Queue execution_queue = {});
+    // Called by this scheduler's recording thread between presentations; retires the old queue.
+    void SetExecutionQueue(vk::Queue queue);
+    vk::Queue ExecutionQueue() const { return execution_queue; }
     ~Scheduler();
 
     /// Sends the current execution context to the GPU
@@ -684,6 +686,13 @@ public:
 
     /// Sends the current execution context to the GPU and waits for it to complete.
     void Finish();
+
+    // Applied to the next submission, before it can consume external GPU output.
+    void WaitExternal(vk::Semaphore semaphore, u64 value) {
+        ASSERT(!pending_external_wait);
+        pending_external_wait = semaphore;
+        pending_external_value = value;
+    }
 
     /// bbport: waits for the work submitted so far but leaves the command buffer being
     /// recorded open, so a CommandBuffer() the caller holds stays valid (Finish() submits it:
@@ -910,12 +919,14 @@ private:
 
 private:
     const Instance& instance;
-    vk::Queue submission_queue;
+    vk::Queue execution_queue;
     Semaphore work_semaphore;
     CommandPool command_pool;
     DynamicState dynamic_state;
     SubmitFunc on_submit{};
     vk::CommandBuffer current_cmdbuf;
+    vk::Semaphore pending_external_wait{};
+    u64 pending_external_value{};
     std::condition_variable_any event_cv;
     struct PendingOp {
         Common::UniqueFunction<void> callback;

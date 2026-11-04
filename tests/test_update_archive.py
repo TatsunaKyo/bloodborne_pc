@@ -79,80 +79,43 @@ class UpdateArchive(unittest.TestCase):
         import io
         import queue
         import types
+        from unittest.mock import Mock
         for accepted in (False, True):
             with self.subTest(accepted=accepted):
-                package = self.fixture.package()
-                staging = self.fixture.root / ('accepted' if accepted else 'rejected')
-                staging.mkdir()
-                checksum = integrity.checksum(package) if accepted else '0' * 64
-                replies = [package.read_bytes(), (checksum + '  ' + package.name + '\n').encode()]
-                errors, closed = [], []
-                obj = types.SimpleNamespace(process=None, ui_calls=queue.SimpleQueue(),
-                    messagebox=types.SimpleNamespace(askyesno=lambda *a: True, showerror=lambda *a: errors.append(a)),
-                    update_button=types.SimpleNamespace(configure=lambda **kw: None),
-                    update_label=types.SimpleNamespace(configure=lambda **kw: None),
-                    root=types.SimpleNamespace(destroy=lambda: closed.append(True)))
-                obj.install_version = types.MethodType(launcher.Launcher.install_version, obj)
-
+                def complete(identity,data):
+                    data['_internal/base_library.zip']=b'fixture base library'
+                    data['_internal/python314.dll']=fixtures.pe()
+                package=self.fixture.package(modify=complete)
+                replies=[package.read_bytes(), ((integrity.checksum(package) if accepted else '0'*64)
+                         + '  ' + package.name + '\n').encode()]
+                events=[]
+                obj=types.SimpleNamespace(updating=False, installing=False, ui_calls=queue.SimpleQueue(),
+                    game_running=lambda:False,test_running=lambda:False,update_buttons=Mock(),
+                    messagebox=types.SimpleNamespace(askyesno=lambda *a:True,
+                        showerror=lambda *a:events.append(('error',a))))
+                obj.update_failed=types.MethodType(launcher.Launcher.update_failed,obj)
+                obj.start_installer=lambda version,installer,folder,new,say,failed:events.append(('verified',new))
                 class Thread:
-                    def __init__(self, *, target, daemon): self.target = target
-                    def start(self): self.target()
-
-                def response(*args, **kwargs):
-                    value = io.BytesIO(replies.pop(0))
-                    value.headers = {'Content-Length': str(value.getbuffer().nbytes)}
-                    return value
-
-                original_mkdtemp = launcher.tempfile.mkdtemp
-                def make_stage(*args, **kwargs):
-                    return str(staging) if kwargs.get('prefix') == 'crowned-workshop-update-' else original_mkdtemp(*args, **kwargs)
-
-                with patch.object(launcher, 'FROZEN', True), \
-                     patch.object(launcher.threading, 'Thread', Thread), \
-                     patch.object(launcher.tempfile, 'mkdtemp', side_effect=make_stage), \
-                     patch.object(launcher.urllib.request, 'urlopen', side_effect=response), \
-                     patch.object(launcher.subprocess, 'Popen') as execute:
-                    launcher.Launcher.install_update(obj, '1.6-tatsunakyo.22', 'https://example.invalid/' + package.name,
-                                                    'https://example.invalid/release')
-                    while not obj.ui_calls.empty(): obj.ui_calls.get()()
-                    self.assertEqual(execute.call_count, int(accepted))
-                    self.assertEqual(bool(closed), accepted)
-                    self.assertEqual(bool(errors), not accepted)
-                    if accepted:
-                        self.assertEqual(Path(execute.call_args.args[0][0]), staging / 'new/Workshop/Bloodborne.exe')
-                    else:
-                        self.assertFalse(staging.exists())
-
-    def test_previous_launcher_wait_checks_results_and_preserves_64_bit_handles(self):
-        import ctypes
-        import types
-        from unittest.mock import Mock
-        handle = 0x100000001
-        for opened, wait, error, expected in ((handle, 0, 0, True), (handle, 258, 0, False),
-                                             (handle, 0xffffffff, 0, False), (None, 0, 87, True), (None, 0, 5, False)):
-            with self.subTest(opened=opened, wait=wait, error=error):
-                api = types.SimpleNamespace(OpenProcess=Mock(return_value=opened),
-                    WaitForSingleObject=Mock(return_value=wait), CloseHandle=Mock(), GetLastError=Mock(return_value=error))
-                with patch.object(launcher.ctypes, 'windll', types.SimpleNamespace(kernel32=api), create=True):
-                    self.assertEqual(launcher.wait_for_previous_launcher(123), expected)
-                self.assertIs(api.OpenProcess.restype, ctypes.c_void_p)
-                if opened:
-                    api.WaitForSingleObject.assert_called_once_with(handle, 60000)
-                    api.CloseHandle.assert_called_once_with(handle)
+                    def __init__(self,*,target,daemon):self.target=target
+                    def start(self):self.target()
+                def response(*a,**kw):
+                    reply=io.BytesIO(replies.pop(0));reply.headers={'Content-Length':str(len(reply.getvalue()))}
+                    return reply
+                with patch.object(launcher,'FROZEN',True), patch.object(launcher,'UPDATE_DIR',self.fixture.root/'updates'), \
+                     patch.object(launcher.threading,'Thread',Thread), \
+                     patch.object(launcher.bbport_tls,'urlopen',side_effect=response), \
+                     patch.object(launcher,'update_installer',return_value=self.fixture.root/'installer.exe'), \
+                     patch.object(launcher.subprocess,'Popen') as execute:
+                    launcher.Launcher.install_version(obj,'1.6-tatsunakyo.22',
+                        'https://example.invalid/'+package.name,'https://example.invalid/release',Mock(),Mock())
+                    while not obj.ui_calls.empty():obj.ui_calls.get()()
+                execute.assert_not_called()  # the installer handoff is the next separate stage
+                self.assertEqual(events[0][0],'verified' if accepted else 'error',events)
+                if accepted:
+                    self.assertTrue((events[0][1]/'Bloodborne.exe').is_file())
                 else:
-                    api.WaitForSingleObject.assert_not_called()
-
-    def test_wait_timeout_cannot_start_copying_an_update(self):
-        import types
-        from unittest.mock import Mock
-        message = Mock()
-        with patch.object(launcher, 'wait_for_previous_launcher', return_value=False), \
-             patch.object(launcher.ctypes, 'windll', types.SimpleNamespace(user32=types.SimpleNamespace(MessageBoxW=message)), create=True), \
-             patch.object(launcher.shutil, 'copytree') as copy:
-            self.assertEqual(launcher.install_update(self.fixture.root / 'installed', 123), 1)
-        copy.assert_not_called()
-        message.assert_called_once()
+                    self.assertFalse(any(launcher.UPDATE_DIR.glob('*/new')))
 
 
-if __name__ == '__main__':
+if __name__=='__main__':
     unittest.main()

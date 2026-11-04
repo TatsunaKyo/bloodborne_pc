@@ -5,21 +5,25 @@ import os,shlex,subprocess,tempfile
 root=Path(__file__).resolve().parents[1]
 s=(root/'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp').read_text()
 a=s.index('    draw_jitter = {};',s.index('// bbport: jitter geometry'))
-b=s.index('    UpdateDynamicState(',a)
+b=s.index('    SetProjectionJitter(',a)
 body=s[a:b]
 prefix=r'''
 #include <array>
 #include <cassert>
 #include <cstdio>
 #include <optional>
+#include <vector>
+struct PushData {}; PushData push_data;
+struct Registers;
+template<class A,class B,class C> void SetProjectionJitter(A&, const B&, const C&) {}
 struct Upscaler {bool enabled=true;bool Enabled(){return enabled;}std::array<float,2> Jitter(){return{.375f,-.25f};}} up;
 struct Camera {unsigned depth=7;unsigned Depth(){return depth;}} camera;
 auto* upscaler=&up;auto* camera_motion=&camera;
 struct {unsigned first;} db_desc;
 struct Count{unsigned n=1;unsigned NumInstances(){return n;}};
 struct {unsigned num_indices{};Count num_instances;bool screen_space{};bool IsClipDisabled(){return screen_space;}} regs;
-struct FetchShader {bool empty;bool Empty()const{return empty;}};
-struct Pipeline{bool attributes=true;FetchShader GetFetchShader(){return {!attributes};}} gpu_pipeline;
+struct FetchShader {std::vector<int> attributes;};
+struct Pipeline{bool attributes=true;std::optional<FetchShader> GetFetchShader(){return attributes?std::optional<FetchShader>(FetchShader{{1}}):std::nullopt;}} gpu_pipeline;
 auto* pipeline=&gpu_pipeline;
 std::array<float,2> draw_jitter;bool gbuffer_draw;
 void Select(){

@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <unordered_set>
 #include <string>
 #include <string_view>
 #ifdef _WIN32
@@ -20,12 +22,34 @@
 #endif
 
 namespace BbSettings {
-const char* FrameGenName(int mode) { return mode==FrameGenFsr3 ? "fsr3" : mode==FrameGenDlss ? "dlss" : "off"; }
+const char* FrameGenName(int mode) {
+    static constexpr const char* names[FrameGenCount] = {"off", "fsr3", "dlss", "fsr401", "fsr402"};
+    return names[std::clamp(mode, 0, FrameGenCount - 1)];
+}
+int NativeForRoute(int route) {
+    switch (route) {
+    case FrameGenerationNativeFsr: return FrameGenFsr3;
+    case FrameGenerationNativeDlss: return FrameGenDlss;
+    case FrameGenerationNativeFsr401: return FrameGenFsr401;
+    case FrameGenerationNativeFsr402: return FrameGenFsr402;
+    default: return FrameGenOff;
+    }
+}
+int RouteForNative(int provider) {
+    switch (provider) {
+    case FrameGenFsr3: return FrameGenerationNativeFsr;
+    case FrameGenDlss: return FrameGenerationNativeDlss;
+    case FrameGenFsr401: return FrameGenerationNativeFsr401;
+    case FrameGenFsr402: return FrameGenerationNativeFsr402;
+    default: return FrameGenerationOff;
+    }
+}
+const char* FrameGenerationKey(int route) {
+    static constexpr const char* keys[] = {"off", "fsr", "nvidia", "native_fsr", "native_dlss", "native_fsr401", "native_fsr402"};
+    return keys[std::clamp(route, 0, 6)];
+}
 int NativeProvider() {
-    const auto& s = Get();
-    const int mode=s.frame_generation;
-    if (!s.startup_native_dlss && mode==FrameGenerationNativeDlss) return FrameGenOff;
-    return mode==FrameGenerationNativeFsr ? FrameGenFsr3 : mode==FrameGenerationNativeDlss ? FrameGenDlss : FrameGenOff;
+    return Get().ActiveFrameGen();
 }
 
 unsigned EffectiveFrameLimit(unsigned foreground_limit) {
@@ -43,7 +67,7 @@ unsigned EffectiveFrameLimit(unsigned foreground_limit) {
         const bool native_mode=s.frame_generation>=FrameGenerationNativeFsr;
         const unsigned multiplier=s.frame_generation==FrameGenerationOff || (native_mode && NativeProvider()==FrameGenOff) ? 1u :
             unsigned(std::max(1,s.frame_generation==FrameGenerationNvidia ?
-                s.frame_generation_cap_multiplier.load() : s.frame_generation_active.load()));
+                s.frame_generation_cap_multiplier.load() : native_mode ? s.frame_gen_now.load() + 1 : s.frame_generation_active.load()));
         if (s.limit_generated_fps && multiplier>1) {
             const unsigned real_cap=unsigned(std::clamp(s.generated_fps_limit.load(),30,1000))/multiplier;
             return foreground_limit ? std::min(foreground_limit,real_cap) : real_cap;
@@ -68,13 +92,67 @@ std::string MenuPath() {
     return std::filesystem::path{Path()}.replace_extension(".menu.ini").string();
 }
 
+// Keep settings introduced by other launcher revisions. A failed append leaves
+// the original file intact; the caller replaces it only after a complete close.
+bool PreserveUnknownSettings(const char* original, const std::string& temporary) {
+    std::unordered_set<std::string> written;
+    auto key = [](const std::string& line) {
+        const auto start = line.find_first_not_of(" \t\r");
+        const auto equal = line.find('=');
+        if (start == std::string::npos || line[start] == '#' || equal == std::string::npos)
+            return std::string{};
+        const auto end = line.find_last_not_of(" \t", equal - 1);
+        return end < start ? std::string{} : line.substr(start, end - start + 1);
+    };
+    std::ifstream generated(temporary);
+    if (!generated) return false;
+    std::string line;
+    while (std::getline(generated, line)) written.insert(key(line));
+    if (generated.bad()) return false;
+    generated.close();
+    std::ifstream previous(original);
+    if (!previous) return !std::filesystem::exists(original);
+    std::ofstream append(temporary, std::ios::app);
+    if (!append) return false;
+    while (std::getline(previous, line)) {
+        const auto name = key(line);
+        if (!name.empty() && !written.contains(name)) append << line << '\n';
+    }
+    const bool read = !previous.bad();
+    append.close();
+    return read && bool(append);
+}
+
 float Clamp(float v, float lo, float hi) {
     return std::isfinite(v) ? std::clamp(v, lo, hi) : lo;
 }
 
+/// The FPS overlay's readouts: key=0|1 each, in the order the menu lists them.
+struct Readout {
+    const char* key;
+    std::atomic<bool> Values::*member;
+};
+constexpr Readout Readouts[] = {
+    {"show_fps", &Values::show_fps},
+    {"show_frame_times", &Values::show_frame_times},
+    {"show_render_latency", &Values::show_render_latency},
+    {"show_vram", &Values::show_vram},
+    {"show_gpu", &Values::show_gpu},
+    {"show_cpu", &Values::show_cpu},
+    {"show_ram", &Values::show_ram},
+    {"show_fps_graph", &Values::show_fps_graph},
+    {"counter_colors", &Values::counter_colors},
+};
+
 void Set(Values& v, const std::string& key, const std::string& value) {
     const float f = float(std::atof(value.c_str()));
     const int i = std::atoi(value.c_str());
+    for (const Readout& readout : Readouts) {
+        if (key == readout.key) {
+            v.*readout.member = value != "0";
+            return;
+        }
+    }
     if (key == "upscaler") {
         for (int u = 0; u < UpscalerCount; ++u) {
             if (value == UpscalerName(u)) {
@@ -106,6 +184,14 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.reactive = i != 0;
     } else if (key == "object_motion") {
         v.object_motion = i != 0;
+    } else if (key == "fsr411_backend") {
+        v.fsr411_backend = value == "dx12" ? Fsr411Dx12 : Fsr411Vulkan;
+    } else if (key == "fsr41_version") {
+        v.fsr41_version = value == "fsr411" ? UpscalerFsr411 : UpscalerFsr412;
+    } else if (key == "object_motion_cache") {
+        v.object_motion_cache = value == "1";
+    } else if (key == "fsr_compatibility_options") {
+        v.fsr_compatibility_options = value == "1";
     } else if (key == "reactive_scale") {
         v.reactive_scale = Clamp(f, 0.0f, 16.0f);
     } else if (key == "reactive_threshold") {
@@ -114,8 +200,6 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.reactive_max = Clamp(f, 0.0f, 1.0f);
     } else if (key == "debug_view") {
         v.debug_view = std::clamp(i, 0, DebugViewCount - 1);
-    } else if (key == "show_fps") {
-        v.show_fps = i != 0;
     } else if (key == "mute_unfocused") {
         v.mute_unfocused = i != 0;
     } else if (key == "button_prompts") {
@@ -134,8 +218,16 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.live_resolution = value == "auto" ? -1 : std::clamp(i, 0, 1);
     } else if (key == "hud_position") {
         v.hud_position = std::clamp(i, 0, 100);
+    } else if (key == "sharp_ui") {
+        v.sharp_ui = i != 0;
     } else if (key == "fov") {
         v.fov = std::clamp(i, FovMin, FovMax);
+    } else if (key == "fps_mode") {
+        for (int m = 0; m < FpsModeCount; ++m) {
+            if (value == FpsModeNames[m]) v.fps_mode = m;
+        }
+    } else if (key == "frame_cap") {
+        v.frame_cap = value.empty() ? FrameCapAuto : std::max(i, 0);
     } else if (key == "output_res") {
         for (int r = 0; r < OutputCount; ++r) {
             if (value == std::to_string(OutputWidths[r]) + "x" + std::to_string(OutputHeights[r])) {
@@ -188,6 +280,7 @@ void Load() {
     v.frame_generation = FrameGenerationOff;
     v.frame_gen=FrameGenOff;v.frame_gen_multiplier=2;v.frame_gen_fit_display=false;
     bool explicit_frame_generation=false;
+    bool root_frame_cap=false;
     v.limit_generated_fps = false;
     v.generated_fps_limit = 144;
     v.reflex=0;v.nvidia_generated_frames=1;
@@ -195,15 +288,32 @@ void Load() {
     v.nvidia_fg_mod=false;v.nvidia_fg_mod_status=nullptr;
     v.amd_antilag = false;
     v.real_fps_limit = -1;
+    v.frame_cap = FrameCapAuto;
+    v.fps_mode = FpsUncap;
     const char* fps = std::getenv("BB_FPS");
     v.variable_frame_time = !fps || std::strcmp(fps,"uncap") == 0 || std::strcmp(fps,"75") == 0;
     v.cheat_damage = v.cheat_incoming = v.cheat_echoes = v.cheat_movement = 0;
     v.cheat_infinite_stamina = v.cheat_no_consume = false;
     v.cheat_no_fall_damage=false;
     v.xess_preset = -1;
+    v.fg401_fallback = -1;
+    v.fg401_fallback_source = -1;
+    v.frame_gen_hdr = false;
+    v.frame_gen_problem = nullptr;
+    v.fg401_problem = nullptr;
+    v.fg402_problem = nullptr;
+    v.fsr411_backend = Fsr411Vulkan;
+    v.fsr41_version = UpscalerFsr412;
+    v.fsr4_method_problem = nullptr;
+    v.object_motion_cache = true;
+    v.fsr_compatibility_options = false;
     for (int e = 0; e < EffectCount; ++e) {
         v.effects[e] = Effects[e].default_on;
     }
+    // Before the file: what the launcher started the game with (older bbport.ini files have no
+    // fps_mode / frame_cap yet).
+    if (const char* fps = std::getenv("BB_FPS")) Set(v, "fps_mode", fps);
+    if (const char* cap = std::getenv("BB_FPS_LIMIT")) Set(v, "frame_cap", cap);
     if (FILE* file = std::fopen(Path(), "r")) {
         char line[256];
         while (std::fgets(line, sizeof(line), file)) {
@@ -213,6 +323,7 @@ void Load() {
             if (text.empty() || text[0] == '#' || eq == std::string::npos) {
                 continue;
             }
+            if (text.substr(0, eq) == "frame_cap") root_frame_cap = true;
             Set(v, text.substr(0, eq), text.substr(eq + 1));
         }
         std::fclose(file);
@@ -257,7 +368,9 @@ void Load() {
                     : value == "30" ? Background30 : value == "60" ? Background60 : BackgroundRun;
             } else if (key == "frame_generation") {
                 explicit_frame_generation=true;
-                v.frame_generation = value == "fsr" ? FrameGenerationFsr : value == "nvidia" ? FrameGenerationNvidia : value == "native_fsr" ? FrameGenerationNativeFsr : value == "native_dlss" ? FrameGenerationNativeDlss : FrameGenerationOff;
+                v.frame_generation = FrameGenerationOff;
+                for (int route = 0; route <= FrameGenerationNativeFsr402; ++route)
+                    if (value == FrameGenerationKey(route)) v.frame_generation = route;
             } else if (key == "reflex") {
                 v.reflex=value=="boost" ? 2 : value=="on" ? 1 : 0;
             } else if (key == "amd_antilag") {
@@ -329,8 +442,26 @@ void Load() {
     if (v.xess_preset < 0) v.xess_preset = LegacyXessPreset(v.preset);
     v.startup_preset = v.preset;
     v.startup_xess_preset = v.xess_preset;
+    // Direct engine launches retain the explicit A/B overrides. Launcher starts refresh
+    // their derived environment from this file in run.py, including after an overlay restart.
+    const char* shared = std::getenv("BB_SHARED_GRAPHICS_CONFIG");
+    if (!shared || std::strcmp(shared, "1") != 0) {
+        if (const char* native = std::getenv("BB_FSR411_NATIVE")) {
+            v.fsr411_backend = native[0] == '1' ? Fsr411Dx12 : Fsr411Vulkan;
+        }
+        if (const char* backend = std::getenv("BB_FSR411_BACKEND")) {
+            Set(v, "fsr411_backend", backend);
+        }
+        if (const char* cache = std::getenv("BB_OBJECT_MOTION_CACHE")) {
+            Set(v, "object_motion_cache", cache);
+        }
+    }
+    if (v.upscaler == UpscalerFsr411 || v.upscaler == UpscalerFsr412) v.fsr41_version = v.upscaler.load();
     v.startup_upscaler = v.upscaler;
     v.startup_object_motion = v.object_motion;
+    v.startup_fsr411_backend = v.fsr411_backend;
+    v.active_fsr411_backend = v.fsr411_backend.load();
+    v.startup_object_motion_cache = v.object_motion_cache;
     for (int e = 0; e < EffectCount; ++e) {
         v.startup_effects[e] = v.effects[e];
     }
@@ -338,26 +469,83 @@ void Load() {
     v.startup_output_res = v.output_res;
     v.startup_hud_position = v.hud_position;
     v.startup_fov = v.fov;
+    v.startup_fps_mode = v.fps_mode;
+    // Root settings own the modern cap; consume the old menu only on migration.
+    if (!root_frame_cap && !std::getenv("BB_FPS_LIMIT")) v.frame_cap = v.real_fps_limit.load();
+    v.real_fps_limit = v.frame_cap.load();
+    v.startup_frame_cap = v.frame_cap;
     v.startup_live_resolution = v.live_resolution;
     v.startup_nvidia_fg_preset = v.nvidia_fg_preset;
     v.startup_nvidia_fg_mod = v.nvidia_fg_mod;
     UpdateCheatMask();
     if (!explicit_frame_generation && v.frame_gen!=FrameGenOff)
-        v.frame_generation=v.frame_gen==FrameGenDlss ? FrameGenerationNativeDlss : FrameGenerationNativeFsr;
+        v.frame_generation=RouteForNative(v.frame_gen);
+    v.frame_gen = NativeForRoute(v.frame_generation);
     v.startup_native_dlss = v.frame_generation == FrameGenerationNativeDlss;
+    v.startup_workshop_nvidia = v.frame_generation == FrameGenerationNvidia;
+    v.startup_reflex = v.reflex;
+    v.startup_amd_antilag = v.amd_antilag;
 }
 
-void ConfigureUpscalerSupport(bool fsr4, bool fsr411) {
+void ConfigureUpscalerSupport(bool fsr4, bool fsr411, const char* fsr411_problem) {
     auto& v = Get();
     v.fsr4_supported = fsr4;
-    v.fsr411_supported = fsr4 && fsr411;
+    v.fsr411_supported = fsr411;
+    static std::string method_problem;
+    method_problem = fsr411 ? "" : fsr411_problem ? fsr411_problem :
+        "GPU/driver does not support the selected FSR 4.1.1 method";
+    v.fsr411_problem = method_problem.empty() ? nullptr : method_problem.c_str();
     const int requested = v.upscaler;
     if ((requested == UpscalerFsr4 && !v.fsr4_supported) ||
         (requested == UpscalerFsr411 && !v.fsr411_supported)) {
-        v.fsr4_problem = "GPU does not support the selected FSR 4 shaders; using FSR 3.1";
-        std::printf("Upscaler: %s unsupported on this GPU; falling back to FSR 3.1 before the first frame\n",
-                    UpscalerName(requested));
+        static std::string kept;
+        kept = requested == UpscalerFsr411 && fsr411_problem ? fsr411_problem :
+            "GPU/driver does not support the selected FSR 4 shaders";
+        std::printf("Upscaler: %s unavailable: %s; falling back to FSR 3.1 before the first frame\n",
+                    UpscalerName(requested), kept.c_str());
+        kept += "; using FSR 3.1";
+        v.fsr4_problem = kept.c_str();
         v.upscaler = UpscalerFsr3;
+    }
+}
+
+void ConfigureFg401Support(bool available, const char* problem, int provider) {
+    auto& v = Get();
+    auto& supported = provider == FrameGenFsr402 ? v.fg402_supported : v.fg401_supported;
+    auto& message = provider == FrameGenFsr402 ? v.fg402_problem : v.fg401_problem;
+    supported = available;
+    static std::string kept[2];
+    auto& text = kept[provider == FrameGenFsr402];
+    text = problem ? problem : "";
+    message = available || text.empty() ? nullptr : text.c_str();
+}
+
+void SelectFrameGen(int provider) {
+    auto& v = Get();
+    v.frame_gen = std::clamp(provider, 0, FrameGenCount - 1);
+    v.frame_generation = RouteForNative(v.frame_gen);
+    v.fg401_fallback = -1;
+    v.fg401_fallback_source = -1;
+    v.frame_gen_problem = nullptr;
+}
+
+void FrameGenFailure(int provider, const char* problem) {
+    auto& v = Get();
+    if (IsMlFrameGen(provider)) {
+        ConfigureFg401Support(false, problem, provider);
+        v.fg401_fallback_source = provider;
+        v.fg401_fallback = FrameGenFsr3;
+        v.frame_gen_problem = "ML-FG failed; FSR 3.1 FG active.";
+    } else if (IsMlFrameGen(v.frame_gen)) {
+        v.fg401_fallback_source = v.frame_gen.load();
+        v.fg401_fallback = FrameGenOff;
+        v.frame_gen_problem = "Frame generation unavailable; FG off.";
+    } else {
+        // Existing DLSS / FSR 3.1 fallback policy.
+        static std::string kept;
+        kept = problem ? problem : "Frame generation failed.";
+        v.frame_gen_problem = kept.c_str();
+        v.frame_gen = provider == FrameGenDlss ? FrameGenFsr3 : FrameGenOff;
     }
 }
 
@@ -413,9 +601,19 @@ bool ResolutionNeedsRestart() {
          (v.upscaler == UpscalerTaa) != (v.startup_upscaler == UpscalerTaa));
 }
 
+bool FsrSettingsNeedRestart() {
+    const auto& v = Get();
+    const bool fsr_now = v.upscaler == UpscalerFsr3 || IsFsr4(v.upscaler);
+    const bool fsr_start = v.startup_upscaler == UpscalerFsr3 || IsFsr4(v.startup_upscaler);
+    return v.object_motion_cache != v.startup_object_motion_cache ||
+        (v.object_motion_cache &&
+         (fsr_now && v.object_motion) != (fsr_start && v.startup_object_motion));
+}
+
 void Save() {
     UpdateCheatMask();
-    const auto& v = Get();
+    auto& v = Get();
+    v.frame_gen = NativeForRoute(v.frame_generation);
     const std::string menu_path = MenuPath();
     const std::string temporary = menu_path + ".tmp";
     if (FILE* file = std::fopen(temporary.c_str(), "w")) {
@@ -434,7 +632,7 @@ void Save() {
         std::fprintf(file, "show_resolution=%d\nbackground_mode=%s\n",
                      int(v.show_resolution.load()),
                      background_modes[std::clamp(v.background_mode.load(), 0, 3)]);
-        std::fprintf(file,"frame_generation=%s\n",v.frame_generation==FrameGenerationFsr ? "fsr" : v.frame_generation==FrameGenerationNvidia ? "nvidia" : v.frame_generation==FrameGenerationNativeFsr ? "native_fsr" : v.frame_generation==FrameGenerationNativeDlss ? "native_dlss" : "off");
+        std::fprintf(file,"frame_generation=%s\n",FrameGenerationKey(v.frame_generation));
         std::fprintf(file,"reflex=%s\nnvidia_generated_frames=%d\n",v.reflex==2 ? "boost" : v.reflex==1 ? "on" : "off",v.nvidia_generated_frames.load());
         std::fprintf(file,"nvidia_fg_preset=%s\n",NvidiaFgPresetKey(v.nvidia_fg_preset));
         std::fprintf(file,"nvidia_fg_mod=%d\n",int(v.nvidia_fg_mod.load()));
@@ -465,7 +663,8 @@ void Save() {
     } else {
         std::printf("Settings: cannot write %s\n", menu_path.c_str());
     }
-    FILE* file = std::fopen(Path(), "w");
+    const std::string root_temporary = std::string(Path()) + ".tmp";
+    FILE* file = std::fopen(root_temporary.c_str(), "w");
     if (!file) {
         std::printf("Settings: cannot write %s\n", Path());
         return;
@@ -474,19 +673,28 @@ void Save() {
                  "# bbport settings (in-game menu: Insert / L3+R3)\n"
                  "upscaler=%s\npreset=%d\nsharpen=%d\nsharpness=%.2f\njitter=%d\n"
                  "reactive=%d\nobject_motion=%d\nreactive_scale=%.2f\nreactive_threshold=%.2f\nreactive_max=%.2f\n"
-                 "debug_view=%d\nshow_fps=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n",
+                 "debug_view=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n",
                  UpscalerName(v.upscaler), v.preset.load(), int(v.sharpen.load()),
                  v.sharpness.load(), int(v.jitter.load()), int(v.reactive.load()),
                  int(v.object_motion.load()),
                  v.reactive_scale.load(), v.reactive_threshold.load(), v.reactive_max.load(),
-                 v.debug_view.load(), int(v.show_fps.load()),
-                 int(v.fsr4_auto_exposure.load()), int(v.fsr4_invert_jitter.load()));
+                 v.debug_view.load(), int(v.fsr4_auto_exposure.load()),
+                 int(v.fsr4_invert_jitter.load()));
+    for (const Readout& readout : Readouts) {
+        std::fprintf(file, "%s=%d\n", readout.key, int((v.*readout.member).load()));
+    }
+    std::fprintf(file, "xess_preset=%d\n", v.xess_preset.load());
+    std::fprintf(file, "fsr411_backend=%s\nobject_motion_cache=%d\n",
+                 v.fsr411_backend == Fsr411Dx12 ? "dx12" : "vk",
+                 int(v.object_motion_cache.load()));
+    std::fprintf(file, "fsr_compatibility_options=%d\n", int(v.fsr_compatibility_options.load()));
+    std::fprintf(file, "fsr41_version=%s\n", v.fsr41_version == UpscalerFsr411 ? "fsr411" : "fsr412");
     // Read by patches.py at start.
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
     }
     std::fprintf(file, "frame_gen=%s\nframe_gen_multiplier=%d\nframe_gen_fit_display=%d\n",
-                 FrameGenName(v.frame_generation==FrameGenerationNativeDlss ? FrameGenDlss : v.frame_generation==FrameGenerationNativeFsr ? FrameGenFsr3 : FrameGenOff), v.frame_gen_multiplier.load(),
+                 FrameGenName(NativeForRoute(v.frame_generation)), v.frame_gen_multiplier.load(),
                  int(v.frame_gen_fit_display.load()));
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
@@ -495,12 +703,31 @@ void Save() {
     std::fprintf(file, "button_prompts=%s\n", prompts[std::clamp(v.button_prompts.load(), 0, PromptsCount - 1)]);
     // Read by run.py at start (hud_layout.py).
     std::fprintf(file, "hud_position=%d\n", v.hud_position.load());
+    // Read by run.py and patches.py at start (ui_viewport).
+    std::fprintf(file, "sharp_ui=%d\n", int(v.sharp_ui.load()));
     // Read by run.py at start (fov.py).
     std::fprintf(file, "fov=%d\n", v.fov.load());
+    // Read by run.py at start (patches.py FPS preset, BB_FPS_LIMIT); the launcher shares them.
+    std::fprintf(file, "fps_mode=%s\n", FpsModeNames[std::clamp(v.fps_mode.load(), 0, FpsModeCount - 1)]);
+    if (v.frame_cap < 0) {
+        std::fprintf(file, "frame_cap=\n");
+    } else {
+        std::fprintf(file, "frame_cap=%d\n", v.frame_cap.load());
+    }
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");
-    std::fclose(file);
+    const bool complete = !std::ferror(file);
+    const bool closed = std::fclose(file) == 0;
+#ifdef _WIN32
+    const bool replaced = complete && closed && PreserveUnknownSettings(Path(), root_temporary) && MoveFileExA(root_temporary.c_str(), Path(), MOVEFILE_REPLACE_EXISTING);
+#else
+    const bool replaced = complete && closed && PreserveUnknownSettings(Path(), root_temporary) && std::rename(root_temporary.c_str(), Path()) == 0;
+#endif
+    if (!replaced) {
+        std::remove(root_temporary.c_str());
+        std::printf("Settings: cannot replace %s\n", Path());
+    }
 }
 
 int ParseNvidiaFgPreset(std::string_view value) {
@@ -583,7 +810,7 @@ const char* XessPresetName(int preset) {
 }
 
 const char* UpscalerName(int upscaler) {
-    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "fsr411", "taa", "dlss", "xess"};
+    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "fsr411", "taa", "dlss", "xess", "fsr412"};
     return names[std::clamp(upscaler, 0, UpscalerCount - 1)];
 }
 

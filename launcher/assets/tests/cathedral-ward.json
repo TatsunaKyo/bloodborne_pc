@@ -1,0 +1,18 @@
+{
+  "name": "Cathedral Ward",
+  "description": "The same save and route for everyone: standing, a full camera turn and a short walk in Cathedral Ward (about 3 minutes). For comparing PCs and for bug reports: the report adds the texture cache and VRAM details.",
+  "kinds": ["performance", "compare", "stability"],
+  "save": "cathedral-ward/SPRJ0005",
+  "port_details": true,
+  "steps": [
+    {"do": "title", "world_draws": 500},
+    {"do": "wait", "seconds": 15},
+    {"do": "measure", "name": "standing", "route": "cathedral-ward/standing.txt", "captures": [3, 12, 22]},
+    {"do": "measure", "name": "camera turn", "route": "cathedral-ward/camera-turn.txt", "captures": [5, 15, 25]},
+    {"do": "measure", "name": "walk", "route": "cathedral-ward/walk.txt", "captures": [4, 11, 20]}
+  ],
+  "loop": [
+    {"do": "measure", "name": "camera turn", "route": "cathedral-ward/camera-turn.txt"},
+    {"do": "measure", "name": "walk", "route": "cathedral-ward/walk.txt"}
+  ]
+}

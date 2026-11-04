@@ -6,18 +6,18 @@
 #include "bbport_copy.h"
 
 #include <deque>
+#include <optional>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include <boost/container/small_vector.hpp>
 
-#include "common/enum.h"
 #include "common/interval_set.h"
 #include "common/types.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/fault_manager.h"
 #include "video_core/buffer_cache/range_set.h"
-#include "video_core/buffer_cache/sparse_memory_pool.h"
-#include "video_core/buffer_cache/vertex_fetch_range.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
-#include "video_core/texture_cache/image.h"
 
 namespace AmdGpu {
 struct Liverpool;
@@ -32,7 +32,6 @@ class GraphicsPipeline;
 struct SubmitInfo;
 class Runtime;
 class StagingBufferPool;
-struct StagingBufferRef;
 } // namespace Vulkan
 
 namespace VideoCore {
@@ -40,15 +39,6 @@ namespace VideoCore {
 class TextureCache;
 class MemoryTracker;
 class PageManager;
-
-enum class ObtainBufferFlags {
-    None = 0,
-    IsWritten = 1 << 0,
-    IsTexelBuffer = 1 << 1,
-    IgnoreStreamBuffer = 1 << 2,
-    InvalidateTextureCache = 1 << 3,
-};
-DECLARE_ENUM_FLAG_OPERATORS(ObtainBufferFlags)
 
 class BufferCache {
     static constexpr u64 ADDRESS_SPACE_BITS = 40;
@@ -74,10 +64,6 @@ public:
         return &gds_buffer;
     }
 
-    [[nodiscard]] const Buffer* GetNullIndexBuffer() const noexcept {
-        return null_index_buffer.get();
-    }
-
     /// Retrieves the device local DBA page table buffer.
     [[nodiscard]] Buffer* GetBdaPageTableBuffer() noexcept {
         return bda_pagetable_buffer.get();
@@ -89,7 +75,7 @@ public:
     }
 
     /// Retrieves the stream buffer.
-    [[nodiscard]] StreamBuffer& GetStreamBuffer() noexcept {
+    StreamBuffer& GetStreamBuffer() noexcept {
         return stream_buffer;
     }
 
@@ -98,31 +84,19 @@ public:
         return block_shift;
     }
 
-    void TickFrame();
-    void PreuploadResident();
-    u64 preupload_cursor=0;
-
     /// Invalidates any buffer in the logical page range.
     void InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks = false);
 
     /// bbport: a guest write fault at `device_addr` was handled; unprotect its neighbourhood.
     void ExtendWriteFault(VAddr device_addr);
-    /// Unmark a region as modified from the GPU.
-    void UnmarkRegionAsGpuModified(VAddr device_addr, u64 size, bool is_write = false);
 
     /// Flushes any GPU modified buffer in the logical page range back to CPU memory.
-    void ReadMemory(VAddr device_addr, u64 size, bool is_write = false, bool async = false,
-                    bool assume_locks = false);
-
-    /// Flushes GPU modified ranges of the uncovered part of the edge pages of an image.
-    void ReadEdgeImagePages(const Image& image);
+    void ReadMemory(VAddr device_addr, u64 size, bool is_write = false, bool assume_locks = false);
 
     /// Finds a buffer for the specified region.
-    [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(
-        VAddr device_addr, u32 size, ObtainBufferFlags flags = ObtainBufferFlags::None);
-
-    [[nodiscard]] std::pair<const Buffer*, u64> ObtainVertexBuffer(
-        VAddr device_addr, u32 size, std::span<const VertexFetch::Range> reads);
+    [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(VAddr device_addr, u32 size,
+                                                             bool is_written,
+                                                             bool is_texel_buffer = false);
 
     /// Attempts to obtain a buffer without modifying the cache contents.
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBufferForImage(VAddr device_addr, u32 size);
@@ -133,20 +107,80 @@ public:
     /// Return true when a region is modified from the GPU
     [[nodiscard]] bool IsRegionGpuModified(VAddr addr, size_t size);
 
-    /// Mark region as modified from the GPU
-    void MarkRegionAsGpuModified(VAddr addr, size_t size);
+    /// Processes the fault buffer.
+    void ProcessFaultBuffer();
 
-    /// bbport: memory backing guest memory for the GPU (never freed), the reserve kept for it,
-    /// and the part of the reserve used (for the memory report).
+    /// bbport: memory backing guest memory for the GPU, the reserve kept for it, and the part
+    /// of the reserve used (for the memory report).
     [[nodiscard]] u64 ArenaBackedBytes() const { return arena_backed; }
-    [[nodiscard]] u64 ArenaReserveBytes() const { return backing_pool.ReserveBytes(); }
-    [[nodiscard]] u64 ArenaReserveUsedBytes() const { return backing_pool.ReserveUsedBytes(); }
+    [[nodiscard]] u64 ArenaReserveBytes() const { return reserve_size; }
+    [[nodiscard]] u64 ArenaReserveUsedBytes() const { return reserve_used; }
 
     /// Synchronizes all buffers needed for DMA.
     void SynchronizeDmaBuffers();
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
+
+    /// bbport: after every submission: puts back pieces of game memory the GPU is past, and once
+    /// a second, when VRAM runs short (or BB_ARENA_TARGET_MB is exceeded), releases game memory
+    /// no binding has used for BB_ARENA_IDLE_SECONDS (60). It came back with every area, never
+    /// released: 4 GB cards ran out after a few area changes (ErrorOutOfDeviceMemory).
+    void RunArenaCollector();
+
+    /// bbport: a shader read this range through its page table (it faulted). Such reads are not
+    /// seen here, so its game memory is not released again.
+    void KeepFaultedRange(VAddr device_addr, u64 size);
+
+private:
+    /// bbport: game memory backing comes in pieces of one block from slabs, so a released piece
+    /// is taken again and a slab without pieces in use goes back to the driver.
+    struct Slab {
+        vk::DeviceMemory memory{};
+        bool vram{};    ///< in the VRAM heap (else system memory the GPU reaches)
+        bool reserve{}; ///< the reserve kept at start: taken last, never freed
+        bool pinned{};  ///< alive at an arena migration: the old arena still binds its pieces
+        u32 pieces{};   ///< pieces in the slab
+        u32 used{};     ///< pieces bound, or released but not yet put back
+        std::vector<u32> free; ///< pieces to take, sorted so the lowest is taken first
+    };
+    struct Run {
+        u32 slab;
+        u32 index;
+        u32 count;
+    };
+    struct Released {
+        u64 tick; ///< the submission that unbinds them: taken again once the GPU is past it
+        u32 slab;
+        u32 piece;
+        u32 count;
+    };
+    struct Unbind {
+        const Buffer* arena;
+        u64 start; ///< blocks
+        u64 end;
+        u32 slab; ///< the slab and piece backing `start`
+        u32 piece;
+        u64 clear_tick; ///< the submission clearing their page table entries
+    };
+    static constexpr u8 CHUNK_RELEASED = 1;
+    static constexpr u8 CHUNK_FAULTED = 2;
+
+    /// Up to `count` contiguous pieces: free ones in VRAM, a new VRAM slab, system memory the
+    /// GPU reaches, the reserve; std::nullopt when none is left.
+    std::optional<Run> TakeRun(u64 count);
+    std::optional<u32> NewSlab(u32 type_index, bool vram);
+    void PutBackReleased();
+    /// Releases the backing of chunks no binding used for `idle_seconds`, oldest first, until
+    /// `wanted` bytes are released; returns the bytes.
+    u64 ReleaseIdleChunks(u64 wanted, u32 idle_seconds);
+    u64 ReleaseChunk(u64 chunk);
+    /// Unbinds released chunks whose page table entries the GPU has cleared (at submission).
+    void FlushUnbinds();
+    /// A range is bound again before its release was unbound: that unbind is dropped.
+    void CancelUnbinds(const Buffer* arena, u64 start, u64 end);
+    void NoteChunkUse(VAddr device_addr, u64 size);
+    void ReportArena(bool force);
 
 private:
     struct ArenaBinds {
@@ -166,8 +200,7 @@ private:
 
     void EnsureResident(const Buffer* arena, u64 first_block, u64 last_block);
 
-    void DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size, bool is_write,
-                        bool async);
+    void DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size);
 
     bool SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size, bool is_written,
                            bool is_texel_buffer);
@@ -177,7 +210,7 @@ private:
     void SmallGuestCopy(const BbCopy::Item& item);
 
     const Buffer* UploadCopies(const Buffer* arena, std::span<vk::BufferCopy> copies,
-                              size_t total_size_bytes, bool synchronous = false);
+                               size_t total_size_bytes);
 
     bool SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size);
 
@@ -199,26 +232,25 @@ private:
 
     StreamBuffer stream_buffer;
     Buffer gds_buffer;
-    std::unique_ptr<Buffer> null_index_buffer;
     RangeSet gpu_modified_ranges;
 
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;
-    bool fault_process_pending{};
 
     std::array<const Buffer*, MAX_ARENA_PAGES> address_space{};
     u64 arena_page_bits{MAX_ARENA_PAGE_BITS};
     u64 arena_page_size{u64{1} << MAX_ARENA_PAGE_BITS};
     u64 num_arena_pages{u64{1} << (ADDRESS_SPACE_BITS - MAX_ARENA_PAGE_BITS)};
-    // Declared before arenas: free physical memory after the bound buffers die.
-    SparseMemoryPool backing_pool;
     std::deque<Buffer> arenas;
     std::vector<ArenaBinds> pending_binds;
     Vulkan::Semaphore memory_semaphore;
 
     struct Backing : public Interval {
         vk::DeviceMemory memory;
-        u64 offset; // sparse blocks (the interval endpoints use the same units)
+        /// bbport: in blocks, like start and end: SubRange and CanMergeWith add block counts to it
+        /// (in bytes, a range split by a release pointed one piece too early and two ranges
+        /// shared pieces).
+        u64 offset;
         constexpr bool CanMergeWith(const Backing& other) const noexcept {
             return memory == other.memory && offset + (end - start) == other.offset;
         }
@@ -229,7 +261,29 @@ private:
     IntervalList<Backing> resident_ranges;
 
     u32 arena_memory_type_index{};
+    u32 arena_memory_type_bits{}; ///< bbport: the types the arena accepts (system memory fallback)
+    /// bbport: VRAM kept for the arena when the GPU has no other room (discrete GPUs).
+    vk::DeviceMemory reserve_memory{};
+    u64 reserve_size{};
+    u64 reserve_used{};
     u64 arena_backed{};
+    /// bbport: the slabs (a freed one keeps its place with a null memory), each memory's slab,
+    /// pieces unbound but maybe still in use by work in flight, and released ranges not yet
+    /// unbound (their page table entries are cleared first).
+    std::vector<Slab> slabs;
+    std::unordered_map<VkDeviceMemory, u32> slab_of;
+    std::deque<Released> released;
+    std::vector<Unbind> unbinds;
+    /// Seconds since start of the last binding of each 2 MiB chunk, and CHUNK_* flags.
+    std::vector<u32> chunk_used;
+    std::vector<u8> chunk_flags;
+    u32 arena_now{};
+    u32 arena_last_collect{};
+    u32 arena_last_report{};
+    u32 vram_full_until{}; ///< no new VRAM slab is tried before this second (one just failed)
+    u64 vram_slab_bytes{}, system_slab_bytes{};
+    u64 released_bytes{}, released_chunks{}, refetched_chunks{}, faulted_chunks{};
+    u64 arena_start_ns{};
     u32 block_size{};
     u32 block_shift{};
     u32 blocks_per_arena_page{};

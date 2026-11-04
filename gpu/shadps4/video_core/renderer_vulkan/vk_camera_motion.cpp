@@ -152,6 +152,13 @@ CameraMotion::CameraMotion(const Instance& instance_, Scheduler& scheduler_,
 
 CameraMotion::~CameraMotion() = default;
 
+bool CameraMotion::WorldCamera(std::array<float,12>& inverse_view) const noexcept {
+    if(!current.valid) return false;
+    for(float v:current.inv_view) if(!std::isfinite(v)) return false;
+    inverse_view=current.inv_view;
+    return true;
+}
+
 float CameraMotion::VerticalFov() const noexcept {
     return 2.0f * std::atan(1.0f / std::abs(current.proj[1]));
 }

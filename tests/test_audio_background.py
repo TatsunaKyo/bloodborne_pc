@@ -162,6 +162,7 @@ int main(int argc,char**argv){
         int16_t left,right;std::memcpy(&left,data.data()+data.size()-1024,2);
         std::memcpy(&right,data.data()+data.size()-1022,2);assert(left==617 && right==1234);
     }
+    Consume(ports[a&0xff].stream, 1<<20);
     muted_for_test=true;
     assert(audio_output(a,pcm.data())==512);
     data=Queued(ports[a&0xff].stream);

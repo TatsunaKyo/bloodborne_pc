@@ -112,7 +112,8 @@ int main(int argc, char** argv) {
                 .write(reinterpret_cast<const char*>(encoded.data()), encoded.size());
         }
     }
-    // Xbox and Switch: every button the PlayStation names, the d-pad and the sticks the game's own.
+    // Xbox, Switch and PlayStation: every button the PlayStation names, the d-pad and the sticks
+    // the game's own.
     for (int pad = 0; pad < PadCount; ++pad) {
         int drawn_count = 0;
         for (int icon = 0; icon < Count; ++icon) {
@@ -122,7 +123,8 @@ int main(int argc, char** argv) {
             const auto encoded = Encode(drawn);
             const double error = Error(drawn, encoded);
             worst = std::max(worst, error);
-            const std::string name = std::string(pad == PadXbox ? "xbox_" : "switch_") + Names[icon];
+            const std::string name = std::string(pad == PadXbox ? "xbox_" : pad == PadSwitch ? "switch_" : "ps_") +
+                                     Names[icon];
             std::printf("%-20s mse %6.1f\n", name.c_str(), error);
             if (argc > 1) {
                 std::ofstream(std::string(argv[1]) + "/" + name + ".rgba", std::ios::binary)

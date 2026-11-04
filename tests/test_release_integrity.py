@@ -100,21 +100,27 @@ class Releases(unittest.TestCase):
             git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid',
                 'commit','-qm','assembly fixture')
             return git('rev-parse','HEAD').decode().strip()
-        git('init','-q'); base=commit()
+        git('init','-q'); git('config','core.autocrlf','true'); base=commit()
         native_lock={}
+        msvc_files=('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')
         def baseline_data(identity, data):
             identity['upstream_base']=base
             native_lock.update(identity['native_fg_runtime'])
             data['bin/stale-test.exe']=pe()
+            data.update({f'bin/streamline/{name}':pe()+name.encode() for name in msvc_files})
         baseline=self.package(version,modify=baseline_data)
         (repo/'packaging/windows/runtime-baseline.lock.json').write_text(
             json.dumps({'sha256':integrity.checksum(baseline)}))
         (repo/'run.py').write_text('# revised current runtime\n')
         source_commit=commit()
+        notes_path=f'docs/releases/windows-v{version}.md'
+        committed_notes=git('show',source_commit+':'+notes_path)
+        (repo/notes_path).write_bytes(committed_notes.replace(b'\n', b'\r\n'))
+        self.assertEqual(git('diff','--name-only','HEAD'), b'')
         records=repo/'out/verification';records.mkdir(parents=True)
         (records/'native-windows-tests.log').write_text('PASS fixture CPU tests\n')
         native=self.root/'native';native.mkdir()
-        for name in (*assembler.TESTS,'bb-probe','bb-gpu-capabilities','bb-play'):
+        for name in (*assembler.TESTS,'bb-probe','bb-gpu-capabilities','bb-fg401-capabilities','bb-play'):
             (native/(name+'.exe')).write_bytes(pe())
         launcher=self.root/'launcher';(launcher/'_internal').mkdir(parents=True)
         (launcher/'Bloodborne.exe').write_bytes(pe())
@@ -137,6 +143,7 @@ class Releases(unittest.TestCase):
         destination=self.root/'assembled'
         with patch.object(assembler,'ROOT',repo), patch.object(assembler,'PE',ImportedDependency), \
              patch.object(assembler,'install_nvidia_fg'), \
+             patch.object(assembler,'install_amd_graphics',return_value={}), \
              patch.object(assembler,'install_native_fg',return_value=native_lock), \
              patch.object(assembler.subprocess,'run',side_effect=tool_run):
             package=assembler.assemble(baseline,native,launcher,destination,dll_dir=prefix)
@@ -148,7 +155,10 @@ class Releases(unittest.TestCase):
         with zipfile.ZipFile(package) as archive:
             names={name.removeprefix(report['root']+'/') for name in archive.namelist()}
             self.assertIn('bin/fixture-dependency.dll',names)
+            for name in msvc_files:
+                self.assertEqual(archive.read(f"{report['root']}/bin/{name}"),pe()+name.encode())
             self.assertIn('Capture-Traversal.cmd',names)
+            self.assertEqual(archive.read(report['root']+'/'+notes_path),committed_notes)
             self.assertFalse(any(name.endswith('-test.exe') for name in names))
 
     def test_preparation_uses_identity_notes_and_real_hash(self):

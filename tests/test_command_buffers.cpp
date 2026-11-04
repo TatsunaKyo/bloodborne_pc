@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "gpu/shim/bbport_command_buffers.h"
+#include "../gpu/shim/bbport_command_buffers.h"
 
 #include <algorithm>
 #include <cassert>

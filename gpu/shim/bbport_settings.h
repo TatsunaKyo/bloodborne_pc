@@ -12,10 +12,15 @@
 namespace BbSettings {
 
 enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerFsr4 = 2, UpscalerFsr411 = 3,
-                      UpscalerTaa = 4, UpscalerDlss = 5, UpscalerXess = 6, UpscalerCount };
+                      UpscalerTaa = 4, UpscalerDlss = 5, UpscalerXess = 6, UpscalerFsr412 = 7, UpscalerCount };
 /// FSR 4 v07 or FSR 4.1.1: the same inputs, settings and placement in the frame.
 inline bool IsFsr4(int upscaler) {
-    return upscaler == UpscalerFsr4 || upscaler == UpscalerFsr411;
+    return upscaler == UpscalerFsr4 || upscaler == UpscalerFsr411 || upscaler == UpscalerFsr412;
+}
+/// Every FSR 4.1 provider delegates RCAS to the host, independently of other providers.
+inline bool UsesHostSharpen(int upscaler, bool active) {
+    return upscaler == UpscalerXess ||
+        (active && (upscaler == UpscalerFsr411 || upscaler == UpscalerFsr412));
 }
 enum Preset : int { NativeAA = 0, Quality, Balanced, Performance, UltraPerformance, PresetCount };
 enum XessPreset : int { XessNativeAA = 0, XessUltraQualityPlus, XessUltraQuality,
@@ -25,13 +30,18 @@ enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugV
 enum MenuLanguage : int { MenuEnglish = 0, MenuRussian, MenuLanguageCount };
 enum WindowMode : int { WindowFromLauncher = -1, Windowed = 0, Borderless, Fullscreen };
 enum BackgroundMode : int { BackgroundRun = 0, BackgroundPause, Background30, Background60 };
-enum FrameGenerationMode : int { FrameGenerationOff=0, FrameGenerationFsr=1, FrameGenerationNvidia=2, FrameGenerationNativeFsr=3, FrameGenerationNativeDlss=4 };
+enum FrameGenerationMode : int { FrameGenerationOff=0, FrameGenerationFsr=1, FrameGenerationNvidia=2, FrameGenerationNativeFsr=3, FrameGenerationNativeDlss=4, FrameGenerationNativeFsr401=5, FrameGenerationNativeFsr402=6 };
 // NVIDIA NGX render-preset hints, separate from the upscaling quality/scene size.
 // Removed and reserved presets are deliberately excluded.
 inline constexpr int DlssPresetValues[] = {0, 5, 6, 10, 11, 13, 12};
 inline constexpr int DlssPresetCount = 7;
 /// Frame generation (vk_frame_generation.h): frames generated between two of the game's.
-enum FrameGen : int { FrameGenOff = 0, FrameGenFsr3 = 1, FrameGenDlss = 2, FrameGenCount };
+enum FrameGen : int { FrameGenOff = 0, FrameGenFsr3 = 1, FrameGenDlss = 2, FrameGenFsr401 = 3,
+                      FrameGenFsr402 = 4, FrameGenCount };
+inline bool IsMlFrameGen(int provider) {
+    return provider == FrameGenFsr401 || provider == FrameGenFsr402;
+}
+enum Fsr411Backend : int { Fsr411Vulkan = 0, Fsr411Dx12 = 1 };
 
 /// Game effects switched by the community patches at start (patches.py EFFECTS): ini key,
 /// Russian and English menu labels, default (the game's own behaviour).
@@ -64,6 +74,9 @@ inline constexpr Effect Effects[] = {
     {"tweak_ragdoll", "Физика тел как в Dark Souls", "Dark Souls-style ragdoll physics", false},
     {"tweak_circle_confirm", "Japanese/Asian buttons", "Japanese/Asian buttons", false},
     {"quit_to_desktop", "Quit to desktop", "Quit to desktop", true},
+    {"pc_menu", "Настройки ПК в системном меню", "PC Settings in the System menu", true},
+    {"rebirth", "Перерождение у Куклы (5 озарения)", "Rebirth at the Doll (5 Insight)", true},
+    {"steady_cloth", "Ткань как на PS4 (30 кадров/с)", "Cloth as on PS4 (30 FPS)", true},
 };
 inline constexpr int EffectCount = int(sizeof(Effects) / sizeof(Effects[0]));
 /// Output resolutions: the upscaler's output and the UI host targets. The 16:9 ones change
@@ -83,11 +96,26 @@ enum Prompts : int {
     PromptsAuto = 0, PromptsPlayStation = 1, PromptsKeyboard = 2, PromptsXbox = 3, PromptsSwitch = 4, PromptsCount
 };
 
+/// Frame rate mode (patches.py FPS_PRESETS, bbport.ini fps_mode): the community patches applied
+/// at start. The launcher and the PC Settings page share it.
+enum FpsMode : int { Fps30 = 0, Fps60 = 1, Fps90 = 2, FpsUncap = 3, FpsModeCount };
+inline constexpr const char* FpsModeNames[FpsModeCount] = {"30", "60", "90", "uncap"};
+/// Frame cap of the unlocked mode (bbport.ini frame_cap, BB_FPS_LIMIT): -1 the port's own (the
+/// display refresh, at most 120), 0 none. Applied at start.
+inline constexpr int FrameCapAuto = -1;
+inline constexpr int FrameCaps[] = {FrameCapAuto, 60, 90, 120, 144, 165, 240, 0};
+inline constexpr int FrameCapCount = int(sizeof(FrameCaps) / sizeof(FrameCaps[0]));
+
 /// Field of view (fov.py): the game's camera has 43 degrees.
 inline constexpr int FovDefault = 43, FovMin = 30, FovMax = 90;
 
 struct Values {
     bool startup_native_dlss = false;
+    bool startup_workshop_nvidia = false;
+    int startup_reflex = 0;
+    bool startup_amd_antilag = false;
+    bool native_latency_owner = false;
+    std::atomic<uint32_t> gpu_vendor_id{0};
     std::atomic<int> frame_generation{FrameGenerationOff}, frame_generation_active{0};
     // Negotiated multiplier for the cap, independent of delayed SDK statistics.
     std::atomic<int> frame_generation_cap_multiplier{0};
@@ -127,10 +155,27 @@ struct Values {
     std::atomic<bool> jitter{true};
     std::atomic<bool> reactive{false};
     std::atomic<bool> object_motion{true};
+    /// Shared launcher/overlay preference; the renderer applies it at a frame boundary.
+    std::atomic<int> fsr411_backend{Fsr411Vulkan};
+    std::atomic<int> fsr41_version{UpscalerFsr412};
+    std::atomic<int> active_fsr411_backend{Fsr411Vulkan};
+    int ActiveFsr411Backend() const { return active_fsr411_backend.load(); }
+    std::atomic<bool> fsr41_backend_supported[2][2]{};
+    /// FSR41 UI status codes shared with the launcher (bbport_fsr41.py).
+    std::atomic<int> fsr41_status[2][2]{{5, 5}, {5, 5}};
+    bool FsrMethodSupported(int version, int method) const {
+        return fsr41_backend_supported[version == UpscalerFsr412][method].load();
+    }
+    std::atomic<const char*> fsr4_method_problem{nullptr};
+    std::atomic<bool> object_motion_cache{false};
+    /// UI visibility only; saved compatibility selections remain visible.
+    std::atomic<bool> fsr_compatibility_options{false};
     std::atomic<float> reactive_scale{1.0f};
     std::atomic<float> reactive_threshold{0.2f};
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
+    /// The FPS overlay's readouts, one toggle each (bbport.ini: show_fps, show_frame_times,
+    /// show_latency, show_vram, show_gpu, show_cpu, show_ram, show_fps_graph).
     std::atomic<bool> show_fps{false};
     std::atomic<bool> show_dlss_preset{false}, show_fg_preset{false};
     std::atomic<bool> show_resolution{false};
@@ -145,6 +190,16 @@ struct Values {
     /// -1 follows BB_FULLSCREEN; explicit choices survive launcher config rewrites.
     std::atomic<int> window_mode{WindowFromLauncher};
     std::atomic<bool> borderless_vsync{false};
+    std::atomic<bool> show_frame_times{false};
+    std::atomic<bool> show_render_latency{false}; ///< upstream render path, separate from Reflex PC latency
+    /// The counter's values green / amber / red by how they stand (bbport.ini counter_colors=1),
+    /// or all in plain grey (0).
+    std::atomic<bool> counter_colors{true};
+    std::atomic<bool> show_vram{false};
+    std::atomic<bool> show_gpu{false};
+    std::atomic<bool> show_cpu{false};
+    std::atomic<bool> show_ram{false};
+    std::atomic<bool> show_fps_graph{false};
     /// Silence the game while its window does not have focus (bbgpu_audio_muted).
     std::atomic<bool> mute_unfocused{false};
     /// Keyboard and mouse button prompts: with the device in use (auto), or always one kind.
@@ -161,14 +216,21 @@ struct Values {
     /// Ultrawide outputs: the HUD's corner groups, 0 centred in 16:9 .. 100 at the screen edges
     /// (hud_layout.py at start).
     std::atomic<int> hud_position{100};
+    /// Sharp UI: menus and HUD drawn at the output's size (patches.py ui_viewport at start). Set in
+    /// the launcher; kept here so the menu's Save does not drop it.
+    std::atomic<bool> sharp_ui{false};
     /// Vertical field of view in degrees, 43 the game's (run.py, fov.py at start).
     std::atomic<int> fov{FovDefault};
+    /// FpsMode and frame cap (run.py at start; the launcher passes the same).
+    std::atomic<int> fps_mode{FpsUncap};
+    std::atomic<int> frame_cap{FrameCapAuto};
     /// Live resolution and preset changes (run.sh): 0 off by default (startup patch, fastest
     /// on the Steam Deck and older GPUs), -1 auto (strong discrete GPUs), 1 on. On restart.
     std::atomic<int> live_resolution{0};
     /// Why FSR 4 cannot run (assets, device features), or null. Set by the renderer.
     std::atomic<const char*> fsr4_problem{nullptr};
     std::atomic<bool> fsr4_supported{false}, fsr411_supported{false};
+    std::atomic<const char*> fsr411_problem{nullptr};
     /// DLSS (bbport_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
     std::atomic<bool> dlss_supported{false};
     std::atomic<const char*> dlss_problem{nullptr};
@@ -177,10 +239,36 @@ struct Values {
     /// Frame generation and the frames per game frame (2x with FSR 3.1, up to 4x with DLSS on
     /// RTX 50). dlssg_max_multiplier: 1 without DLSS Frame Generation.
     std::atomic<int> frame_gen{FrameGenOff};
+    /// Session fallback is separate from the saved ML-FG selection.
+    std::atomic<int> fg401_fallback{-1};
+    std::atomic<int> fg401_fallback_source{-1};
+    bool WantsWorkshopInputs() const {
+        return frame_generation == FrameGenerationFsr ||
+               (startup_workshop_nvidia && frame_generation == FrameGenerationNvidia);
+    }
+    int ActiveFrameGen() const {
+        if (startup_workshop_nvidia || frame_generation < FrameGenerationNativeFsr ||
+            (frame_generation == FrameGenerationNativeDlss && !startup_native_dlss)) return FrameGenOff;
+        const int selected = frame_gen.load();
+        const int fallback = fg401_fallback.load();
+        return IsMlFrameGen(selected) && fg401_fallback_source.load() == selected && fallback >= 0
+                   ? fallback : selected;
+    }
     std::atomic<int> frame_gen_multiplier{2};
     /// At most the frames the display shows between two of the game's (an uncapped game then
     /// gets fewer generated frames); off: the multiplier as chosen.
     std::atomic<bool> frame_gen_fit_display{false};
+    std::atomic<bool> fg401_supported{false};
+    std::atomic<const char*> fg401_problem{nullptr};
+    std::atomic<bool> fg402_supported{false};
+    std::atomic<const char*> fg402_problem{nullptr};
+    bool MlFgSupported(int provider) const {
+        return provider == FrameGenFsr402 ? fg402_supported.load() : fg401_supported.load();
+    }
+    const char* MlFgProblem(int provider) const {
+        return provider == FrameGenFsr402 ? fg402_problem.load() : fg401_problem.load();
+    }
+    std::atomic<bool> frame_gen_hdr{false};
     std::atomic<int> dlssg_max_multiplier{1};
     std::atomic<const char*> frame_gen_problem{nullptr};
     /// Generated frames per game frame the display has room for now (0: paused), and its
@@ -190,21 +278,33 @@ struct Values {
     /// The game's own frame rate (presenter, game frames only), shown beside the total when
     /// frame generation adds frames.
     std::atomic<float> game_fps{0.0f};
+    /// The time from the game starting a frame to its present, smoothed (vk_low_latency.cpp),
+    /// and the low latency mode: 0 off, 1 Reflex, 2 Reflex + Boost, 3 Anti-Lag 2,
+    /// 4 pacing only.
+    std::atomic<float> latency_ms{0.0f};
+    std::atomic<int> latency_mode{0};
     /// The game's frame rate cap frame generation needs (VideoOut applies it), 0 for none: with
     /// FIFO presentation (V-Sync; AMD has no Mailbox) at most refresh / (generated + 1), or each
     /// extra frame waits for the display and generation pauses.
     std::atomic<int> frame_gen_flip_limit{0};
+    /// Why this GPU runs without object motion vectors whatever the setting says (vk_object_motion.cpp:
+    /// RX 6000 and older, under 6 GB of VRAM), nullptr when the setting decides.
+    std::atomic<const char*> object_motion_unavailable{nullptr};
 
     /// Startup settings for the explicit BB_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
     int startup_xess_preset = XessNativeAA;
     int startup_upscaler = UpscalerFsr3;
     bool startup_object_motion = true;
+    int startup_fsr411_backend = Fsr411Vulkan;
+    bool startup_object_motion_cache = false;
     bool startup_effects[EffectCount]{};
     int startup_model_lod = 0;
     int startup_output_res = OutputDefault;
     int startup_hud_position = 100;
     int startup_fov = FovDefault;
+    int startup_fps_mode = FpsUncap;
+    int startup_frame_cap = FrameCapAuto;
     int startup_live_resolution = 0;
 };
 
@@ -220,14 +320,19 @@ unsigned EffectiveFrameLimit(unsigned foreground_limit);
 /// Reads the file, then the environment overrides. Called once at start.
 void Load();
 /// Checks the loaded choice before the first frame; unsupported FSR 4 uses FSR 3.1.
-void ConfigureUpscalerSupport(bool fsr4, bool fsr411);
+void ConfigureUpscalerSupport(bool fsr4, bool fsr411, const char* fsr411_problem = nullptr);
 /// After device creation: DLSS availability; a DLSS setting falls back to FSR 3.1 without it.
 void ConfigureDlssSupport(bool available, const char* problem);
+void ConfigureFg401Support(bool available, const char* problem, int provider = FrameGenFsr401);
+void SelectFrameGen(int provider);
+void FrameGenFailure(int provider, const char* problem);
 /// Startup-patched scene dimensions cannot change until run.sh prepares a new image.
 bool FixedRenderSession();
 int RenderPreset();
 float RenderScale();
 bool ResolutionNeedsRestart();
+/// The cache keeps its startup behavior; provider changes apply live.
+bool FsrSettingsNeedRestart();
 /// Writes the file (menu changes).
 void Save();
 
@@ -246,6 +351,9 @@ const char* NvidiaFgPresetKey(int preset);
 const char* NvidiaFgPresetName(int preset);
 const char* UpscalerName(int upscaler);
 int NativeProvider();
+int NativeForRoute(int route);
+int RouteForNative(int provider);
+const char* FrameGenerationKey(int route);
 const char* FrameGenName(int frame_gen);
 
 } // namespace BbSettings

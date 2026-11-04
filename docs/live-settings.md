@@ -1,5 +1,7 @@
 # Change settings while playing
 
+**Current source: R56 / Supermedo 1.9.7, unreleased.** The published Windows download remains R55. [Integration and verification](investigations/2026-11-02-supermedo-197.md) · [Published releases](releases/index.md)
+
 **R55 restart cases:** selecting/leaving native Supermedo DLSS FG, NVIDIA FG model or mod changes, FOV, ultrawide HUD/camera patches, and startup game patches need restart. Changing to, from or between ultrawide outputs also needs restart. Live 16:9 resizing is available only when Live resolution changes was enabled before launch. Background mute and prompt selection are runtime choices. [Provider matrix](frame-generation.md#r55-provider-choices)
 
 I wanted the added controls to be useful while the game is running. Open **Insert** or **L3+R3**, make the change and continue playing. The launcher and menu use the same saved preferences, so you can return to the launcher without losing your choices.
@@ -31,3 +33,7 @@ Temporal upscalers use their own anti-aliasing. From R42 the game's original AA 
 
 <!-- workshop-current-navigation -->
 [All current guides](index.md) · [Published releases](releases/index.md) · [Source maintenance](maintenance.md)
+
+## R56 session boundaries
+
+Switching between Workshop NVIDIA and a native FG provider requires restart. Workshop FSR works in either session. Native DLSS requires startup selection. Native Reflex/Anti-Lag changes require restart. Shared selections are saved immediately; a pending provider uses real frames until restart. Model A/B/C and the RTX Encore opt-in remain startup settings. Real/output caps, overlay controls and supported within-family multiplier changes remain separate. The launcher, ImGui menu and native PC Settings page use the same provider/cap mapping.

@@ -21,6 +21,10 @@ HARNESS=r'''
 #include <mutex>
 #include <cstdio>
 using namespace std::chrono_literals;
+using u64=std::uint64_t;
+namespace LowLatency {void PresentStart(u64){} void PresentEnd(u64){}}
+struct PresentScheduler {int ExecutionQueue(){return 0;}} present_scheduler;
+constexpr u64 latency_id=0;
 std::mutex gate;std::condition_variable cv;bool entered=false,released=false;int phase;
 void Hold(int p){std::unique_lock l(gate);if(phase!=p)return;entered=true;cv.notify_all();cv.wait(l,[]{return released;});}
 struct Scheduler{static std::mutex submit_mutex;};std::mutex Scheduler::submit_mutex;
@@ -29,7 +33,7 @@ namespace BbAmd{void BeforePresent(int,bool){}}
 namespace BbNvidia{bool Present(void*,const std::function<bool()>& f){Hold(0);bool r=f();Hold(1);return r;}}
 struct Frame{int amd_token=1;BbHitch::FramePath hitch_path;};
 struct Window{int GetWidth(){return 1920;}int GetHeight(){return 1080;}};
-struct Swapchain{bool Present(){Hold(2);return true;}void Recreate(int,int){assert(false);}};
+struct Swapchain{bool Present(){Hold(2);return true;}bool Present(int,u64){return Present();}void Recreate(int,int){assert(false);}};
 void Present(){Frame value;Frame* frame=&value;Window window;Swapchain swapchain;bool final=true,is_game_frame=true,is_reusing_frame=false;
 BLOCK
 assert(presented);}
