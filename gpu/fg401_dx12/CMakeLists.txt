@@ -34,7 +34,7 @@ foreach(test IN ITEMS bridge stress ui)
         "../tests/test_fg401_${test}.cpp" "${FG401_DIR}/agility.cpp"
         ${BB_RUNTIME} ../src/compat_win.c)
     target_compile_definitions(fg401-${test}-test PRIVATE _WINDOWS)
-    target_include_directories(fg401-${test}-test PRIVATE .. ../src shim shadps4
+    target_include_directories(fg401-${test}-test PRIVATE ../src shim shadps4
         third_party/gcn/include "${FG401_DIR}" "${FG401_API}" "${FG401_HEADERS}" "${SHADER_INCLUDE}")
     target_link_libraries(fg401-${test}-test PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
 endforeach()

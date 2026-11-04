@@ -3,7 +3,7 @@
 #include <array>
 #include <cassert>
 #include <cstdio>
-#include "gpu/shadps4/video_core/renderer_vulkan/motion_history.h"
+#include "../gpu/shadps4/video_core/renderer_vulkan/motion_history.h"
 
 using namespace Vulkan::Motion;
 

@@ -6,7 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include "gpu/shadps4/video_core/renderer_vulkan/ui_composition.h"
+#include "../gpu/shadps4/video_core/renderer_vulkan/ui_composition.h"
 
 static bool Near(std::array<float, 2> scale, float x, float y) {
     return std::abs(scale[0] - x) < 1e-3f && std::abs(scale[1] - y) < 1e-3f;

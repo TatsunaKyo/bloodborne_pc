@@ -373,16 +373,18 @@ if (WIN32)
         target_compile_options(bb-probe PRIVATE
             $<$<COMPILE_LANGUAGE:C>:-Wno-error=unused-but-set-global>)
     endif()
-    target_include_directories(bb-probe PRIVATE .. ../src)
+    # Keep the repository root off the include path: Windows would resolve
+    # the standard library <version> header to the project VERSION file.
+    target_include_directories(bb-probe PRIVATE ../src)
     target_link_libraries(bb-probe PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
     add_executable(fsr411-compare EXCLUDE_FROM_ALL ../tests/test_fsr411_compare.cpp ${BB_RUNTIME} ../src/compat_win.c)
-    target_include_directories(fsr411-compare PRIVATE .. ../src shim shadps4 third_party/gcn/include)
+    target_include_directories(fsr411-compare PRIVATE ../src shim shadps4 third_party/gcn/include)
     target_link_libraries(fsr411-compare PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
     target_include_directories(fsr411-compare PRIVATE ${SHADER_INCLUDE})
     add_dependencies(fsr411-compare host_shaders)
     add_executable(object-motion-cache-test EXCLUDE_FROM_ALL ../tests/test_object_motion_cache.cpp
         ${BB_RUNTIME} ../src/compat_win.c)
-    target_include_directories(object-motion-cache-test PRIVATE .. ../src shim shadps4 third_party/gcn/include)
+    target_include_directories(object-motion-cache-test PRIVATE ../src shim shadps4 third_party/gcn/include)
     target_link_libraries(object-motion-cache-test PRIVATE bbgpu atrac9 onecore bcrypt ws2_32 -pthread)
     # The PS4 range (64 GiB - 1 TiB) must stay free: no high-entropy ASLR for heaps and stacks.
     # The guest main thread runs on the process stack: 16 MiB, committed (no stack probes).
@@ -417,7 +419,6 @@ target_compile_options(fsr411-requirements-test PRIVATE -UNDEBUG -Wall -Wextra -
 
 add_executable(command-buffer-test EXCLUDE_FROM_ALL ../tests/test_command_buffers.cpp)
 target_compile_options(command-buffer-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_include_directories(command-buffer-test PRIVATE ..)
 
 add_executable(fsr4vk-post-test EXCLUDE_FROM_ALL ../tests/test_fsr4vk_post.cpp
     shadps4/video_core/renderer_vulkan/fsr4vk_post.cpp)
@@ -427,14 +428,12 @@ target_link_libraries(fsr4vk-post-test PRIVATE PkgConfig::XXHASH)
 
 add_executable(motion-history-test EXCLUDE_FROM_ALL ../tests/test_motion_history.cpp)
 add_executable(temporal-history-test EXCLUDE_FROM_ALL ../tests/test_temporal_history.cpp)
-target_include_directories(temporal-history-test PRIVATE ..)
 target_compile_options(temporal-history-test PRIVATE -UNDEBUG)
 target_compile_options(motion-history-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_include_directories(motion-history-test PRIVATE ..)
 if (NOT WIN32)
     add_executable(object-motion-cache-test EXCLUDE_FROM_ALL ../tests/test_object_motion_cache.cpp
         ../tests/test_gpu_runtime_stubs.cpp)
-    target_include_directories(object-motion-cache-test PRIVATE .. shim shadps4 third_party/gcn/include)
+    target_include_directories(object-motion-cache-test PRIVATE shim shadps4 third_party/gcn/include)
     target_link_libraries(object-motion-cache-test PRIVATE bbgpu)
 endif()
 add_executable(motion-shader-test EXCLUDE_FROM_ALL ../tests/test_motion_shaders.cpp ../tests/test_gpu_runtime_stubs.cpp)
@@ -442,15 +441,13 @@ target_include_directories(motion-shader-test PRIVATE shim shadps4 third_party/g
 target_link_libraries(motion-shader-test PRIVATE bbgpu)
 add_executable(ui-composition-test EXCLUDE_FROM_ALL ../tests/test_ui_composition.cpp)
 target_compile_options(ui-composition-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_include_directories(ui-composition-test PRIVATE ..)
 add_executable(ui-composition-sharp-test EXCLUDE_FROM_ALL ../tests/test_ui_composition_sharp.cpp)
 target_compile_options(ui-composition-sharp-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_include_directories(ui-composition-sharp-test PRIVATE ..)
 
 if (WIN32)
     add_executable(scene-resolution-test EXCLUDE_FROM_ALL ../tests/test_scene_resolution.cpp
         ${BB_RUNTIME} ../src/compat_win.c)
-    target_include_directories(scene-resolution-test PRIVATE .. ../src)
+    target_include_directories(scene-resolution-test PRIVATE ../src)
     target_link_libraries(scene-resolution-test PRIVATE atrac9 onecore bcrypt ws2_32 -pthread)
 else()
     add_executable(scene-resolution-test EXCLUDE_FROM_ALL ../tests/test_scene_resolution.cpp
@@ -577,7 +574,7 @@ if (WIN32)
     add_dependencies(fsr-driver-test fsr-driver-fixture fsr-driver-invalid-fixture)
     add_executable(shared-graphics-overlay-test EXCLUDE_FROM_ALL ../tests/test_shared_graphics_overlay.cpp
         ${BB_RUNTIME} ../src/compat_win.c)
-    target_include_directories(shared-graphics-overlay-test PRIVATE .. ../src shim shadps4
+    target_include_directories(shared-graphics-overlay-test PRIVATE ../src shim shadps4
         third_party/gcn/include third_party/imgui third_party/imgui/backends)
     target_compile_definitions(shared-graphics-overlay-test PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
         BB_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
