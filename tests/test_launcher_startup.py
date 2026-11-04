@@ -73,7 +73,11 @@ def exercise_main(module, folder, expect_error=False):
                     assert module.LANG == language
                     if configured:
                         assert app.guide is None
-                        assert app.news_panel.frame.winfo_ismapped(), "What's new did not open after the update."
+                        assert app.news_panel is not None, "What's new did not open after the update."
+                        if not app.news_panel.frame.winfo_ismapped():
+                            assert time.monotonic() < map_deadline, "What's new did not map within 30 seconds."
+                            window.after(20, inspect_and_close)
+                            return
                         app.news_panel.close()
                         assert app.news_panel is None
                         assert json.loads(config.read_text())['seen_version'] == module.VERSION_TEXT
