@@ -84,7 +84,7 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ libboost-dev libglm-dev libvulkan1 mesa-vulkan-drivers glslang-tools spirv-tools python3-venv python3-yaml python3-tk python3-pil python3-pil.imagetk xvfb fonts-dejavu-core zstd
+          sudo apt-get install -y g++ libboost-dev libglm-dev libfmt-dev libvulkan1 mesa-vulkan-drivers glslang-tools spirv-tools python3-venv python3-yaml python3-tk python3-pil python3-pil.imagetk xvfb fonts-dejavu-core zstd
           python3 -m venv --system-site-packages out/checks-env
           out/checks-env/bin/python -m pip install -r tools/requirements-checks.txt
       - name: Prepare checksum-pinned Vulkan and VMA test headers

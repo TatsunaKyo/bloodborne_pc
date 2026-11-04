@@ -244,10 +244,15 @@ def windows_adapters():
                 break
             try:
                 desc = AdapterDesc1()
-                if com_method(adapter, 10, c.POINTER(AdapterDesc1))(adapter, c.byref(desc)) == 0 \
-                        and not desc.Flags & SOFTWARE_ADAPTER:  # IDXGIAdapter1::GetDesc1
-                    adapters.append({'name': desc.Description, 'vendor': desc.VendorId, 'device_id': desc.DeviceId,
-                                     'memory': desc.DedicatedVideoMemory})
+                if com_method(adapter, 10, c.POINTER(AdapterDesc1))(adapter, c.byref(desc)) != 0:
+                    continue  # IDXGIAdapter1::GetDesc1
+                name = desc.Description
+                # Some virtual Windows hosts list the Basic Render Driver
+                # without the software flag. It is not a physical GPU.
+                if desc.Flags & SOFTWARE_ADAPTER or name.casefold() == 'microsoft basic render driver':
+                    continue
+                adapters.append({'name': name, 'vendor': desc.VendorId, 'device_id': desc.DeviceId,
+                                 'memory': desc.DedicatedVideoMemory})
             finally:
                 com_method(adapter, 2)(adapter)  # Release
     finally:

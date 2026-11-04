@@ -140,6 +140,10 @@ class OpenLauncherTests(unittest.TestCase):
         self.assertNotIn('object_motion_cache', profile)
 
     def test_explicit_launcher_edit_wins_over_earlier_overlay_edit(self):
+        # Current defaults enable the cache. Start this test with the opposite
+        # saved value so the next write represents an actual launcher edit.
+        self.ui.ini['object_motion_cache'] = '0'
+        self.ui.var('object_motion_cache', 'ini').set(False)
         self.ini.write_text('fsr411_backend=vk\nobject_motion_cache=0\n')
         self.ui.var('fsr411_backend', 'ini').set('dx12')
         self.ui.var('object_motion_cache', 'ini').set(True)

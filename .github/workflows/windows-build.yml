@@ -43,6 +43,8 @@ jobs:
       - name: Install the pinned CLANG64 package set
         shell: msys2 {0}
         run: pacman -U --noconfirm out/dependencies/*.pkg.tar.zst
+      - name: Install Python dependencies for launcher tests
+        run: python -m pip install PyInstaller==6.19.0 Pillow==12.3.0
       - name: Check launch timing and the incompatible executable fallback
         shell: pwsh
         run: |
@@ -74,7 +76,6 @@ jobs:
           RELEASE_CHANNEL: ${{ inputs.channel || 'preview' }}
         run: |
           set -euo pipefail
-          "$WINPYTHON" -m pip install PyInstaller==6.19.0 Pillow==12.3.0
           "$WINPYTHON" tests/test_launcher_updates.py out/pyi-dist/Bloodborne/Bloodborne.exe
           "$WINPYTHON" tests/test_launcher_window_settings.py out/pyi-dist/Bloodborne/Bloodborne.exe
           "$WINPYTHON" tests/test_launcher_startup.py out/pyi-dist/Bloodborne/Bloodborne.exe
