@@ -6,7 +6,7 @@ Players can use the ordinary game ZIP without installing Python or a compiler. T
 
 ## Verified release candidates
 
-I keep release preparation separate from the older development ZIP command. The **Windows build and package** workflow installs the checksum-pinned package set, builds the native programs and launcher, executes the Windows CPU regressions, checks the compiled launcher and assembles a complete candidate. It does not publish a release.
+I keep release preparation separate from the older development ZIP command. The **Windows build and package** workflow installs the checksum-pinned package set, builds the native programs and launcher, executes the Windows CPU regressions, checks the compiled launcher and assembles a complete candidate. It does not publish a release. The camera-motion executable is linked on Windows; the hosted Linux regression executes the production shader using software Vulkan. Run `./out/gpu/camera-motion-test.exe` separately on a Windows system with a compatible Vulkan driver.
 
 For the same process in an MSYS2 CLANG64 shell, set `WINPYTHON` to a python.org Python 3.14.8 executable, commit your source changes and run:
 
@@ -14,10 +14,10 @@ For the same process in an MSYS2 CLANG64 shell, set `WINPYTHON` to a python.org 
 "$WINPYTHON" tools/fetch_windows_dependencies.py
 pacman -U --noconfirm out/dependencies/*.pkg.tar.zst
 bash build.sh
-ninja -C out/gpu frame-limits-test frame-pacing-test background-pause-test temporal-history-test motion-history-test xess-presets-test amd-antilag-test camera-motion-test
+ninja -C out/gpu frame-limits-test frame-pacing-test background-pause-test temporal-history-test motion-history-test xess-presets-test amd-antilag-test camera-motion-test save-access-test
 set -euo pipefail
 mkdir -p out/verification
-for test in frame-limits frame-pacing background-pause temporal-history motion-history xess-presets amd-antilag camera-motion; do
+for test in frame-limits frame-pacing background-pause temporal-history motion-history xess-presets amd-antilag; do
   ./out/gpu/${test}-test.exe | tee -a out/verification/native-windows-tests.log
 done
 bash packaging/windows/package.sh --launcher-only
@@ -58,14 +58,11 @@ git submodule update --init --recursive
 bash build.sh                      # out/bb-probe.exe, out/bb-gpu-capabilities.exe
 BB_GAME_DIR=F:/path/to/CUSA03173 python run.py
 python launcher/bbport_launcher_win.py
-bash packaging/windows/package.sh  # dist/bbport-windows/ and .zip: Bloodborne.exe + DLLs
+bash packaging/windows/package.sh --launcher-only  # out/pyi-dist/Bloodborne/
 ```
 
-For build/CI checks, `bash packaging/windows/package.sh --zip-only` creates the
-ZIP from fresh staging files and leaves an existing playable
-`dist/bbport-windows/` copy untouched.
-Both modes also write `dist/fsr4vk-v0.4.3-amdfix-src.zip`. Publish this
-corresponding-source archive alongside `dist/bbport-windows.zip`.
+For a release candidate, follow the complete recipe above. The FSR4VK corresponding
+source and licenses go inside the one release ZIP.
 
 `run.py` is the Windows `run.sh` (same variables; works from a plain Windows Python too).
 The FSR 4.1 integration initializes installed-driver discovery for the GUI,
