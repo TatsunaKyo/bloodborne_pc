@@ -73,6 +73,10 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         amd_lock=install_amd_graphics(stage, ROOT)
         install_nvidia_fg(stage, ROOT)
         native_lock=install_native_fg(stage, ROOT)
+        # AMD's DX12 DLLs load from bin, outside the Streamline and XeSS
+        # directories. Reuse the checksum-pinned baseline redistributables.
+        for name in ('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll'):
+            shutil.copy2(stage/'bin/streamline'/name,stage/'bin'/name)
         (stage/'redist/vc_redist.x64.exe').unlink(missing_ok=True)
         # Use the pinned CLANG64 DLLs selected for this build, including transitive dependencies.
         require(dll_dir is not None, 'Provide the CLANG64 DLL directory for this build')

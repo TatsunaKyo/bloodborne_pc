@@ -102,10 +102,12 @@ class Releases(unittest.TestCase):
             return git('rev-parse','HEAD').decode().strip()
         git('init','-q'); git('config','core.autocrlf','true'); base=commit()
         native_lock={}
+        msvc_files=('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')
         def baseline_data(identity, data):
             identity['upstream_base']=base
             native_lock.update(identity['native_fg_runtime'])
             data['bin/stale-test.exe']=pe()
+            data.update({f'bin/streamline/{name}':pe()+name.encode() for name in msvc_files})
         baseline=self.package(version,modify=baseline_data)
         (repo/'packaging/windows/runtime-baseline.lock.json').write_text(
             json.dumps({'sha256':integrity.checksum(baseline)}))
@@ -153,6 +155,8 @@ class Releases(unittest.TestCase):
         with zipfile.ZipFile(package) as archive:
             names={name.removeprefix(report['root']+'/') for name in archive.namelist()}
             self.assertIn('bin/fixture-dependency.dll',names)
+            for name in msvc_files:
+                self.assertEqual(archive.read(f"{report['root']}/bin/{name}"),pe()+name.encode())
             self.assertIn('Capture-Traversal.cmd',names)
             self.assertEqual(archive.read(report['root']+'/'+notes_path),committed_notes)
             self.assertFalse(any(name.endswith('-test.exe') for name in names))
