@@ -42,7 +42,9 @@ def exercise_main(module, folder, expect_error=False):
     real_tk = tk.Tk
     real_init = module.Launcher.__init__
     for language, arguments in (('en', []), ('ru', []), ('en', ['--play']), ('ru', ['--play'])):
+        configured = not arguments
         config.write_text(json.dumps({'ui_language': language, 'check_updates': False,
+                                     'setup_done': configured, 'seen_version': '1.6-tatsunakyo.55',
                                      'game_dir': str(missing_game), 'user_dir': str(data / 'user')}))
         apps, windows, failures = [], [], []
 
@@ -69,11 +71,20 @@ def exercise_main(module, folder, expect_error=False):
                     assert 'by TatsunaKyo' in app.byline.cget('text')
                     assert app.process is None and not app.downloading
                     assert module.LANG == language
+                    if configured:
+                        assert app.guide is None
+                        assert app.news_panel.frame.winfo_ismapped(), "What's new did not open after the update."
+                        app.news_panel.close()
+                        assert app.news_panel is None
+                        assert json.loads(config.read_text())['seen_version'] == module.VERSION_TEXT
+                    else:
+                        assert app.guide is not None, 'The setup guide did not open on --play fallback.'
                     # Close through the normal handler, including settings persistence.
                     for timer in window.tk.call('after', 'info'):
                         window.tk.call('after', 'cancel', timer)
                     app.close()
                     results.append({'language': language, 'arguments': arguments,
+                                    'whats_new_after_update': configured,
                                     'frozen_main': True, 'first_event_cycle': True,
                                     'normal_close': True})
                 except BaseException as error:
@@ -123,11 +134,11 @@ def exercise_main(module, folder, expect_error=False):
         assert len(results) >= 1 and json.loads(config.read_text())['ui_language'] == language
     assert len(results) == 4
     print('PASS: real main() from ' + ('compiled' if hasattr(module, '__spec__') and module.__spec__ is None else 'source') +
-          ' launcher: four frozen normal/--play startups, English/Russian, first event cycle and normal close.')
+          " launcher: What's new after an update and setup on --play fallback, in English and Russian.")
     return results
 
 
-def cold_start_windows(executable, folder):
+def cold_start_windows(executable, folder, version):
     """Run the bootloader and its normal entry point, without --script or imported main()."""
     import ctypes
     from ctypes import wintypes
@@ -146,9 +157,11 @@ def cold_start_windows(executable, folder):
     user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
     results = []
     for language, arguments in (('en', []), ('ru', ['--play'])):
+        configured = not arguments
         profile = folder / ('cold-' + language); profile.mkdir()
         config = profile / 'bbport-launcher/settings.json'; config.parent.mkdir()
         config.write_text(json.dumps({'ui_language': language, 'check_updates': False,
+                                     'setup_done': configured, 'seen_version': '1.6-tatsunakyo.55',
                                      'game_dir': str(folder / 'no game files'),
                                      'user_dir': str(profile / 'user')}))
         environment = dict(os.environ, APPDATA=str(profile), BB_DATA_DIR=str(profile),
@@ -183,7 +196,10 @@ def cold_start_windows(executable, folder):
             assert rectangle.right - rectangle.left >= 980 and rectangle.bottom - rectangle.top >= 660
             assert user32.PostMessageW(windows[0], 0x0010, 0, 0), 'Could not close the launcher window.'
             assert process.wait(timeout=15) == 0, 'Frozen launcher failed on normal close.'
+            if configured:
+                assert json.loads(config.read_text())['seen_version'] == version, "What's new was not shown after the update."
             results.append({'language': language, 'arguments': arguments,
+                            'whats_new_after_update': configured,
                             'native_windows_process': True, 'normal_entry_point': True,
                             'window_opened': True, 'exit_code': 0})
         finally:
@@ -203,7 +219,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='workshop-launcher-startup-') as folder:
         root = Path(folder)
         imported = exercise_main(module, root, expect_error=args.expect_update_dir_error)
-        cold = cold_start_windows(executable, root) if os.name == 'nt' and executable and not args.expect_update_dir_error else []
+        cold = cold_start_windows(executable, root, module.VERSION_TEXT) if os.name == 'nt' and executable and not args.expect_update_dir_error else []
     if not args.expect_update_dir_error:
         output = ROOT / 'out/verification'; output.mkdir(parents=True, exist_ok=True)
         (output / ('launcher-startup-revision' + module.VERSION.rsplit('.', 1)[-1] + '.json')).write_text(

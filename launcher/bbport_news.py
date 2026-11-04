@@ -151,8 +151,7 @@ class NewsPanel:
         bar = tk.Frame(card, bg=theme.CARD)
         bar.pack(side='bottom', fill='x', padx=px(28), pady=(px(12), px(22)))
         ttk.Button(bar, text=_('Continue'), style='Accent.TButton', command=self.close).pack(side='right')
-        page = L.BETA_PAGE if L.BETA else L.RELEASES_PAGE
-        ttk.Button(bar, text=_('Full notes on GitHub'), command=lambda: L.webbrowser.open(page)).pack(
+        ttk.Button(bar, text=_('Full notes on GitHub'), command=lambda: L.webbrowser.open(L.RELEASES_PAGE)).pack(
             side='right', padx=(0, px(8)))
 
         if notice:
