@@ -1,5 +1,7 @@
 name: Windows build and package
 on:
+  push:
+    branches: [polish/upstream-197-20261102]
   workflow_dispatch:
     inputs:
       channel:
@@ -9,6 +11,9 @@ on:
         default: stable
 permissions:
   contents: read
+concurrency:
+  group: windows-candidate-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   windows:
     runs-on: windows-2025
@@ -58,7 +63,7 @@ jobs:
       - name: Test the actual compiled launcher and prepare the complete package
         shell: msys2 {0}
         env:
-          RELEASE_CHANNEL: ${{ inputs.channel }}
+          RELEASE_CHANNEL: ${{ inputs.channel || 'preview' }}
         run: |
           set -euo pipefail
           "$WINPYTHON" -m pip install PyInstaller==6.19.0 Pillow==12.3.0
