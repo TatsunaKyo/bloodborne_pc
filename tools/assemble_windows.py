@@ -110,7 +110,7 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
         (source_dir/'tatsunakyo-revision.patch').write_bytes(git('diff','--binary',base,commit))
         provenance={'project':'Bloodborne: The Crowned Workshop','version':version,'revision':int(revision),
                     'channel':channel,'release_tag':canonical_tag(version,channel),'source_commit':commit,
-                    'source_tree':git('rev-parse','HEAD^{tree}').decode().strip(),'upstream_base':base,
+                    'source_tree':git('show','-s','--format=%T',commit).decode().strip(),'upstream_base':base,
                     'repository':'https://github.com/TatsunaKyo/bloodborne_pc','executables':programs,
                     'runtime_files':{p.relative_to(stage).as_posix():checksum(p) for p in stage.rglob('*')
                                      if p.suffix.lower() in ('.dll','.pyd')},
