@@ -100,7 +100,7 @@ class Releases(unittest.TestCase):
             git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid',
                 'commit','-qm','assembly fixture')
             return git('rev-parse','HEAD').decode().strip()
-        git('init','-q'); base=commit()
+        git('init','-q'); git('config','core.autocrlf','true'); base=commit()
         native_lock={}
         def baseline_data(identity, data):
             identity['upstream_base']=base
@@ -111,6 +111,10 @@ class Releases(unittest.TestCase):
             json.dumps({'sha256':integrity.checksum(baseline)}))
         (repo/'run.py').write_text('# revised current runtime\n')
         source_commit=commit()
+        notes_path=f'docs/releases/windows-v{version}.md'
+        committed_notes=git('show',source_commit+':'+notes_path)
+        (repo/notes_path).write_bytes(committed_notes.replace(b'\n', b'\r\n'))
+        self.assertEqual(git('diff','--name-only','HEAD'), b'')
         records=repo/'out/verification';records.mkdir(parents=True)
         (records/'native-windows-tests.log').write_text('PASS fixture CPU tests\n')
         native=self.root/'native';native.mkdir()
@@ -150,6 +154,7 @@ class Releases(unittest.TestCase):
             names={name.removeprefix(report['root']+'/') for name in archive.namelist()}
             self.assertIn('bin/fixture-dependency.dll',names)
             self.assertIn('Capture-Traversal.cmd',names)
+            self.assertEqual(archive.read(report['root']+'/'+notes_path),committed_notes)
             self.assertFalse(any(name.endswith('-test.exe') for name in names))
 
     def test_preparation_uses_identity_notes_and_real_hash(self):

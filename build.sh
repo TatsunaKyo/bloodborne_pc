@@ -18,8 +18,9 @@ MINGW*|MSYS*)
     cmake -S gpu -B out/gpu -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBB_PGO=off \
         -DBB_LTO="${BB_LTO:-OFF}" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ >/dev/null
     echo "GPU library and loader: LTO ${BB_LTO:-OFF}"
-    if ! ninja -C out/gpu bb-probe bb-gpu-capabilities bb-fg401-capabilities bb-play > out/gpu-build.log 2>&1; then
-        grep -v '^\[' out/gpu-build.log | tail -40 >&2
+    if ! cmake --build out/gpu --target bb-probe bb-gpu-capabilities bb-fg401-capabilities bb-play > out/gpu-build.log 2>&1; then
+        awk '/FAILED:|error:|Error|Killed|stopped/ { print }' out/gpu-build.log | tail -n 35 >&2 || true
+        tail -n 70 out/gpu-build.log >&2
         echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
     fi
     cp out/gpu/bb-probe.exe out/gpu/bb-gpu-capabilities.exe out/gpu/bb-fg401-capabilities.exe out/gpu/bb-play.exe out/

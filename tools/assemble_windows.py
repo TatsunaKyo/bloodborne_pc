@@ -124,8 +124,12 @@ def assemble(baseline, native, launcher, destination, channel='stable', dll_dir=
             subprocess.run(['pacman','-Q'],check=True,stdout=record)
         with (records/'compiler.txt').open('wb') as record:
             subprocess.run(['clang++','--version'],check=True,stdout=record)
-        notes=(ROOT/f'docs/releases/windows-v{version}.md').read_text(encoding='utf-8')
-        (stage/'README-EN.txt').write_text(notes, encoding='utf-8')
+        notes_path=f'docs/releases/windows-v{version}.md'
+        # Checkout line endings vary on Windows. The release validator compares
+        # the embedded notes with the exact source object, like startup inputs.
+        notes=git('show', commit+':'+notes_path)
+        (stage/notes_path).write_bytes(notes)
+        (stage/'README-EN.txt').write_bytes(notes)
         # The portable current player guide is kept instead of a previous revision summary.
         (stage/'README-IT.txt').write_text('Bloodborne: The Crowned Workshop\nVersione '+version+'\nApri README-Windows.txt per installazione, impostazioni live e documentazione aggiornata.\n')
         for p in stage.rglob('__pycache__'):shutil.rmtree(p,ignore_errors=True)
